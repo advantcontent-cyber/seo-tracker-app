@@ -29,16 +29,16 @@ if (typeof window !== "undefined" && !window.storage) {
 /*  Tailwind has no JIT for arbitrary hex values.                      */
 /* ------------------------------------------------------------------ */
 const C = {
-  bg: "#F6F4EF",
-  surface: "#FCFBF8",
-  ink: "#1A1D1C",
-  muted: "#6B6F6C",
-  faint: "#9A9D98",
-  accent: "#1F4E4A", // deep pine
-  line: "#E4E0D8",
-  healthy: "#4A7C59",
-  watch: "#B8893C",
-  risk: "#A14B3D",
+  bg: "#EFF6FF",        // very light AMN blue tint
+  surface: "#FFFFFF",
+  ink: "#0A1F3C",       // deep navy
+  muted: "#4A6A8A",     // mid blue-grey
+  faint: "#8AAEC8",     // faint blue-grey
+  accent: "#0077C8",    // AMN dark blue (complements logo #38B6FF)
+  line: "#C8DFF2",      // soft blue rule
+  healthy: "#1A7A50",
+  watch: "#B87A00",
+  risk: "#B03030",
 };
 
 const STATUS = {
@@ -1715,9 +1715,7 @@ function Login({ onAuth }) {
         <div className="rounded-xl p-7" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
           <div className="flex items-center gap-2 mb-5" style={{ color: C.accent }}>
             <Lock size={15} />
-            <span style={{ fontSize: 12.5, letterSpacing: "0.12em" }} className="uppercase font-semibold">
-              Advant Labs
-            </span>
+            <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 22 }} />
           </div>
           <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 28, color: C.ink }} className="leading-none mb-1.5">
             SEO Progress
@@ -1855,9 +1853,7 @@ export default function App() {
             {/* Masthead */}
             <header className="flex items-end justify-between pb-5 mb-6" style={{ borderBottom: `1px solid ${C.line}` }}>
               <div>
-                <div style={{ color: C.accent, fontSize: 12.5, letterSpacing: "0.12em" }} className="uppercase font-semibold mb-1">
-                  Advant Labs
-                </div>
+                <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 32, marginBottom: 6 }} />
                 <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 26, color: C.ink }} className="leading-none">
                   SEO Progress
                 </h1>
