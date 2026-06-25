@@ -1164,11 +1164,34 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan }) {
-  const cur = gsc(client, month);
-  const prev = month > 0 ? gsc(client, month - 1) : null;
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError }) {
+  // liveGsc() returns real Windsor data for this client/month when connected,
+  // falling back to the mock gsc() function for unconnected properties.
+  const liveGsc = (c, m) => {
+    const mo = MONTHS[m]; // e.g. "Jun"
+    const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[mo];
+    const live = gscData?.[c.name]?.[moNum];
+    if (!live) return gsc(c, m); // mock fallback
+    return {
+      clicks:      live.clicks,
+      impressions: live.impressions,
+      ctr:         live.ctr,
+      avgPos:      live.avgPos,
+      // Index coverage not in Windsor GSC data — keep mock estimate
+      indexed:     gsc(c, m).indexed,
+      issues:      gsc(c, m).issues,
+      buckets:     gsc(c, m).buckets,
+    };
+  };
+  const isLive = !!gscData?.[client.name];
+
+  const cur = liveGsc(client, month);
+  const prev = month > 0 ? liveGsc(client, month - 1) : null;
   const dPct = (key) => (prev ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : 0);
-  const cs = series(client);
+  // Use real Windsor clicks series when available, fall back to mock traffic array.
+  const cs = isLive
+    ? MONTHS.map((mo) => { const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[mo]; return gscData[client.name][moNum]?.clicks ?? 0; })
+    : series(client);
   const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
   const b = cur.buckets;
   const read = analystRead(client, month);
@@ -1217,8 +1240,19 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan }) {
           <h2 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none">
             {client.name}
           </h2>
-          <div style={{ color: C.faint, fontSize: 13 }} className="mt-1.5">
-            {client.domain} · {client.market}
+          <div style={{ color: C.faint, fontSize: 13 }} className="mt-1.5 flex items-center gap-2.5 flex-wrap">
+            <span>{client.domain} · {client.market}</span>
+            <span
+              className="rounded-full px-2 py-0.5 font-medium"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.04em",
+                background: isLive ? "rgba(87,168,110,0.15)" : "rgba(200,160,0,0.12)",
+                color: isLive ? C.healthy : C.watch,
+              }}
+            >
+              {isLive ? "Live GSC" : gscData ? "GSC not connected" : gscError ? "GSC error" : "Loading…"}
+            </span>
           </div>
         </div>
       </div>
@@ -1759,6 +1793,16 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [month, setMonth] = useState(MONTHS.length - 1); // default to latest month
   const [importedPlan, setImportedPlan] = useState(null); // blog plan rows imported from a sheet (all clients)
+  const [gscData, setGscData] = useState(null);  // live GSC data from Windsor via /api/gsc
+  const [gscError, setGscError] = useState(null);
+
+  // Fetch live GSC data once on mount. Silently falls back to mock on error.
+  useEffect(() => {
+    fetch("/api/gsc")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setGscData(json.data); else setGscError(json.error); })
+      .catch((e) => setGscError(e.message));
+  }, []);
 
   // Restore a remembered session, if one was saved. Stores only a flag —
   // never the access code. Real persistent sessions come with Supabase.
@@ -1868,6 +1912,8 @@ export default function App() {
                 month={month}
                 importedPlan={importedPlan}
                 onImportPlan={setImportedPlan}
+                gscData={gscData}
+                gscError={gscError}
               />
             ) : (
               <Portfolio clients={CLIENTS} onSelect={setSelected} month={month} />
