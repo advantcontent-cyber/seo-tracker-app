@@ -390,15 +390,41 @@ function StatusDot({ status, size = 8 }) {
 /* ------------------------------------------------------------------ */
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
-function Portfolio({ clients, onSelect, month }) {
+function Portfolio({ clients, onSelect, month, gscData }) {
+  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+
+  // Returns real GSC figures for the given client+month when connected,
+  // falls back to the mock gsc() for unconnected properties.
+  const liveCur = (c, m) => {
+    const moNum = MO_NUM[MONTHS[m]];
+    const live = gscData?.[c.name]?.[moNum];
+    if (!live) return gsc(c, m);
+    return { ...gsc(c, m), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
+  };
+  const livePrev = (c, m) => m > 0 ? liveCur(c, m - 1) : null;
+
+  // Live sparkline series — real clicks per month when available, mock otherwise
+  const liveSeries = (c) => {
+    if (!gscData?.[c.name]) return series(c);
+    return MONTHS.map(mo => gscData[c.name][MO_NUM[mo]]?.clicks ?? 0);
+  };
+
+  // MoM % using live figures
+  const liveMoM = (c, m) => {
+    const cur = liveCur(c, m);
+    const prev = livePrev(c, m);
+    if (!prev || prev.clicks === 0) return 0;
+    return Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100);
+  };
+
   const sorted = useMemo(
     () =>
       [...clients].sort((a, b) => {
         const r = STATUS[a.status].rank - STATUS[b.status].rank;
         if (r !== 0) return r;
-        return momPct(a, month) - momPct(b, month);
+        return liveMoM(a, month) - liveMoM(b, month);
       }),
-    [clients, month]
+    [clients, month, gscData]
   );
 
   const risk = sorted.filter((c) => c.status === "risk");
@@ -458,8 +484,8 @@ function Portfolio({ clients, onSelect, month }) {
       {/* Rows */}
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         {sorted.map((c, i) => {
-          const cur = gsc(c, month);
-          const prev = month > 0 ? gsc(c, month - 1) : null;
+          const cur = liveCur(c, month);
+          const prev = livePrev(c, month);
           return (
             <button
               key={c.name}
@@ -488,12 +514,12 @@ function Portfolio({ clients, onSelect, month }) {
 
               {/* Clicks + sparkline (through selected month) */}
               <div className="flex items-center gap-3">
-                <Sparkline series={series(c).slice(0, month + 1)} />
+                <Sparkline series={liveSeries(c).slice(0, month + 1)} />
                 <div>
                   <div style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
                     {fmt(cur.clicks)}
                   </div>
-                  <Delta value={Math.round(momPct(c, month))} suffix="%" />
+                  <Delta value={liveMoM(c, month)} suffix="%" />
                 </div>
               </div>
 
@@ -1648,7 +1674,7 @@ export default function App() {
                 gscError={gscError}
               />
             ) : (
-              <Portfolio clients={CLIENTS} onSelect={setSelected} month={month} />
+              <Portfolio clients={CLIENTS} onSelect={setSelected} month={month} gscData={gscData} />
             )}
           </div>
         )}
