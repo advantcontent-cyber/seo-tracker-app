@@ -390,15 +390,41 @@ function StatusDot({ status, size = 8 }) {
 /* ------------------------------------------------------------------ */
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
-function Portfolio({ clients, onSelect, month }) {
+function Portfolio({ clients, onSelect, month, gscData }) {
+  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+
+  // Returns real GSC figures for the given client+month when connected,
+  // falls back to the mock gsc() for unconnected properties.
+  const liveCur = (c, m) => {
+    const moNum = MO_NUM[MONTHS[m]];
+    const live = gscData?.[c.name]?.[moNum];
+    if (!live) return gsc(c, m);
+    return { ...gsc(c, m), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
+  };
+  const livePrev = (c, m) => m > 0 ? liveCur(c, m - 1) : null;
+
+  // Live sparkline series — real clicks per month when available, mock otherwise
+  const liveSeries = (c) => {
+    if (!gscData?.[c.name]) return series(c);
+    return MONTHS.map(mo => gscData[c.name][MO_NUM[mo]]?.clicks ?? 0);
+  };
+
+  // MoM % using live figures
+  const liveMoM = (c, m) => {
+    const cur = liveCur(c, m);
+    const prev = livePrev(c, m);
+    if (!prev || prev.clicks === 0) return 0;
+    return Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100);
+  };
+
   const sorted = useMemo(
     () =>
       [...clients].sort((a, b) => {
         const r = STATUS[a.status].rank - STATUS[b.status].rank;
         if (r !== 0) return r;
-        return momPct(a, month) - momPct(b, month);
+        return liveMoM(a, month) - liveMoM(b, month);
       }),
-    [clients, month]
+    [clients, month, gscData]
   );
 
   const risk = sorted.filter((c) => c.status === "risk");
@@ -458,8 +484,8 @@ function Portfolio({ clients, onSelect, month }) {
       {/* Rows */}
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         {sorted.map((c, i) => {
-          const cur = gsc(c, month);
-          const prev = month > 0 ? gsc(c, month - 1) : null;
+          const cur = liveCur(c, month);
+          const prev = livePrev(c, month);
           return (
             <button
               key={c.name}
@@ -488,12 +514,12 @@ function Portfolio({ clients, onSelect, month }) {
 
               {/* Clicks + sparkline (through selected month) */}
               <div className="flex items-center gap-3">
-                <Sparkline series={series(c).slice(0, month + 1)} />
+                <Sparkline series={liveSeries(c).slice(0, month + 1)} />
                 <div>
                   <div style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
                     {fmt(cur.clicks)}
                   </div>
-                  <Delta value={Math.round(momPct(c, month))} suffix="%" />
+                  <Delta value={liveMoM(c, month)} suffix="%" />
                 </div>
               </div>
 
@@ -1420,117 +1446,19 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 /*  Real access control belongs server-side (e.g. Supabase Auth) once   */
 /*  the dashboard is deployed. The check below is a placeholder.        */
 /* ------------------------------------------------------------------ */
-function Login({ onAuth }) {
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [remember, setRemember] = useState(true);
-  const [error, setError] = useState("");
-
-  const submit = () => {
-    if (!email.trim()) return setError("Enter your work email.");
-    if (code !== "advant2026") return setError("That access code doesn't match.");
-    setError("");
-    onAuth(email.trim(), remember);
-  };
-  const onKey = (e) => e.key === "Enter" && submit();
-
-  const inputStyle = {
-    width: "100%",
-    background: "#fff",
-    border: `1px solid ${C.line}`,
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 14,
-    color: C.ink,
-    fontFamily: "Inter, system-ui, sans-serif",
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center px-5">
-      <div className="w-full" style={{ maxWidth: 380 }}>
-        <div className="rounded-xl p-7" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-          <div className="flex items-center gap-2 mb-5" style={{ color: C.accent }}>
-            <Lock size={15} />
-            <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 22 }} />
-          </div>
-          <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 28, color: C.ink }} className="leading-none mb-1.5">
-            SEO Progress
-          </h1>
-          <p style={{ color: C.muted, fontSize: 13.5 }} className="mb-6">
-            Private dashboard — sign in to continue.
-          </p>
-
-          <label style={{ color: C.muted, fontSize: 12.5 }} className="block mb-1.5 font-medium">
-            Work email
-          </label>
-          <input
-            className="lf"
-            style={{ ...inputStyle, marginBottom: 14 }}
-            type="email"
-            value={email}
-            placeholder="you@advantlabs.com"
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={onKey}
-          />
-
-          <label style={{ color: C.muted, fontSize: 12.5 }} className="block mb-1.5 font-medium">
-            Access code
-          </label>
-          <input
-            className="lf"
-            style={inputStyle}
-            type="password"
-            value={code}
-            placeholder="••••••••"
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={onKey}
-          />
-
-          <label className="flex items-center gap-2 mt-4 cursor-pointer select-none" style={{ color: C.muted, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              style={{ accentColor: C.accent, width: 15, height: 15 }}
-            />
-            Remember me on this device
-          </label>
-
-          {error && (
-            <p style={{ color: C.risk, fontSize: 13 }} className="mt-3">
-              {error}
-            </p>
-          )}
-
-          <button
-            onClick={submit}
-            className="w-full mt-5 rounded-lg py-2.5 font-medium transition-opacity hover:opacity-90"
-            style={{ background: C.accent, color: "#fff", fontSize: 14.5 }}
-          >
-            Sign in
-          </button>
-        </div>
-        <p style={{ color: C.faint, fontSize: 12 }} className="text-center mt-4">
-          Demo build · access code <span style={{ color: C.muted }}>advant2026</span>
-        </p>
-      </div>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  App shell                                                          */
 /* ------------------------------------------------------------------ */
 export default function App() {
-  const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState(null);       // { email, role, clients }
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [month, setMonth] = useState(MONTHS.length - 1); // default to latest month
-  const [importedPlan, setImportedPlan] = useState(null); // blog plan rows imported from a sheet (all clients)
-  const [gscData, setGscData] = useState(null);  // live GSC data from Windsor via /api/gsc
+  const [month, setMonth] = useState(MONTHS.length - 1);
+  const [importedPlan, setImportedPlan] = useState(null);
+  const [gscData, setGscData] = useState(null);
   const [gscError, setGscError] = useState(null);
 
-  // Fetch live GSC data once on mount. Silently falls back to mock on error.
+  // Fetch live GSC data once on mount.
   useEffect(() => {
     fetch("/api/gsc")
       .then((r) => r.json())
@@ -1538,53 +1466,34 @@ export default function App() {
       .catch((e) => setGscError(e.message));
   }, []);
 
-  // Restore a remembered session, if one was saved. Stores only a flag —
-  // never the access code. Real persistent sessions come with Supabase.
+  // Fetch current user + role from /api/me (set by Supabase middleware).
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        if (typeof window !== "undefined" && window.storage) {
-          const r = await window.storage.get("auth_session");
-          if (active && r && r.value && JSON.parse(r.value).authed) setAuthed(true);
-        }
-      } catch (e) {
-        /* storage unavailable — falls back to session-only sign-in */
-      }
-      if (active) setReady(true);
-    })();
-    return () => {
-      active = false;
-    };
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.role) setUser(json);
+        setReady(true);
+      })
+      .catch(() => setReady(true));
   }, []);
 
-  const signIn = (email, remember) => {
-    setAuthed(true);
-    if (!remember) return;
-    try {
-      if (window.storage) window.storage.set("auth_session", JSON.stringify({ authed: true, email }));
-    } catch (e) {
-      /* ignore — sign-in still succeeds for this session */
-    }
+  const signOut = async () => {
+    const { createClient } = await import("../lib/supabase");
+    await createClient().auth.signOut();
+    setUser(null);
+    setSelected(null);
+    window.location.href = "/login";
   };
 
-  const signOut = () => {
-    setAuthed(false);
-    setSelected(null);
-    try {
-      if (window.storage) window.storage.delete("auth_session");
-    } catch (e) {
-      /* ignore */
-    }
-  };
+  // Filter CLIENTS to only what this user can see
+  const visibleClients = user
+    ? CLIENTS.filter((c) => user.clients.includes(c.name))
+    : [];
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.ink }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap'); .lf:focus{outline:none;border-color:${C.accent};box-shadow:0 0 0 3px rgba(31,78,74,0.12);}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap'); .lf:focus{outline:none;border-color:${C.accent};box-shadow:0 0 0 3px rgba(0,119,200,0.15);}`}</style>
       <div style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
-        {!ready ? null : !authed ? (
-          <Login onAuth={signIn} />
-        ) : (
           <div className="max-w-6xl mx-auto px-5 md:px-8 py-7">
             {/* Masthead */}
             <header className="flex items-end justify-between pb-5 mb-6" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -1595,7 +1504,7 @@ export default function App() {
                 </h1>
               </div>
               <div className="flex flex-col items-end gap-2.5">
-                {/* Month dropdown — drives every figure on the screen */}
+                {/* Month dropdown */}
                 <div className="relative">
                   <select
                     value={month}
@@ -1624,7 +1533,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-4">
                   <span style={{ color: C.faint, fontSize: 12 }}>
-                    {CLIENTS.length} properties · {MONTH_FULL[MONTHS[month]]} {YEAR}
+                    {visibleClients.length} {visibleClients.length === 1 ? "property" : "properties"} · {MONTH_FULL[MONTHS[month]]} {YEAR}
                   </span>
                   <button
                     onClick={signOut}
@@ -1637,7 +1546,9 @@ export default function App() {
               </div>
             </header>
 
-            {selected ? (
+            {!ready ? (
+              <div style={{ color: C.faint, fontSize: 14, textAlign: "center", paddingTop: 80 }}>Loading…</div>
+            ) : selected ? (
               <Detail
                 client={selected}
                 onBack={() => setSelected(null)}
@@ -1648,10 +1559,9 @@ export default function App() {
                 gscError={gscError}
               />
             ) : (
-              <Portfolio clients={CLIENTS} onSelect={setSelected} month={month} />
+              <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
             )}
           </div>
-        )}
       </div>
     </div>
   );
