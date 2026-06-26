@@ -44,7 +44,7 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 16, padding: 36, border: `1px solid ${C.line}` }}>
         <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 28, marginBottom: 24 }} />
         <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 24, color: C.ink, marginBottom: 6 }}>
-          SEO Progress
+          Account Dashboard
         </h1>
         <p style={{ color: C.muted, fontSize: 13.5, marginBottom: 28 }}>
           Sign in to your account
