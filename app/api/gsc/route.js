@@ -24,12 +24,13 @@ async function windsorGet(fields, dateFrom, dateTo) {
     date_to:    dateTo,
   });
   const url = `${BASE}/${CONNECTOR}?${params}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
+  const res = await fetch(url, { next: { revalidate: 3600 } }); // cache 1h
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Windsor ${res.status}: ${text.slice(0, 200)}`);
   }
   const json = await res.json();
+  // Windsor returns { data: [...] } or just an array depending on version
   return Array.isArray(json) ? json : (json.data ?? []);
 }
 
@@ -42,6 +43,7 @@ export async function GET() {
     const dateFrom = `${YEAR}-03-01`;
     const dateTo   = `${YEAR}-06-30`;
 
+    // Two calls: site-level monthly roll-up, then per-query detail
     const [siteRows, queryRows] = await Promise.all([
       windsorGet(
         ["account_name", "year_month", "clicks", "impressions", "ctr", "position"],
@@ -55,6 +57,7 @@ export async function GET() {
 
     const result = {};
 
+    // Site-level
     for (const row of siteRows) {
       const name = PROPERTY_MAP[row.account_name];
       if (!name) continue;
@@ -70,6 +73,7 @@ export async function GET() {
       };
     }
 
+    // Per-query — top 20 by clicks per property/month
     const buckets = {};
     for (const row of queryRows) {
       const name = PROPERTY_MAP[row.account_name];
@@ -96,6 +100,7 @@ export async function GET() {
       }
     }
 
+    // 4-month clicks sparkline series
     for (const name of Object.keys(result)) {
       result[name].series = MONTHS.map(mo => result[name][mo]?.clicks ?? 0);
     }

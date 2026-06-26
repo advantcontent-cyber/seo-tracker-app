@@ -1,5 +1,5 @@
 {
-  "name": "seo-progress-tracker",
+  "name": "seo-tracker-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,10 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.2",
+    "lucide-react": "0.383.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "lucide-react": "0.383.0",
     "recharts": "^2.12.0"
   },
   "devDependencies": {
