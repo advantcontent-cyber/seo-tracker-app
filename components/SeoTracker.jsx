@@ -280,9 +280,37 @@ const INFO_HINTS = [
   "things to do", "guide", "tips", "itinerary", "getaway", "honeymoon", "romantic",
   "family", "adventure", "vineyard", "wine", "northern lights", "staycation",
   "history", "what to", "how to", "tours",
+  // Thai informational cues — places to visit, travel, reviews, how-to.
+  "ที่เที่ยว", "เที่ยว", "รีวิว", "วิธี", "การเดินทาง",
 ];
 const intentOf = (k) => (INFO_HINTS.some((h) => k.toLowerCase().includes(h)) ? "blog" : "optimise");
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Queries with real impressions that are NOT content opportunities: weather
+// lookups and map/navigation intent. Substring match, EN + TH, editorially
+// editable. Filtered out of the opportunity finder (kept in tracked keywords).
+const NOISE_HINTS = [
+  "weather", "forecast", "temperature", "humidity", "rain",
+  "สภาพอากาศ", "อากาศ", "พยากรณ์", "อุณหภูมิ", "ฝนตก", // weather / forecast / temp / rain
+  "map", "directions", "แผนที่", "เส้นทาง",             // maps & directions = navigational
+];
+const isNoiseQuery = (k) => {
+  const s = k.toLowerCase();
+  return NOISE_HINTS.some((h) => s.includes(h));
+};
+
+// Branded/navigational queries: the searcher already knows the property, so these
+// aren't content opportunities to chase. Per-client and editable.
+const BRAND_TERMS = {
+  "Shinta Mani Wild": ["shinta mani", "shintamani", "bensley"],
+  "Nomad Greenland":  ["nomad greenland", "nomadgreenland"],
+  "Sora Sukhumvit":   ["sora sukhumvit", "sora hotel", "sorahotels"],
+  "IC Khao Yai":      ["intercontinental khao yai", "ic khao yai", "intercontinental"],
+};
+const isBrandQuery = (clientName, k) => {
+  const s = k.toLowerCase();
+  return (BRAND_TERMS[clientName] || []).some((b) => s.includes(b));
+};
 
 // Build the page/post URL for a query. In production this is GSC's ranking_url
 // (the page actually surfacing); here it's derived from the domain + a slug —
@@ -1000,7 +1028,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       // Prefer GSC's real ranking URL; fall back to a derived slug for mock data.
       return { k, pos: round1(pos), impressions, gap, intent, url: page || pageUrl(client.domain, k, intent) };
     })
-    .filter((o) => o.gap > 0)
+    .filter((o) => o.gap > 0 && !isNoiseQuery(o.k) && !isBrandQuery(client.name, o.k))
     .sort((a, b) => b.gap - a.gap);
   const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
 
