@@ -954,7 +954,7 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -988,7 +988,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const [tab, setTab] = useState("overview");
 
   // Off-page work is no longer part of the program — exclude it from plans.
-  const plan = (ACTION_PLANS[client.name] || []).filter((t) => t.cat !== "Off-page");
+  // Live tasks from Supabase (seo_action_items) when available; mock otherwise.
+  const planSource = actionData?.[client.name] ?? ACTION_PLANS[client.name] ?? [];
+  const plan = planSource.filter((t) => t.cat !== "Off-page");
   const { active, deliveredToDate, upcoming } = monthlyPlan(plan, month);
   const pct = plan.length ? Math.round((deliveredToDate / plan.length) * 100) : 0;
 
@@ -1533,6 +1535,7 @@ export default function App() {
   const [importedPlan, setImportedPlan] = useState(null);
   const [gscData, setGscData] = useState(null);
   const [gscError, setGscError] = useState(null);
+  const [actionData, setActionData] = useState(null); // live action-plan tasks per client
 
   // Fetch live GSC data once on mount.
   useEffect(() => {
@@ -1540,6 +1543,14 @@ export default function App() {
       .then((r) => r.json())
       .then((json) => { if (json.ok) setGscData(json.data); else setGscError(json.error); })
       .catch((e) => setGscError(e.message));
+  }, []);
+
+  // Fetch the live action plan (team task list) once on mount.
+  useEffect(() => {
+    fetch("/api/action-items")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setActionData(json.data); })
+      .catch(() => {});
   }, []);
 
   // Fetch current user + role from /api/me (set by Supabase middleware).
@@ -1633,6 +1644,7 @@ export default function App() {
                 onImportPlan={setImportedPlan}
                 gscData={gscData}
                 gscError={gscError}
+                actionData={actionData}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
