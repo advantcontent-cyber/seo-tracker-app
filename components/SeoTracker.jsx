@@ -964,21 +964,70 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const { active, deliveredToDate, upcoming } = monthlyPlan(plan, month);
   const pct = plan.length ? Math.round((deliveredToDate / plan.length) * 100) : 0;
 
+  // Live GSC top queries (from Windsor's searchconsole feed) for this property,
+  // when connected. Each row is { q/k, clicks, impressions, position }. Shared by
+  // both the tracked-keyword table and the content-opportunity finder below.
+  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+  const queriesFor = (m) => {
+    if (m < 0) return null;
+    return gscData?.[client.name]?.[MO_NUM[MONTHS[m]]]?.topQueries ?? null;
+  };
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const curQueries = queriesFor(month);
+
   // Content opportunities: queries with proven demand (impressions) leaking
   // clicks because they sit below the top of page 1. Gap = the extra clicks we'd
   // capture at position 3. Blog-intent picks become the month's suggested posts.
-  const opps = client.keywords
-    .map((kw) => {
-      const pos = kwPos(kw, month);
-      const impressions = kw.v;
-      const curClicks = Math.round(impressions * ctrFor(pos));
+  // Uses real GSC queries when connected (impressions + position are real, clicks
+  // straight from GSC), else the mock keyword set with kw.v as the demand proxy.
+  const opps = (curQueries
+    ? curQueries.map((row) => {
+        const k = row.k ?? row.q;
+        const pos = row.position;
+        const impressions = Math.round(row.impressions ?? 0);
+        const curClicks = Math.round(row.clicks ?? 0);
+        return { k, pos, impressions, curClicks };
+      })
+    : client.keywords.map((kw) => {
+        const pos = kwPos(kw, month);
+        const impressions = kw.v;
+        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)) };
+      })
+  )
+    .map(({ k, pos, impressions, curClicks }) => {
       const gap = Math.max(0, Math.round(impressions * ctrFor(Math.min(pos, 3))) - curClicks);
-      const intent = intentOf(kw.k);
-      return { k: kw.k, pos, impressions, gap, intent, url: pageUrl(client.domain, kw.k, intent) };
+      const intent = intentOf(k);
+      return { k, pos: round1(pos), impressions, gap, intent, url: pageUrl(client.domain, k, intent) };
     })
     .filter((o) => o.gap > 0)
     .sort((a, b) => b.gap - a.gap);
   const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
+
+  // Tracked keywords: real GSC top queries when connected, else the mock set.
+  // change is the query's position shift vs the previous month (positive = moved
+  // up the page).
+  const trackedKeywords = curQueries
+    ? [...curQueries]
+        .sort((a, b) => b.clicks - a.clicks) // most-clicked queries first for the table
+        .slice(0, 25)
+        .map((row) => {
+          const prevRow = queriesFor(month - 1)?.find((p) => p.q === row.q);
+          return {
+            k: row.k ?? row.q,
+            pos: round1(row.position),
+            change: prevRow ? round1(prevRow.position - row.position) : 0,
+            clicks: Math.round(row.clicks),
+          };
+        })
+    : client.keywords.map((kw) => {
+        const pos = kwPos(kw, month);
+        return {
+          k: kw.k,
+          pos,
+          change: month > 0 ? kwPos(kw, month - 1) - pos : 0,
+          clicks: kwClicks(kw, pos),
+        };
+      });
 
   return (
     <div>
@@ -1184,7 +1233,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
             Tracked keywords
           </h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>{client.keywords.length} tracked</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>
+            {trackedKeywords.length} {curQueries ? "from GSC" : "tracked"}
+          </span>
         </div>
         <div
           className="grid items-center px-5 py-2"
@@ -1201,34 +1252,30 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           <span className="uppercase text-right">Change</span>
           <span className="uppercase text-right">Clicks</span>
         </div>
-        {client.keywords.map((kw, i) => {
-          const pos = kwPos(kw, month);
-          const change = month > 0 ? kwPos(kw, month - 1) - pos : 0; // positive = improved
-          return (
-            <div
-              key={kw.k}
-              className="grid items-center px-5 py-3"
-              style={{
-                gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
-                borderTop: i ? `1px solid ${C.line}` : "none",
-              }}
-            >
-              <span style={{ color: C.ink, fontSize: 14 }} className="truncate">
-                {kw.k}
-              </span>
-              <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
-                {pos}
-              </span>
-              <span className="flex justify-end">
-                {/* invert: a smaller position number is an improvement */}
-                <Delta value={change} invert />
-              </span>
-              <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right">
-                {fmt(kwClicks(kw, pos))}
-              </span>
-            </div>
-          );
-        })}
+        {trackedKeywords.map((kw, i) => (
+          <div
+            key={kw.k}
+            className="grid items-center px-5 py-3"
+            style={{
+              gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
+              borderTop: i ? `1px solid ${C.line}` : "none",
+            }}
+          >
+            <span style={{ color: C.ink, fontSize: 14 }} className="truncate">
+              {kw.k}
+            </span>
+            <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
+              {kw.pos}
+            </span>
+            <span className="flex justify-end">
+              {/* invert: a smaller position number is an improvement */}
+              <Delta value={kw.change} invert />
+            </span>
+            <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right">
+              {fmt(kw.clicks)}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* Content opportunities */}

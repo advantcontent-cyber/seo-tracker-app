@@ -73,7 +73,10 @@ export async function GET() {
       };
     }
 
-    // Per-query — top 20 by clicks per property/month
+    // Per-query — top 100 by impressions per property/month. Impressions (not
+    // clicks) is the demand signal the content-opportunity finder ranks on, and
+    // any high-click query has high impressions too, so this superset also covers
+    // the tracked-keyword table (which re-sorts by clicks on the client).
     const buckets = {};
     for (const row of queryRows) {
       const name = PROPERTY_MAP[row.account_name];
@@ -94,8 +97,8 @@ export async function GET() {
       for (const [mo, rows] of Object.entries(months)) {
         if (result[name]?.[mo]) {
           result[name][mo].topQueries = rows
-            .sort((a, b) => b.clicks - a.clicks)
-            .slice(0, 20);
+            .sort((a, b) => b.impressions - a.impressions)
+            .slice(0, 100);
         }
       }
     }
