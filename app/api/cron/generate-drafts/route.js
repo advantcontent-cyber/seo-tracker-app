@@ -9,6 +9,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { fetchGscData } from "../../../../lib/gsc";
 import { selectBlogKeywords, generateDraft } from "../../../../lib/drafting";
+import { getServiceAccount, createGoogleDoc } from "../../../../lib/google";
 
 export const maxDuration = 300; // allow time for several LLM calls
 
@@ -31,12 +32,17 @@ export async function GET(request) {
   const summary = { generated: [], skipped: [], errors: [] };
 
   try {
+    // Google Docs creation is optional — only if a service account is configured.
+    const googleEnabled = !!getServiceAccount();
+
     // 1. GSC data + the brand voice profiles that gate which clients we draft for.
     const [{ data: gscData }, profilesRes] = await Promise.all([
       fetchGscData(),
-      admin.from("seo_voice_profiles").select("client_name, profile"),
+      admin.from("seo_voice_profiles").select("client_name, profile, drive_folder_id"),
     ]);
-    const profiles = Object.fromEntries((profilesRes.data ?? []).map((p) => [p.client_name, p.profile]));
+    const profiles = Object.fromEntries(
+      (profilesRes.data ?? []).map((p) => [p.client_name, { profile: p.profile, folderId: p.drive_folder_id }])
+    );
 
     // 2. Existing drafts — never regenerate a keyword we've already drafted.
     const { data: existing } = await admin
@@ -62,10 +68,29 @@ export async function GET(request) {
           const draft = await generateDraft({
             clientName,
             keyword: pick.keyword,
-            voiceProfile: profiles[clientName],
+            voiceProfile: profiles[clientName].profile,
             rankingPage: pick.page,
             apiKey,
           });
+
+          // Create an editable Google Doc when a service account is configured;
+          // otherwise the draft lives as in-app body text (/draft/<id>).
+          let draftUrl = null;
+          if (googleEnabled) {
+            try {
+              const docText =
+                `${draft.title}\n\n` +
+                (draft.meta ? `META: ${draft.meta}\n\n` : "") +
+                `${draft.body}`;
+              draftUrl = await createGoogleDoc({
+                title: `[DRAFT] ${draft.title}`,
+                text: docText,
+                folderId: profiles[clientName].folderId,
+              });
+            } catch (docErr) {
+              summary.errors.push(`${clientName}: "${pick.keyword}" Doc — ${docErr.message}`);
+            }
+          }
 
           const { error: upErr } = await admin
             .from("seo_blog_drafts")
@@ -75,12 +100,13 @@ export async function GET(request) {
               title:       draft.title,
               meta:        draft.meta,
               draft_body:  draft.body,
+              ...(draftUrl ? { draft_url: draftUrl } : {}),
               status:      "drafting",
               updated_at:  new Date().toISOString(),
             }, { onConflict: "client_name,keyword" });
 
           if (upErr) throw upErr;
-          summary.generated.push(`${clientName}: "${pick.keyword}"`);
+          summary.generated.push(`${clientName}: "${pick.keyword}"${draftUrl ? " (+Doc)" : ""}`);
           existingSet.add(key);
         } catch (err) {
           summary.errors.push(`${clientName}: "${pick.keyword}" — ${err.message}`);

@@ -183,12 +183,15 @@ do update set title = excluded.title, draft_url = excluded.draft_url, status = e
 -- voice — that text is the source of truth the pipeline reads.
 -- ==================================================================
 create table if not exists public.seo_voice_profiles (
-  id          uuid primary key default gen_random_uuid(),
-  client_name text not null unique,
-  profile     text not null,
-  doc_url     text,
-  updated_at  timestamptz default now()
+  id              uuid primary key default gen_random_uuid(),
+  client_name     text not null unique,
+  profile         text not null,
+  doc_url         text,
+  drive_folder_id text,   -- Drive folder where the cron creates this client's draft Docs
+  updated_at      timestamptz default now()
 );
+
+alter table public.seo_voice_profiles add column if not exists drive_folder_id text;
 
 alter table public.seo_voice_profiles enable row level security;
 
@@ -211,7 +214,7 @@ create policy "Service role can manage voice profiles"
 
 -- Seed the IC Khao Yai voice profile (mirror of the Drive doc). Re-running
 -- updates the text/link in place.
-insert into public.seo_voice_profiles (client_name, profile, doc_url)
+insert into public.seo_voice_profiles (client_name, profile, doc_url, drive_folder_id)
 values (
   'IC Khao Yai',
   $$VOICE PROFILE — INTERCONTINENTAL KHAO YAI RESORT
@@ -235,7 +238,8 @@ EEAT (CRITICAL): Scaffold genuine Experience/Expertise/Authority/Trust; a human 
 DRAFTING RULES: Open with story/scene not a pitch. One target keyword used naturally in title, intro and one H2 — never stuff. Add an FAQ block where useful. End with a gentle on-brand CTA. Leave clearly-marked placeholders for facts to verify and internal links. Run the in-voice/off-voice test before finishing.
 
 IN-VOICE EXAMPLE: "From misted morning trails to the quiet of the vineyards at dusk, Khao Yai rewards those who slow down — and there's no better base for it than a heritage sanctuary in the hills."$$,
-  $$https://docs.google.com/document/d/1jlb56NeGq3lR0M8IMSda8FzrW3oeRBPGCq9UgGHKAkc/edit$$
+  $$https://docs.google.com/document/d/1jlb56NeGq3lR0M8IMSda8FzrW3oeRBPGCq9UgGHKAkc/edit$$,
+  $$1u_hrOM27T3r4gCvXQ-fE1FTVi9iq9Yx3$$
 )
 on conflict (client_name)
-do update set profile = excluded.profile, doc_url = excluded.doc_url, updated_at = now();
+do update set profile = excluded.profile, doc_url = excluded.doc_url, drive_folder_id = excluded.drive_folder_id, updated_at = now();
