@@ -964,7 +964,7 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1352,7 +1352,12 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           </div>
           {blogPicks.length ? (
             <div className="grid md:grid-cols-2 gap-3">
-              {blogPicks.map((o) => (
+              {blogPicks.map((o) => {
+                const draft = blogDrafts?.[client.name]?.[o.k.toLowerCase()];
+                const draftLabel = draft
+                  ? { planned: "Draft planned", drafting: "Draft ready", live: "Published" }[draft.status] || "Draft ready"
+                  : null;
+                return (
                 <div key={o.k} className="rounded-lg p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
                   <span
                     className="rounded-full px-1.5 py-0.5"
@@ -1361,7 +1366,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                     BLOG POST
                   </span>
                   <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 17 }} className="mt-2 leading-snug">
-                    {titleCase(o.k)}
+                    {draft?.title || titleCase(o.k)}
                   </div>
                   <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
                     Write a post targeting “{o.k}” · {fmt(o.impressions)} impressions/mo
@@ -1369,8 +1374,25 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                   <div style={{ color: C.healthy, fontSize: 13 }} className="mt-1.5 font-medium">
                     +{fmt(o.gap)} clicks/mo potential
                   </div>
+                  {draft?.url ? (
+                    <a
+                      href={draft.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 mt-2.5 rounded-full px-2.5 py-1 hover:opacity-80 transition-opacity"
+                      style={{ background: "rgba(0,119,200,0.1)", color: C.accent, fontSize: 11.5, fontWeight: 600 }}
+                    >
+                      <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                      {draftLabel} — view
+                    </a>
+                  ) : (
+                    <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-2.5">
+                      No draft yet
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p style={{ color: C.muted, fontSize: 13 }}>
@@ -1490,6 +1512,7 @@ export default function App() {
   const [gscData, setGscData] = useState(null);
   const [gscError, setGscError] = useState(null);
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
+  const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
 
   // Fetch live GSC data once on mount.
   useEffect(() => {
@@ -1504,6 +1527,14 @@ export default function App() {
     fetch("/api/action-items")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setActionData(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch blog-post drafts (Google Doc links) once on mount.
+  useEffect(() => {
+    fetch("/api/blog-drafts")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setBlogDrafts(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1599,6 +1630,7 @@ export default function App() {
                 gscData={gscData}
                 gscError={gscError}
                 actionData={actionData}
+                blogDrafts={blogDrafts}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />

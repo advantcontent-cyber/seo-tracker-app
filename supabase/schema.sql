@@ -120,3 +120,51 @@ from (values
   ('IC Khao Yai', $$Pursue Thai travel press and brand links$$, $$Local press plus InterContinental brand equity to build referring domains from 138.$$, 'Off-page', 'med', 'todo', 5)
 ) as v(client_name, task, detail, category, priority, status, sort_order)
 where not exists (select 1 from public.seo_action_items);
+
+-- ==================================================================
+-- SECTION 3 · seo_blog_drafts  — RUN THIS to link Suggested-post drafts
+-- Maps a suggested blog keyword to its Google Doc draft + status. The
+-- Suggested-posts cards show a "View draft" link when a row exists for
+-- that client + keyword. Keyword is stored lowercase to match GSC query
+-- text. Edit/add rows in the Table editor as drafts are written.
+-- status: planned · drafting · live
+-- ==================================================================
+create table if not exists public.seo_blog_drafts (
+  id          uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  keyword     text not null,
+  title       text,
+  draft_url   text,
+  status      text not null default 'drafting' check (status in ('planned', 'drafting', 'live')),
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now(),
+  unique (client_name, keyword)
+);
+
+alter table public.seo_blog_drafts enable row level security;
+
+drop policy if exists "Read blog drafts for allowed clients" on public.seo_blog_drafts;
+create policy "Read blog drafts for allowed clients"
+  on public.seo_blog_drafts for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_blog_drafts.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage blog drafts" on public.seo_blog_drafts;
+create policy "Service role can manage blog drafts"
+  on public.seo_blog_drafts for all
+  using (true) with check (true);
+
+-- Seed the IC Khao Yai pilot drafts (Google Docs created June 2026).
+-- Re-running is safe: on conflict updates the link/status in place.
+insert into public.seo_blog_drafts (client_name, keyword, title, draft_url, status)
+values
+  ('IC Khao Yai', 'weekend getaways near me', $$Weekend Getaways Near Me: Why Khao Yai Is Bangkok's Best Escape$$, $$https://docs.google.com/document/d/1VvhWF4PvlIwWzwobH0sV-ScWOF_nZU71nMyH2gu0Nkg/edit$$, 'drafting'),
+  ('IC Khao Yai', 'things to do in khao yai', $$Things to Do in Khao Yai: The Complete 2026 Guide$$, $$https://docs.google.com/document/d/1jBQfwT05iFxUQPs7DmJf1u59-ldlfvu8T6XcjKYmO4w/edit$$, 'drafting')
+on conflict (client_name, keyword)
+do update set title = excluded.title, draft_url = excluded.draft_url, status = excluded.status, updated_at = now();
