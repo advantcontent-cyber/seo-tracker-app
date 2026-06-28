@@ -1,5 +1,19 @@
--- SEO Tracker: user roles table
--- Run this in Supabase SQL editor: https://supabase.com/dashboard/project/ahicabzyywflthxglfwv/sql
+-- SEO Tracker schema — Supabase SQL editor:
+--   https://supabase.com/dashboard/project/ahicabzyywflthxglfwv/sql
+--
+-- This file is split into two sections:
+--   1. seo_user_roles    — ALREADY APPLIED. Do NOT re-run (see note below).
+--   2. seo_action_items  — run this section to enable the live Action plan.
+-- Every statement is idempotent (if-not-exists / drop-policy-if-exists), so
+-- re-running a section is safe EXCEPT for the user-role seed, which is why
+-- section 1 carries no insert and is marked applied.
+
+-- ==================================================================
+-- SECTION 1 · seo_user_roles  — ALREADY APPLIED IN PRODUCTION
+-- Roles + the admin user row are already seeded. Skip this section; it's
+-- kept here only as the source-of-truth definition. Re-running the admin
+-- seed elsewhere is what caused the "duplicate key (user_id)" error.
+-- ==================================================================
 
 -- User roles: maps a Supabase auth user to admin or a specific client
 create table if not exists public.seo_user_roles (
@@ -14,22 +28,25 @@ create table if not exists public.seo_user_roles (
 -- RLS: users can only read their own role
 alter table public.seo_user_roles enable row level security;
 
+drop policy if exists "Users can read own role" on public.seo_user_roles;
 create policy "Users can read own role"
   on public.seo_user_roles for select
   using (auth.uid() = user_id);
 
 -- Service role can insert/update (used by admin setup)
+drop policy if exists "Service role can manage roles" on public.seo_user_roles;
 create policy "Service role can manage roles"
   on public.seo_user_roles for all
   using (true)
   with check (true);
 
--- ------------------------------------------------------------------
--- Action items: the per-client SEO task list shown in the Action plan.
--- This is the team's own work tracker (not crawl/GSC output), so it's a
--- distinct table the team edits in Supabase. The dashboard reads it live.
+-- ==================================================================
+-- SECTION 2 · seo_action_items  — RUN THIS to enable the live Action plan
+-- The team's own work tracker (not crawl/GSC output), edited in the
+-- Supabase Table editor. The dashboard reads it live. Safe to re-run:
+-- the table is if-not-exists and the seed only inserts when empty.
 -- cat: Technical · On-page · Content · Off-page · Local · International
--- ------------------------------------------------------------------
+-- ==================================================================
 create table if not exists public.seo_action_items (
   id          uuid primary key default gen_random_uuid(),
   client_name text not null,
@@ -49,6 +66,7 @@ create index if not exists seo_action_items_client_idx
 alter table public.seo_action_items enable row level security;
 
 -- Admins read all; client users read only their own client's items.
+drop policy if exists "Read action items for allowed clients" on public.seo_action_items;
 create policy "Read action items for allowed clients"
   on public.seo_action_items for select
   to authenticated
@@ -61,6 +79,7 @@ create policy "Read action items for allowed clients"
   );
 
 -- Service role (the API route) can read/write everything.
+drop policy if exists "Service role can manage action items" on public.seo_action_items;
 create policy "Service role can manage action items"
   on public.seo_action_items for all
   using (true)
