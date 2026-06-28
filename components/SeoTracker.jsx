@@ -1337,21 +1337,11 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                     {titleCase(o.k)}
                   </div>
                   <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
-                    Targets “{o.k}” · position {o.pos} · {fmt(o.impressions)} impressions
+                    Write a post targeting “{o.k}” · {fmt(o.impressions)} impressions/mo
                   </div>
                   <div style={{ color: C.healthy, fontSize: 13 }} className="mt-1.5 font-medium">
                     +{fmt(o.gap)} clicks/mo potential
                   </div>
-                  <a
-                    href={o.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 mt-2 hover:opacity-70 transition-opacity"
-                    style={{ color: C.accent, fontSize: 11.5 }}
-                  >
-                    <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                    <span className="truncate">{shortUrl(o.url)}</span>
-                  </a>
                 </div>
               ))}
             </div>
