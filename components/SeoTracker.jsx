@@ -273,9 +273,57 @@ const momPct = (c, m) => {
 // Per-query GSC clicks: query demand (kw.v) filtered through CTR at its position.
 const kwClicks = (kw, pos) => Math.round(kw.v * ctrFor(pos));
 
-// Slugify a string for filenames / blog-plan URLs.
+// Rough query-intent classifier. Informational queries want an article; the
+// rest are commercial and want an optimised hotel/category page. A first pass —
+// editorially overridable, exactly the kind of judgement a human refines.
+const INFO_HINTS = [
+  "things to do", "guide", "tips", "itinerary", "getaway", "honeymoon", "romantic",
+  "family", "adventure", "vineyard", "wine", "northern lights", "staycation",
+  "history", "what to", "how to", "tours",
+  // Thai informational cues — places to visit, travel, reviews, how-to.
+  "ที่เที่ยว", "เที่ยว", "รีวิว", "วิธี", "การเดินทาง",
+];
+const intentOf = (k) => (INFO_HINTS.some((h) => k.toLowerCase().includes(h)) ? "blog" : "optimise");
+const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Queries with real impressions that are NOT content opportunities: weather
+// lookups and map/navigation intent. Substring match, EN + TH, editorially
+// editable. Filtered out of the opportunity finder (kept in tracked keywords).
+const NOISE_HINTS = [
+  "weather", "forecast", "temperature", "humidity", "rain",
+  "สภาพอากาศ", "อากาศ", "พยากรณ์", "อุณหภูมิ", "ฝนตก", // weather / forecast / temp / rain
+  "map", "directions", "แผนที่", "เส้นทาง",             // maps & directions = navigational
+];
+const isNoiseQuery = (k) => {
+  const s = k.toLowerCase();
+  return NOISE_HINTS.some((h) => s.includes(h));
+};
+
+// Branded/navigational queries: the searcher already knows the property, so these
+// aren't content opportunities to chase. Per-client and editable.
+const BRAND_TERMS = {
+  "Shinta Mani Wild": ["shinta mani", "shintamani", "bensley"],
+  "Nomad Greenland":  ["nomad greenland", "nomadgreenland"],
+  "Sora Sukhumvit":   ["sora sukhumvit", "sora hotel", "sorahotels"],
+  "IC Khao Yai":      ["intercontinental khao yai", "ic khao yai", "intercontinental"],
+};
+const isBrandQuery = (clientName, k) => {
+  const s = k.toLowerCase();
+  return (BRAND_TERMS[clientName] || []).some((b) => s.includes(b));
+};
+
+// Build the page/post URL for a query. In production this is GSC's ranking_url
+// (the page actually surfacing); here it's derived from the domain + a slug —
+// existing page for "optimise", a proposed /blog/ path for "blog".
 const slugify = (s) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+const pageUrl = (domain, query, intent) => {
+  const base = `https://${domain.replace(/\/+$/, "")}`;
+  const slug = slugify(query);
+  if (!slug) return base;
+  return intent === "blog" ? `${base}/blog/${slug}` : `${base}/${slug}`;
+};
+const shortUrl = (u) => u.replace(/^https?:\/\//, "");
 
 // Back-cast a tracked keyword's position to month m (kw.d>0 means it improved).
 const kwPos = (kw, m) => Math.max(1, kw.p + kw.d * (LAST - m));
@@ -947,8 +995,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const pct = plan.length ? Math.round((deliveredToDate / plan.length) * 100) : 0;
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
-  // when connected. Each row is { q/k, clicks, impressions, position }. Drives
-  // the tracked-keyword table below.
+  // when connected. Each row is { q/k, clicks, impressions, position }. Shared by
+  // both the tracked-keyword table and the content-opportunity finder below.
   const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
   const queriesFor = (m) => {
     if (m < 0) return null;
@@ -956,6 +1004,35 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   };
   const round1 = (n) => Math.round(n * 10) / 10;
   const curQueries = queriesFor(month);
+
+  // Content opportunities: queries with proven demand (impressions) leaking
+  // clicks because they sit below the top of page 1. Gap = the extra clicks we'd
+  // capture at position 3. Blog-intent picks become the month's suggested posts.
+  // Uses real GSC queries when connected (impressions + position are real, clicks
+  // straight from GSC), else the mock keyword set with kw.v as the demand proxy.
+  const opps = (curQueries
+    ? curQueries.map((row) => {
+        const k = row.k ?? row.q;
+        const pos = row.position;
+        const impressions = Math.round(row.impressions ?? 0);
+        const curClicks = Math.round(row.clicks ?? 0);
+        return { k, pos, impressions, curClicks, page: row.page ?? null };
+      })
+    : client.keywords.map((kw) => {
+        const pos = kwPos(kw, month);
+        const impressions = kw.v;
+        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)), page: null };
+      })
+  )
+    .map(({ k, pos, impressions, curClicks, page }) => {
+      const gap = Math.max(0, Math.round(impressions * ctrFor(Math.min(pos, 3))) - curClicks);
+      const intent = intentOf(k);
+      // Prefer GSC's real ranking URL; fall back to a derived slug for mock data.
+      return { k, pos: round1(pos), impressions, gap, intent, url: page || pageUrl(client.domain, k, intent) };
+    })
+    .filter((o) => o.gap > 0 && !isNoiseQuery(o.k) && !isBrandQuery(client.name, o.k))
+    .sort((a, b) => b.gap - a.gap);
+  const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
 
   // Tracked keywords: real GSC top queries when connected, else the mock set.
   // change is the query's position shift vs the previous month (positive = moved
@@ -1230,6 +1307,124 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Content opportunities */}
+      <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
+            Content opportunities
+          </h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>High-impression queries leaking clicks</span>
+        </div>
+
+        {/* Suggested posts for the month */}
+        <div className="px-5 py-4" style={{ background: C.bg, borderBottom: `1px solid ${C.line}` }}>
+          <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase font-medium mb-2.5">
+            Suggested posts · {MONTH_FULL[MONTHS[month]]} {YEAR} · 2 / month
+          </div>
+          {blogPicks.length ? (
+            <div className="grid md:grid-cols-2 gap-3">
+              {blogPicks.map((o) => (
+                <div key={o.k} className="rounded-lg p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+                  <span
+                    className="rounded-full px-1.5 py-0.5"
+                    style={{ background: "rgba(31,78,74,0.1)", color: C.accent, fontSize: 10, fontWeight: 600 }}
+                  >
+                    BLOG POST
+                  </span>
+                  <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 17 }} className="mt-2 leading-snug">
+                    {titleCase(o.k)}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
+                    Targets “{o.k}” · position {o.pos} · {fmt(o.impressions)} impressions
+                  </div>
+                  <div style={{ color: C.healthy, fontSize: 13 }} className="mt-1.5 font-medium">
+                    +{fmt(o.gap)} clicks/mo potential
+                  </div>
+                  <a
+                    href={o.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 hover:opacity-70 transition-opacity"
+                    style={{ color: C.accent, fontSize: 11.5 }}
+                  >
+                    <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                    <span className="truncate">{shortUrl(o.url)}</span>
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: C.muted, fontSize: 13 }}>
+              No clear blog opportunity in the tracked set this month — the full GSC query export would surface more.
+            </p>
+          )}
+        </div>
+
+        {/* All opportunities, ranked by click upside */}
+        <div
+          className="grid items-center px-5 py-2"
+          style={{
+            gridTemplateColumns: "2fr 1fr 0.8fr 0.5fr 0.9fr",
+            color: C.faint,
+            fontSize: 11.5,
+            letterSpacing: "0.04em",
+            borderBottom: `1px solid ${C.line}`,
+          }}
+        >
+          <span className="uppercase">Query</span>
+          <span className="uppercase">Action</span>
+          <span className="uppercase text-right">Impr.</span>
+          <span className="uppercase text-right">Pos</span>
+          <span className="uppercase text-right">+ Clicks</span>
+        </div>
+        {opps.slice(0, 8).map((o, i) => (
+          <div
+            key={o.k}
+            className="grid items-center px-5 py-3"
+            style={{ gridTemplateColumns: "2fr 1fr 0.8fr 0.5fr 0.9fr", borderTop: i ? `1px solid ${C.line}` : "none" }}
+          >
+            <a
+              href={o.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 min-w-0 hover:opacity-70 transition-opacity"
+              style={{ color: C.ink, fontSize: 14 }}
+            >
+              <span className="truncate">{o.k}</span>
+              <ExternalLink size={12} style={{ color: C.faint, flexShrink: 0 }} />
+            </a>
+            <span>
+              <span
+                className="rounded-full px-2 py-0.5"
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  background: o.intent === "blog" ? "rgba(31,78,74,0.1)" : "#fff",
+                  color: o.intent === "blog" ? C.accent : C.muted,
+                  border: o.intent === "blog" ? "none" : `1px solid ${C.line}`,
+                }}
+              >
+                {o.intent === "blog" ? "Blog post" : "Optimise page"}
+              </span>
+            </span>
+            <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right">
+              {fmt(o.impressions)}
+            </span>
+            <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
+              {o.pos}
+            </span>
+            <span style={{ color: C.healthy, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
+              +{fmt(o.gap)}
+            </span>
+          </div>
+        ))}
+        {opps.length === 0 && (
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13.5 }}>
+            Every tracked query is already near the top this month — no significant click gap to chase.
+          </div>
+        )}
       </div>
 
       {/* Action plan — scoped to the selected month */}
