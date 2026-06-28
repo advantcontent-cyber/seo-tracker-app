@@ -168,3 +168,68 @@ values
   ('IC Khao Yai', 'things to do in khao yai', $$Things to Do in Khao Yai: The Complete 2026 Guide$$, $$https://docs.google.com/document/d/1jBQfwT05iFxUQPs7DmJf1u59-ldlfvu8T6XcjKYmO4w/edit$$, 'drafting')
 on conflict (client_name, keyword)
 do update set title = excluded.title, draft_url = excluded.draft_url, status = excluded.status, updated_at = now();
+
+-- ==================================================================
+-- SECTION 4 · seo_voice_profiles  — brand voice per client
+-- The drafting pipeline injects `profile` into every blog draft so the
+-- output matches the property's brand voice. `doc_url` is a human-readable
+-- mirror in Drive. Edit `profile` here (or via the Table editor) to tune
+-- voice — that text is the source of truth the pipeline reads.
+-- ==================================================================
+create table if not exists public.seo_voice_profiles (
+  id          uuid primary key default gen_random_uuid(),
+  client_name text not null unique,
+  profile     text not null,
+  doc_url     text,
+  updated_at  timestamptz default now()
+);
+
+alter table public.seo_voice_profiles enable row level security;
+
+drop policy if exists "Read voice profiles for allowed clients" on public.seo_voice_profiles;
+create policy "Read voice profiles for allowed clients"
+  on public.seo_voice_profiles for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_voice_profiles.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage voice profiles" on public.seo_voice_profiles;
+create policy "Service role can manage voice profiles"
+  on public.seo_voice_profiles for all
+  using (true) with check (true);
+
+-- Seed the IC Khao Yai voice profile (mirror of the Drive doc). Re-running
+-- updates the text/link in place.
+insert into public.seo_voice_profiles (client_name, profile, doc_url)
+values (
+  'IC Khao Yai',
+  $$VOICE PROFILE — INTERCONTINENTAL KHAO YAI RESORT
+
+POSITIONING: A luxury heritage resort where "classic elegance and luxury meet storytelling." Two pillars: HERITAGE (the golden age of first-class rail travel, expressed in 12 suites built from upcycled century-old North-Eastern Thai train carriages — "Unrivalled Luxury, Unbound Serenity") and NATURE (Khao Yai's tranquil lakes, forested hills and waterfalls; the resort as a "natural sanctuary"). The property is a JOURNEY and a SANCTUARY, not just a place to stay.
+
+AUDIENCE: Affluent, experience-driven travellers — couples, families, design- and nature-lovers — from Bangkok and internationally. They value craft, story and authenticity over flash and discounts.
+
+TONE: Sophisticated yet inviting (never cold/corporate); romantic & narrative-driven; nostalgic meets contemporary (reminiscence, bygone luxury, Victorian era); calm, restorative, aspirational; authentic over brand-speak.
+
+VOICE PRINCIPLES: (1) Lead with story, not sell. (2) Let nature and heritage do the work. (3) Sensory and evocative but precise. (4) Warm second person — invite, don't instruct. (5) Equal weight to setting and substance.
+
+VOCABULARY — USE: reconnect, sanctuary, immersive, heritage, curated, elegant, tranquil, serene, breathtaking, sweeping, sprawling, enchanting, distinctive, journey, storytelling, reminiscence, bygone luxury, gastronomic adventure, locally sourced, indigenous to the region, picturesque. BRANDED: Swan Lake; upcycled heritage railcar suites; InterContinental Khao Yai Resort (full name on first mention). AVOID: hype/cheap words (amazing, awesome, deal, cheap, best-ever), aggressive CTAs (BUY NOW, don't miss out), generic filler, untrue clichés.
+
+STYLE: Mix short confident declarations with longer flowing sentences. Headings evocative but clear (benefit + place). POV "you"; "we" only as the resort's voice. Structure: subject → heritage/design story → specific detail → view/location advantage. Numbers welcome for credibility.
+
+THEMES: Heritage storytelling (railway/golden age) · natural sanctuary & reconnection · luxury design · culinary craftsmanship (locally sourced) · lakeside living (Swan Lake).
+
+EEAT (CRITICAL): Scaffold genuine Experience/Expertise/Authority/Trust; a human completes and verifies. Attribute to a REAL author (resort team member / local expert) — never a fabricated persona or invented experience. Invite verifiable first-hand specifics (real trail/waterfall names, seasonal notes). Link authoritative sources. No fabricated reviews/stats/awards/quotes. Drafts are for HUMAN REVIEW AND PUBLISHING — never auto-published.
+
+DRAFTING RULES: Open with story/scene not a pitch. One target keyword used naturally in title, intro and one H2 — never stuff. Add an FAQ block where useful. End with a gentle on-brand CTA. Leave clearly-marked placeholders for facts to verify and internal links. Run the in-voice/off-voice test before finishing.
+
+IN-VOICE EXAMPLE: "From misted morning trails to the quiet of the vineyards at dusk, Khao Yai rewards those who slow down — and there's no better base for it than a heritage sanctuary in the hills."$$,
+  $$https://docs.google.com/document/d/1jlb56NeGq3lR0M8IMSda8FzrW3oeRBPGCq9UgGHKAkc/edit$$
+)
+on conflict (client_name)
+do update set profile = excluded.profile, doc_url = excluded.doc_url, updated_at = now();
