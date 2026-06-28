@@ -1362,69 +1362,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           )}
         </div>
 
-        {/* All opportunities, ranked by click upside */}
-        <div
-          className="grid items-center px-5 py-2"
-          style={{
-            gridTemplateColumns: "2fr 1fr 0.8fr 0.5fr 0.9fr",
-            color: C.faint,
-            fontSize: 11.5,
-            letterSpacing: "0.04em",
-            borderBottom: `1px solid ${C.line}`,
-          }}
-        >
-          <span className="uppercase">Query</span>
-          <span className="uppercase">Action</span>
-          <span className="uppercase text-right">Impr.</span>
-          <span className="uppercase text-right">Pos</span>
-          <span className="uppercase text-right">+ Clicks</span>
-        </div>
-        {opps.slice(0, 8).map((o, i) => (
-          <div
-            key={o.k}
-            className="grid items-center px-5 py-3"
-            style={{ gridTemplateColumns: "2fr 1fr 0.8fr 0.5fr 0.9fr", borderTop: i ? `1px solid ${C.line}` : "none" }}
-          >
-            <a
-              href={o.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 min-w-0 hover:opacity-70 transition-opacity"
-              style={{ color: C.ink, fontSize: 14 }}
-            >
-              <span className="truncate">{o.k}</span>
-              <ExternalLink size={12} style={{ color: C.faint, flexShrink: 0 }} />
-            </a>
-            <span>
-              <span
-                className="rounded-full px-2 py-0.5"
-                style={{
-                  fontSize: 11,
-                  fontWeight: 500,
-                  background: o.intent === "blog" ? "rgba(31,78,74,0.1)" : "#fff",
-                  color: o.intent === "blog" ? C.accent : C.muted,
-                  border: o.intent === "blog" ? "none" : `1px solid ${C.line}`,
-                }}
-              >
-                {o.intent === "blog" ? "Blog post" : "Optimise page"}
-              </span>
-            </span>
-            <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right">
-              {fmt(o.impressions)}
-            </span>
-            <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
-              {o.pos}
-            </span>
-            <span style={{ color: C.healthy, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
-              +{fmt(o.gap)}
-            </span>
-          </div>
-        ))}
-        {opps.length === 0 && (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13.5 }}>
-            Every tracked query is already near the top this month — no significant click gap to chase.
-          </div>
-        )}
       </div>
 
       {/* Action plan — scoped to the selected month */}
