@@ -4,6 +4,12 @@ import { NextResponse } from "next/server";
 export async function middleware(request) {
   let response = NextResponse.next({ request });
 
+  // Cron endpoints authenticate themselves with CRON_SECRET (no user session),
+  // so skip the session/redirect logic for them.
+  if (request.nextUrl.pathname.startsWith("/api/cron")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

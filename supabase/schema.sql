@@ -134,12 +134,18 @@ create table if not exists public.seo_blog_drafts (
   client_name text not null,
   keyword     text not null,
   title       text,
-  draft_url   text,
+  meta        text,        -- SEO meta description (auto-drafts)
+  draft_body  text,        -- full draft markdown when generated in-app (no Google Doc)
+  draft_url   text,        -- Google Doc link when a doc exists
   status      text not null default 'drafting' check (status in ('planned', 'drafting', 'live')),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now(),
   unique (client_name, keyword)
 );
+
+-- For tables created before these columns existed:
+alter table public.seo_blog_drafts add column if not exists meta       text;
+alter table public.seo_blog_drafts add column if not exists draft_body text;
 
 alter table public.seo_blog_drafts enable row level security;
 

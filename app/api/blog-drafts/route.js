@@ -39,7 +39,7 @@ export async function GET() {
 
   const { data: rows, error: qErr } = await adminClient
     .from("seo_blog_drafts")
-    .select("client_name, keyword, title, draft_url, status")
+    .select("id, client_name, keyword, title, draft_url, draft_body, status")
     .in("client_name", allowed);
 
   if (qErr) {
@@ -47,13 +47,15 @@ export async function GET() {
     return Response.json({ error: qErr.message }, { status: 500 });
   }
 
-  // Shape: { [client]: { [keyword]: { title, url, status } } }, keyword lowercased
-  // so the cards can look up by the GSC query text.
+  // Shape: { [client]: { [keyword]: { id, title, url, status } } }, keyword
+  // lowercased so the cards can look up by the GSC query text. `url` prefers a
+  // Google Doc; otherwise the card falls back to the in-app /draft/<id> viewer.
   const data = {};
   for (const r of rows ?? []) {
     (data[r.client_name] ??= {})[(r.keyword || "").toLowerCase()] = {
+      id:     r.id,
       title:  r.title ?? "",
-      url:    r.draft_url ?? "",
+      url:    r.draft_url || (r.draft_body ? `/draft/${r.id}` : ""),
       status: r.status ?? "drafting",
     };
   }
