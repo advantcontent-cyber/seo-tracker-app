@@ -986,18 +986,19 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         const pos = row.position;
         const impressions = Math.round(row.impressions ?? 0);
         const curClicks = Math.round(row.clicks ?? 0);
-        return { k, pos, impressions, curClicks };
+        return { k, pos, impressions, curClicks, page: row.page ?? null };
       })
     : client.keywords.map((kw) => {
         const pos = kwPos(kw, month);
         const impressions = kw.v;
-        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)) };
+        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)), page: null };
       })
   )
-    .map(({ k, pos, impressions, curClicks }) => {
+    .map(({ k, pos, impressions, curClicks, page }) => {
       const gap = Math.max(0, Math.round(impressions * ctrFor(Math.min(pos, 3))) - curClicks);
       const intent = intentOf(k);
-      return { k, pos: round1(pos), impressions, gap, intent, url: pageUrl(client.domain, k, intent) };
+      // Prefer GSC's real ranking URL; fall back to a derived slug for mock data.
+      return { k, pos: round1(pos), impressions, gap, intent, url: page || pageUrl(client.domain, k, intent) };
     })
     .filter((o) => o.gap > 0)
     .sort((a, b) => b.gap - a.gap);

@@ -43,8 +43,10 @@ export async function GET() {
     const dateFrom = `${YEAR}-03-01`;
     const dateTo   = `${YEAR}-06-30`;
 
-    // Two calls: site-level monthly roll-up, then per-query detail
-    const [siteRows, queryRows] = await Promise.all([
+    // Three calls: site-level monthly roll-up, per-query detail, and the
+    // query→page breakdown so each query links to the page GSC actually ranks
+    // (its real landing URL) instead of a guessed slug.
+    const [siteRows, queryRows, pageRows] = await Promise.all([
       windsorGet(
         ["account_name", "year_month", "clicks", "impressions", "ctr", "position"],
         dateFrom, dateTo
@@ -53,7 +55,26 @@ export async function GET() {
         ["account_name", "year_month", "query", "clicks", "impressions", "position"],
         dateFrom, dateTo
       ),
+      windsorGet(
+        ["account_name", "year_month", "query", "page", "clicks"],
+        dateFrom, dateTo
+      ),
     ]);
+
+    // Best ranking page per query/month: the page with the most clicks for that
+    // query. This is GSC's real landing URL, so links always resolve.
+    const pageMap = {};
+    for (const row of pageRows) {
+      const name = PROPERTY_MAP[row.account_name];
+      if (!name || !row.query || !row.page) continue;
+      const mo = parseInt(String(row.year_month).split("|")[1]);
+      if (!MONTHS.includes(mo)) continue;
+      pageMap[name]     ??= {};
+      pageMap[name][mo] ??= {};
+      const clicks = row.clicks ?? 0;
+      const cur = pageMap[name][mo][row.query];
+      if (!cur || clicks > cur.clicks) pageMap[name][mo][row.query] = { page: row.page, clicks };
+    }
 
     const result = {};
 
@@ -90,6 +111,7 @@ export async function GET() {
         clicks:      row.clicks      ?? 0,
         impressions: row.impressions ?? 0,
         position:    row.position    ?? 0,
+        page:        pageMap[name]?.[mo]?.[row.query]?.page ?? null,
       });
     }
 
