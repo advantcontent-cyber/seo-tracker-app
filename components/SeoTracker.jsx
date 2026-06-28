@@ -1059,6 +1059,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
             pos: round1(row.position),
             change: prevRow ? round1(prevRow.position - row.position) : 0,
             clicks: Math.round(row.clicks),
+            page: row.page ?? null, // GSC's real ranking URL — the page to check/optimise
           };
         })
     : client.keywords.map((kw) => {
@@ -1068,6 +1069,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           pos,
           change: month > 0 ? kwPos(kw, month - 1) - pos : 0,
           clicks: kwClicks(kw, pos),
+          page: null,
         };
       });
 
@@ -1303,9 +1305,23 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               borderTop: i ? `1px solid ${C.line}` : "none",
             }}
           >
-            <span style={{ color: C.ink, fontSize: 14 }} className="truncate">
-              {kw.k}
-            </span>
+            {kw.page ? (
+              <a
+                href={kw.page}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 min-w-0 hover:opacity-70 transition-opacity"
+                style={{ color: C.ink, fontSize: 14 }}
+                title={`Ranking page: ${shortUrl(kw.page)}`}
+              >
+                <span className="truncate">{kw.k}</span>
+                <ExternalLink size={12} style={{ color: C.faint, flexShrink: 0 }} />
+              </a>
+            ) : (
+              <span style={{ color: C.ink, fontSize: 14 }} className="truncate">
+                {kw.k}
+              </span>
+            )}
             <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
               {kw.pos}
             </span>
