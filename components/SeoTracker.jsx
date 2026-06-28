@@ -299,6 +299,16 @@ const isNoiseQuery = (k) => {
   return NOISE_HINTS.some((h) => s.includes(h));
 };
 
+// A readable English keyword: Latin script only (drops Thai / other scripts),
+// with at least two real words. Filters the non-English and single-token
+// fragments that GSC's raw query export surfaces, so the tracked-keyword table
+// shows only legible, relevant terms.
+const isReadableQuery = (q) => {
+  if (!q) return false;
+  if (/[^ -ɏ]/.test(q)) return false;      // non-Latin script (Thai, CJK, …)
+  return /[a-z]+\s+[a-z]/i.test(q.trim());            // at least two words of letters
+};
+
 // Branded/navigational queries: the searcher already knows the property, so these
 // aren't content opportunities to chase. Per-client and editable.
 const BRAND_TERMS = {
@@ -1039,6 +1049,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // up the page).
   const trackedKeywords = curQueries
     ? [...curQueries]
+        .filter((row) => isReadableQuery(row.q ?? row.k)) // legible English terms only
         .sort((a, b) => b.clicks - a.clicks) // most-clicked queries first for the table
         .slice(0, 25)
         .map((row) => {
