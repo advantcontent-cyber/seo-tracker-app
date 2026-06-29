@@ -855,7 +855,7 @@ function KeywordIdeas({ client, ideas }) {
         <div>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Keyword ideas</h3>
           <div style={{ color: C.faint, fontSize: 12 }} className="mt-0.5">
-            New topics to target · SEMrush search volume · by demand
+            New topics to target · global search volume · difficulty (TH)
           </div>
         </div>
         <button
@@ -866,7 +866,10 @@ function KeywordIdeas({ client, ideas }) {
           Add to plan (CSV)
         </button>
       </div>
-      {ideas.map((o, i) => (
+      {ideas.map((o, i) => {
+        // SEMrush KD bands: <30 easy (green), 30–59 moderate, 60+ hard (red).
+        const kdColor = o.kd == null ? C.faint : o.kd >= 60 ? C.risk : o.kd >= 30 ? C.watch : C.healthy;
+        return (
         <div
           key={o.keyword}
           className="flex items-center justify-between gap-4 px-5 py-3"
@@ -876,18 +879,28 @@ function KeywordIdeas({ client, ideas }) {
             <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 16 }} className="leading-snug truncate">
               {o.title}
             </div>
-            <div style={{ color: C.muted, fontSize: 12 }} className="mt-0.5 truncate">
-              Targets “{o.keyword}”
+            <div className="mt-1 flex items-center gap-2 min-w-0">
+              <span style={{ color: C.muted, fontSize: 12 }} className="truncate">Targets “{o.keyword}”</span>
+              {o.kd != null && (
+                <span
+                  className="rounded-full px-1.5 py-0.5"
+                  style={{ background: `${kdColor}1a`, color: kdColor, fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}
+                  title="SEMrush keyword difficulty (Thailand) — 0 easy, 100 hard"
+                >
+                  KD {o.kd}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-right" style={{ flexShrink: 0 }}>
             <div style={{ color: C.accent, fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
               {fmt(o.volume)}
             </div>
-            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.04em" }} className="uppercase">searches/mo</div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.04em" }} className="uppercase">searches/mo · global</div>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

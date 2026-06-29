@@ -28,7 +28,7 @@ export async function GET() {
 
   const { data: rows, error: qErr } = await admin
     .from("seo_keyword_ideas")
-    .select("client_name, keyword, search_volume, suggested_title, database")
+    .select("client_name, keyword, search_volume, kd, suggested_title, database")
     .in("client_name", allowed)
     .order("search_volume", { ascending: false });
 
@@ -37,12 +37,13 @@ export async function GET() {
     return Response.json({ error: qErr.message }, { status: 500 });
   }
 
-  // Shape: { [client]: [ { keyword, volume, title, database } ] }
+  // Shape: { [client]: [ { keyword, volume (global), kd (local), title, database } ] }
   const data = {};
   for (const r of rows ?? []) {
     (data[r.client_name] ??= []).push({
       keyword:  r.keyword,
-      volume:   r.search_volume,
+      volume:   r.search_volume, // global
+      kd:       r.kd,            // local-market difficulty
       title:    r.suggested_title ?? "",
       database: r.database ?? "",
     });

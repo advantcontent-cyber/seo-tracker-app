@@ -303,21 +303,25 @@ do update set
 -- SECTION 6 · seo_keyword_ideas  — SEMrush content-keyword opportunities
 -- Brand-new keywords to target for blog content (not yet ranked for).
 -- Discovered via the SEMrush MCP (phrase_related/phrase_questions),
--- prioritised by search volume, with a formulated blog title/angle.
--- Shown on the Blog plan tab; exportable as CSV into the plan sheet.
--- The app never calls SEMrush — these are cached snapshots.
+-- with a formulated blog title/angle. search_volume is GLOBAL (summed
+-- across all SEMrush country databases via phrase_all); kd is keyword
+-- difficulty in the LOCAL market (TH). Shown on the Blog plan tab;
+-- exportable as CSV into the plan sheet. The app never calls SEMrush.
 -- ==================================================================
 create table if not exists public.seo_keyword_ideas (
   id              uuid primary key default gen_random_uuid(),
   client_name     text not null,
   keyword         text not null,
-  database        text,                 -- SEMrush regional db (e.g. 'th')
-  search_volume   int,
+  database        text,                 -- locale for kd (e.g. 'th'); volume is global
+  search_volume   int,                  -- GLOBAL search volume (sum of all databases)
+  kd              int,                  -- keyword difficulty, local market (TH), 0–100
   suggested_title text,                 -- formulated blog angle
   snapshot_date   date,
   created_at      timestamptz default now(),
   unique (client_name, keyword)
 );
+
+alter table public.seo_keyword_ideas add column if not exists kd int;
 
 alter table public.seo_keyword_ideas enable row level security;
 
@@ -336,16 +340,17 @@ drop policy if exists "Service role can manage keyword ideas" on public.seo_keyw
 create policy "Service role can manage keyword ideas"
   on public.seo_keyword_ideas for all using (true) with check (true);
 
--- Seed IC Khao Yai content ideas (TH volume, June 2026), highest volume first.
-insert into public.seo_keyword_ideas (client_name, keyword, database, search_volume, suggested_title, snapshot_date)
+-- Seed IC Khao Yai content ideas (June 2026). search_volume = GLOBAL (summed
+-- across all country databases); kd = TH keyword difficulty. Highest volume first.
+insert into public.seo_keyword_ideas (client_name, keyword, database, search_volume, kd, suggested_title, snapshot_date)
 values
-  ('IC Khao Yai', 'khao yai national park', 'th', 27100, $$Khao Yai National Park: The Complete Visitor's Guide$$, '2026-06-29'),
-  ('IC Khao Yai', 'khao yai art museum', 'th', 4400, $$Art & Culture in Khao Yai: Museums and Galleries to Visit$$, '2026-06-29'),
-  ('IC Khao Yai', 'khao yai waterfall', 'th', 3600, $$Chasing Waterfalls in Khao Yai: The Best Falls to See$$, '2026-06-29'),
-  ('IC Khao Yai', 'khao yai weather', 'th', 1900, $$Best Time to Visit Khao Yai: A Season-by-Season Guide$$, '2026-06-29'),
-  ('IC Khao Yai', 'bangkok to khao yai', 'th', 590, $$Bangkok to Khao Yai: How to Get There$$, '2026-06-29'),
-  ('IC Khao Yai', 'khao yai tour', 'th', 390, $$Khao Yai Tours & Day Trips: Ways to Explore$$, '2026-06-29'),
-  ('IC Khao Yai', 'khao yai attractions', 'th', 320, $$Top Attractions in Khao Yai Beyond the National Park$$, '2026-06-29')
+  ('IC Khao Yai', 'khao yai national park', 'th', 41440, 66, $$Khao Yai National Park: The Complete Visitor's Guide$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai art museum', 'th', 4800, 24, $$Art & Culture in Khao Yai: Museums and Galleries to Visit$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai waterfall', 'th', 3940, 27, $$Chasing Waterfalls in Khao Yai: The Best Falls to See$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai weather', 'th', 3700, 30, $$Best Time to Visit Khao Yai: A Season-by-Season Guide$$, '2026-06-29'),
+  ('IC Khao Yai', 'bangkok to khao yai', 'th', 2930, 19, $$Bangkok to Khao Yai: How to Get There$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai attractions', 'th', 1300, 25, $$Top Attractions in Khao Yai Beyond the National Park$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai tour', 'th', 1290, 30, $$Khao Yai Tours & Day Trips: Ways to Explore$$, '2026-06-29')
 on conflict (client_name, keyword) do update set
-  database = excluded.database, search_volume = excluded.search_volume,
+  database = excluded.database, search_volume = excluded.search_volume, kd = excluded.kd,
   suggested_title = excluded.suggested_title, snapshot_date = excluded.snapshot_date;
