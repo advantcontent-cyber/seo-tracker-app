@@ -845,6 +845,27 @@ function exportIdeasCsv(client, ideas) {
   }
 }
 
+// Build a 12-month plan that leads with the data-backed keyword ideas (each
+// becomes a planned post with its formulated title), then fills the remaining
+// slots with editorial angles — skipping any whose keyword an idea already
+// covers. Scheduled 2 posts/month across the plan window.
+function buildPlanFromIdeas(client, ideas) {
+  const ideaRows = (ideas || []).map((o) => ({
+    client: client.name, keyword: o.keyword, title: o.title, meta: "",
+    status: "planned", briefUrl: null, draftUrl: null, pubUrl: null,
+  }));
+  const used = new Set(ideaRows.map((r) => r.keyword.toLowerCase()));
+  const editorial = blogPlan(client)
+    .filter((r) => !used.has((r.keyword || "").toLowerCase()))
+    .map((r) => ({ ...r, status: "planned", briefUrl: null, draftUrl: null, pubUrl: null }));
+  const combined = [...ideaRows, ...editorial].slice(0, PLAN_MONTHS.length * 2);
+  combined.forEach((r, i) => {
+    const [mo, yr] = PLAN_MONTHS[Math.floor(i / 2)] || PLAN_MONTHS[PLAN_MONTHS.length - 1];
+    r.monthLabel = `${mo} ${yr}`;
+  });
+  return combined;
+}
+
 // Keyword-opportunities panel: SEMrush content ideas (volume-ranked) with a
 // formulated title, plus a CSV export into the blog plan.
 function KeywordIdeas({ client, ideas }) {
@@ -950,6 +971,11 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
             <button onClick={() => onImport(CLIENTS.flatMap((c) => blogPlan(c)))} className="rounded-lg px-3.5 py-2 transition-opacity hover:opacity-90" style={ghostBtn}>
               Load sample
             </button>
+            {keywordIdeas.length > 0 && (
+              <button onClick={() => onImport(buildPlanFromIdeas(client, keywordIdeas))} className="rounded-lg px-3.5 py-2 transition-opacity hover:opacity-90" style={accentBtn}>
+                Build plan from ideas
+              </button>
+            )}
           </div>
           <div style={{ color: C.faint, fontSize: 12 }} className="mt-4 mb-1.5">…or paste the sheet contents</div>
           <textarea
@@ -1003,6 +1029,11 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {keywordIdeas.length > 0 && (
+            <button onClick={() => onImport(buildPlanFromIdeas(client, keywordIdeas))} className="rounded-lg px-3.5 py-2 font-medium transition-opacity hover:opacity-90" style={{ background: "#fff", color: C.accent, border: `1px solid ${C.line}`, fontSize: 13 }}>
+              Build from ideas
+            </button>
+          )}
           <button onClick={() => onImport(null)} className="rounded-lg px-3.5 py-2 font-medium transition-opacity hover:opacity-90" style={{ background: "#fff", color: C.muted, border: `1px solid ${C.line}`, fontSize: 13 }}>
             Replace sheet
           </button>

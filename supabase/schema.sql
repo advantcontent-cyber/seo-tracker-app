@@ -400,6 +400,14 @@ values
   ('IC Khao Yai', 'best time to visit khao yai', 110, 0, '2026-06-29'),
   ('IC Khao Yai', 'how to get to khao yai', 100, 0, '2026-06-29'),
   ('IC Khao Yai', 'where to eat in khao yai', 50, 0, '2026-06-29'),
-  ('IC Khao Yai', 'itinerary for khao yai', 20, null, '2026-06-29')
+  ('IC Khao Yai', 'itinerary for khao yai', 20, null, '2026-06-29'),
+  -- The Keyword-ideas keywords (data-backed) so they enrich when added to the plan.
+  ('IC Khao Yai', 'khao yai national park', 41440, 66, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai art museum', 4800, 24, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai waterfall', 3940, 27, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai weather', 3700, 30, '2026-06-29'),
+  ('IC Khao Yai', 'bangkok to khao yai', 2930, 19, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai attractions', 1300, 25, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai tour', 1290, 30, '2026-06-29')
 on conflict (client_name, keyword) do update set
   global_volume = excluded.global_volume, kd = excluded.kd, snapshot_date = excluded.snapshot_date;
