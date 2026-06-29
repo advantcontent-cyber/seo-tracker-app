@@ -243,3 +243,58 @@ IN-VOICE EXAMPLE: "From misted morning trails to the quiet of the vineyards at d
 )
 on conflict (client_name)
 do update set profile = excluded.profile, doc_url = excluded.doc_url, drive_folder_id = excluded.drive_folder_id, updated_at = now();
+
+-- ==================================================================
+-- SECTION 5 · seo_semrush_metrics  — cached SEMrush snapshots
+-- Monthly snapshot per client (kept as history so the dashboard can show
+-- month-over-month deltas). The app NEVER calls SEMrush directly — these
+-- rows are refreshed periodically via the SEMrush MCP (cheap, ~60 units/
+-- client/month) and the dashboard only reads this cache.
+-- ==================================================================
+create table if not exists public.seo_semrush_metrics (
+  id               uuid primary key default gen_random_uuid(),
+  client_name      text not null,
+  snapshot_date    date not null,
+  database         text,                 -- SEMrush regional db (e.g. 'th')
+  scope            text,                 -- 'subdomain' | 'root_domain'
+  authority_score  int,
+  organic_keywords int,
+  organic_traffic  int,
+  paid_keywords    int,
+  ref_domains      int,
+  backlinks        int,
+  semrush_rank     int,
+  created_at       timestamptz default now(),
+  unique (client_name, snapshot_date)
+);
+
+alter table public.seo_semrush_metrics enable row level security;
+
+drop policy if exists "Read semrush metrics for allowed clients" on public.seo_semrush_metrics;
+create policy "Read semrush metrics for allowed clients"
+  on public.seo_semrush_metrics for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_semrush_metrics.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage semrush metrics" on public.seo_semrush_metrics;
+create policy "Service role can manage semrush metrics"
+  on public.seo_semrush_metrics for all
+  using (true) with check (true);
+
+-- Seed IC Khao Yai's June 2026 snapshot (subdomain scope, TH database).
+insert into public.seo_semrush_metrics
+  (client_name, snapshot_date, database, scope, authority_score, organic_keywords, organic_traffic, paid_keywords, ref_domains, backlinks, semrush_rank)
+values
+  ('IC Khao Yai', '2026-06-29', 'th', 'subdomain', 62, 847, 4491, 0, 558, 2765, null)
+on conflict (client_name, snapshot_date)
+do update set
+  database = excluded.database, scope = excluded.scope, authority_score = excluded.authority_score,
+  organic_keywords = excluded.organic_keywords, organic_traffic = excluded.organic_traffic,
+  paid_keywords = excluded.paid_keywords, ref_domains = excluded.ref_domains,
+  backlinks = excluded.backlinks, semrush_rank = excluded.semrush_rank;

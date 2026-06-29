@@ -964,7 +964,7 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1072,6 +1072,17 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           page: null,
         };
       });
+
+  // Cached SEMrush snapshot for this client (null until seeded).
+  const sem = semrushData?.[client.name] || null;
+  const semTiles = sem ? [
+    { label: "Authority Score", value: sem.metrics.authority_score, delta: sem.deltas.authority_score },
+    { label: "Organic Traffic", value: sem.metrics.organic_traffic, delta: sem.deltas.organic_traffic },
+    { label: "Organic Keywords", value: sem.metrics.organic_keywords, delta: sem.deltas.organic_keywords },
+    { label: "Paid Keywords", value: sem.metrics.paid_keywords, delta: sem.deltas.paid_keywords },
+    { label: "Ref. Domains", value: sem.metrics.ref_domains, delta: sem.deltas.ref_domains },
+    { label: "Backlinks", value: sem.metrics.backlinks, delta: sem.deltas.backlinks },
+  ] : [];
 
   return (
     <div>
@@ -1270,6 +1281,35 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           </div>
         </div>
       </div>
+
+      {/* Search visibility — SEMrush (cached snapshot) */}
+      {sem && (
+        <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
+              Search visibility
+            </h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>
+              SEMrush · {sem.scope}{sem.database ? ` · ${sem.database.toUpperCase()}` : ""} · {sem.snapshotDate}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3" style={{ gap: 1, background: C.line }}>
+            {semTiles.map((t) => (
+              <div key={t.label} className="px-5 py-4" style={{ background: "#fff" }}>
+                <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase">
+                  {t.label}
+                </div>
+                <div className="flex items-baseline gap-2 mt-1.5">
+                  <span style={{ color: C.ink, fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                    {t.value == null ? "—" : fmt(t.value)}
+                  </span>
+                  {t.delta != null && <Delta value={t.delta} suffix="%" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tracked keywords */}
       <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -1513,6 +1553,7 @@ export default function App() {
   const [gscError, setGscError] = useState(null);
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
+  const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
 
   // Fetch live GSC data once on mount.
   useEffect(() => {
@@ -1535,6 +1576,14 @@ export default function App() {
     fetch("/api/blog-drafts")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setBlogDrafts(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch cached SEMrush metrics once on mount.
+  useEffect(() => {
+    fetch("/api/semrush")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setSemrushData(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1631,6 +1680,7 @@ export default function App() {
                 gscError={gscError}
                 actionData={actionData}
                 blogDrafts={blogDrafts}
+                semrushData={semrushData}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
