@@ -211,7 +211,16 @@ const ACTION_PLANS = {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 const fmt = (n) => n.toLocaleString("en-US");
+const fmtMoney = (n) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Which services each client subscribes to. Drives sidebar badges + which
+// detail tabs render. Default is SEO-only.
+const SERVICES = {
+  "IC Khao Yai": ["seo", "sem"],
+};
+const servicesOf = (name) => SERVICES[name] || ["seo"];
+const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
 
 /* ------------------------------------------------------------------ */
@@ -1098,7 +1107,177 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords }) {
+/* ------------------------------------------------------------------ */
+/*  SEM (paid search) tab — Google Ads via Windsor                      */
+/* ------------------------------------------------------------------ */
+const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+
+// Parse a campaign name like "[Advant] HK_High intent (Hotel)_Search_JUNE"
+// into a market (2-letter code) and a type (Branded / High intent / PMax).
+const campaignMarket = (name) => {
+  const m = /\]\s*([A-Za-z]{2})\b/.exec(name || "");
+  return m ? m[1].toUpperCase() : "Other";
+};
+const campaignType = (name) => {
+  const s = (name || "").toLowerCase();
+  if (s.includes("pmax") || s.includes("p-max") || s.includes("performance max")) return "PMax";
+  if (s.includes("high intent")) return "High intent";
+  if (s.includes("branded")) return "Branded";
+  return "Other";
+};
+
+// Horizontal bar breakdown (like the reference "Traffic by Website").
+function BarBreakdown({ title, rows, fmtVal }) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+      </div>
+      <div className="px-5 py-4 flex flex-col gap-3">
+        {rows.length === 0 ? (
+          <span style={{ color: C.muted, fontSize: 13 }}>No data this month.</span>
+        ) : rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-3">
+            <span style={{ color: C.muted, fontSize: 12.5, width: 92 }} className="shrink-0 truncate">{r.label}</span>
+            <div className="flex-1 rounded-full" style={{ background: C.bg, height: 8 }}>
+              <div className="rounded-full" style={{ width: `${Math.max(4, (r.value / max) * 100)}%`, height: 8, background: C.accent }} />
+            </div>
+            <span style={{ color: C.ink, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }} className="shrink-0 text-right" >{fmtVal(r.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SemTab({ client, month, semData }) {
+  const sem = semData?.[client.name];
+  const moNum = MO_NUM_MAP[MONTHS[month]];
+  const cur = sem?.monthly?.[moNum] || null;
+  const prev = month > 0 ? sem?.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]] : null;
+  const campaigns = sem?.campaigns?.[moNum] || [];
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No Google Ads data for this property/month." : "Loading paid-search data…"}
+      </div>
+    );
+  }
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const cpc  = cur && cur.clicks ? cur.spend / cur.clicks : 0;
+  const cpa  = cur && cur.conversions ? cur.spend / cur.conversions : 0;
+
+  const kpis = cur ? [
+    { label: "Spend",       value: fmtMoney(cur.spend),     delta: dPct("spend") },
+    { label: "Clicks",      value: fmt(cur.clicks),         delta: dPct("clicks") },
+    { label: "Impressions", value: fmt(cur.impressions),    delta: dPct("impressions") },
+    { label: "Conversions", value: fmt(cur.conversions),    delta: dPct("conversions") },
+  ] : [];
+
+  // Spend trend (Mar–Jun)
+  const trend = MONTHS.map((mo, i) => ({ month: MONTHS[i], spend: sem.monthly?.[MO_NUM_MAP[mo]]?.spend ?? 0 }));
+
+  // Breakdowns from this month's campaigns
+  const byKey = (keyFn) => {
+    const agg = {};
+    campaigns.forEach((c) => { const k = keyFn(c.name); agg[k] = (agg[k] || 0) + c.spend; });
+    return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  };
+  const byMarket = byKey(campaignMarket);
+  const byType   = byKey(campaignType);
+  const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? "rgba(0,119,200,0.07)" : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Secondary metrics */}
+      {cur && (
+        <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4 px-1" style={{ color: C.muted, fontSize: 13 }}>
+          <span>CTR <b style={{ color: C.ink }}>{ctr.toFixed(1)}%</b></span>
+          <span>Avg. CPC <b style={{ color: C.ink }}>${cpc.toFixed(2)}</b></span>
+          <span>Cost / conversion <b style={{ color: C.ink }}>${cpa.toFixed(2)}</b></span>
+        </div>
+      )}
+
+      {/* Spend trend + spend by market */}
+      <div className="grid lg:grid-cols-3 gap-5 mt-5">
+        <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Spend · Google Ads</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="semSpend" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={C.accent} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Area type="monotone" dataKey="spend" stroke={C.accent} strokeWidth={2} fill="url(#semSpend)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
+      </div>
+
+      {/* Spend by type + top campaigns */}
+      <div className="grid lg:grid-cols-3 gap-5 mt-5">
+        <BarBreakdown title="Spend by campaign type" rows={byType} fmtVal={fmtMoney} />
+        <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
+          </div>
+          <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+            <span className="uppercase">Campaign</span>
+            <span className="uppercase text-right">Spend</span>
+            <span className="uppercase text-right">Clicks</span>
+            <span className="uppercase text-right">Conv.</span>
+          </div>
+          {topCampaigns.length === 0 ? (
+            <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
+          ) : topCampaigns.map((c, i) => (
+            <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+              <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.conversions)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Paid-search figures from Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Conversion value isn't tracked in this account, so ROAS is omitted.
+      </p>
+    </div>
+  );
+}
+
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1281,6 +1460,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       <div className="flex items-center gap-1 mb-6" style={{ borderBottom: `1px solid ${C.line}` }}>
         {[
           ["overview", "Overview"],
+          ...(hasService(client.name, "sem") ? [["sem", "SEM"]] : []),
           ["blog", "Blog plan"],
         ].map(([id, label]) => (
           <button
@@ -1662,6 +1842,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </>
       )}
 
+      {tab === "sem" && <SemTab client={client} month={month} semData={semData} />}
+
       {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
     </div>
   );
@@ -1709,7 +1891,16 @@ function Sidebar({ clients, selected, onSelect }) {
             style={item(selected?.name === c.name)}
           >
             <StatusDot status={c.status} size={7} />
-            <span className="truncate">{c.name}</span>
+            <span className="truncate flex-1">{c.name}</span>
+            {servicesOf(c.name).map((s) => (
+              <span
+                key={s}
+                className="rounded px-1 uppercase shrink-0"
+                style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.04em", color: C.accent, background: "rgba(0,119,200,0.10)" }}
+              >
+                {s}
+              </span>
+            ))}
           </button>
         ))}
       </nav>
@@ -1732,6 +1923,7 @@ export default function App() {
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
   const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
   const [planKeywords, setPlanKeywords] = useState(null); // SEMrush volume+KD for blog-plan keywords
+  const [semData, setSemData] = useState(null); // live Google Ads (paid) metrics per client
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
 
   // Fetch live GSC data once on mount.
@@ -1779,6 +1971,14 @@ export default function App() {
     fetch("/api/semrush")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setSemrushData(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch live paid-search (Google Ads) metrics once on mount.
+  useEffect(() => {
+    fetch("/api/sem")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setSemData(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1862,6 +2062,7 @@ export default function App() {
               semrushData={semrushData}
               keywordIdeas={keywordIdeas}
               planKeywords={planKeywords}
+              semData={semData}
             />
           ) : (
             <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
