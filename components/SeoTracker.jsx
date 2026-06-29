@@ -1147,6 +1147,29 @@ function BarBreakdown({ title, rows, fmtVal }) {
   );
 }
 
+// Paid-media narrative for the month — analogous to analystRead() for organic.
+// Summarises combined Google + Meta spend, MoM, efficiency, and platform split.
+function semRead(sem, month) {
+  const cur = sem?.monthly?.[MO_NUM_MAP[MONTHS[month]]];
+  if (!cur || !cur.spend) return null;
+  const prev = month > 0 ? sem?.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]] : null;
+  const mom = prev && prev.spend ? Math.round(((cur.spend - prev.spend) / prev.spend) * 100) : null;
+  const cpc = cur.clicks ? cur.spend / cur.clicks : 0;
+  const metaShare = cur.spend ? Math.round((cur.meta.spend / cur.spend) * 100) : 0;
+  const bigger = cur.meta.spend >= cur.google.spend ? "Meta" : "Google Ads";
+  const biggerShare = Math.max(metaShare, 100 - metaShare);
+
+  const lead = mom == null
+    ? `Paid media spent ${fmtMoney(cur.spend)} across Google Ads and Meta in ${MONTH_FULL[MONTHS[month]]} — the baseline for the window`
+    : `Paid media spent ${fmtMoney(cur.spend)} across Google Ads and Meta in ${MONTH_FULL[MONTHS[month]]}, ${mom >= 0 ? "up" : "down"} ${Math.abs(mom)}% month-over-month`;
+  const mid = `driving ${fmt(cur.clicks)} clicks at a $${cpc.toFixed(2)} blended CPC`;
+  const split = `${bigger} carried the majority of spend (${biggerShare}%)`;
+  const conv = cur.google.conversions
+    ? `, with Google Ads logging ${fmt(cur.google.conversions)} tracked conversions at $${(cur.google.spend / cur.google.conversions).toFixed(2)} each`
+    : "";
+  return `${lead} — ${mid}. ${split}${conv}.`;
+}
+
 function SemTab({ client, month, semData }) {
   const [platformSel, setPlatformSel] = useState(null);
   const sem = semData?.[client.name];
@@ -1190,9 +1213,27 @@ function SemTab({ client, month, semData }) {
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
   const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
+  const read = semRead(sem, month);
 
   return (
     <div>
+      {/* Paid read — combined Google + Meta narrative for the month */}
+      {read && (
+        <div className="rounded-lg p-5 mb-6" style={{ background: C.accent, color: "#fff" }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", opacity: 0.7 }} className="uppercase font-semibold">
+              Paid read · {MONTH_FULL[MONTHS[month]]} {YEAR}
+            </span>
+          </div>
+          <p style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17.5, lineHeight: 1.55 }}>
+            {read}
+          </p>
+          <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 10 }}>
+            Generated from the month's Google Ads + Meta figures — a starting read, not a substitute for campaign-level review. Meta conversions aren't tracked, so conversion figures are Google-only.
+          </p>
+        </div>
+      )}
+
       {/* Platform toggle */}
       <div className="inline-flex rounded-lg p-0.5 mb-5" style={{ background: C.bg, border: `1px solid ${C.line}` }}>
         {available.map((p) => (
