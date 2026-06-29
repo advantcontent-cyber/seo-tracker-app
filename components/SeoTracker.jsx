@@ -1147,19 +1147,27 @@ function BarBreakdown({ title, rows, fmtVal }) {
 }
 
 function SemTab({ client, month, semData }) {
+  const [platformSel, setPlatformSel] = useState(null);
   const sem = semData?.[client.name];
-  const moNum = MO_NUM_MAP[MONTHS[month]];
-  const cur = sem?.monthly?.[moNum] || null;
-  const prev = month > 0 ? sem?.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]] : null;
-  const campaigns = sem?.campaigns?.[moNum] || [];
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No Google Ads data for this property/month." : "Loading paid-search data…"}
+        {semData ? "No paid-ads data for this property/month." : "Loading paid-ads data…"}
       </div>
     );
   }
+
+  // Platforms that actually have spend; toggle between them.
+  const available = ["google", "meta"].filter((p) => MONTHS.some((mo) => (sem.monthly?.[mo]?.[p]?.spend ?? 0) > 0));
+  const platform = platformSel && available.includes(platformSel) ? platformSel : (available[0] || "google");
+  const isGoogle = platform === "google";
+  const accent = isGoogle ? C.accent : "#1877F2";
+
+  const moNum = MO_NUM_MAP[MONTHS[month]];
+  const cur  = sem.monthly?.[moNum]?.[platform] || null;
+  const prev = month > 0 ? (sem.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]]?.[platform] || null) : null;
+  const campaigns = (sem.campaigns?.[moNum] || []).filter((c) => c.platform === platform);
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
@@ -1167,33 +1175,46 @@ function SemTab({ client, month, semData }) {
   const cpa  = cur && cur.conversions ? cur.spend / cur.conversions : 0;
 
   const kpis = cur ? [
-    { label: "Spend",       value: fmtMoney(cur.spend),     delta: dPct("spend") },
-    { label: "Clicks",      value: fmt(cur.clicks),         delta: dPct("clicks") },
-    { label: "Impressions", value: fmt(cur.impressions),    delta: dPct("impressions") },
-    { label: "Conversions", value: fmt(cur.conversions),    delta: dPct("conversions") },
+    { label: "Spend",       value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Clicks",      value: fmt(cur.clicks),      delta: dPct("clicks") },
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
+    ...(isGoogle ? [{ label: "Conversions", value: fmt(cur.conversions), delta: dPct("conversions") }] : []),
   ] : [];
 
-  // Spend trend (Mar–Jun)
-  const trend = MONTHS.map((mo, i) => ({ month: MONTHS[i], spend: sem.monthly?.[MO_NUM_MAP[mo]]?.spend ?? 0 }));
+  const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.[platform]?.spend ?? 0 }));
 
-  // Breakdowns from this month's campaigns
   const byMarket = (() => {
     const agg = {};
     campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  const byPlatform = ["google", "meta"]
-    .map((p) => ({ label: PLATFORM_LABEL[p], value: cur?.[p]?.spend ?? 0 }))
-    .filter((r) => r.value > 0)
-    .sort((a, b) => b.value - a.value);
   const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
 
   return (
     <div>
+      {/* Platform toggle */}
+      <div className="inline-flex rounded-lg p-0.5 mb-5" style={{ background: C.bg, border: `1px solid ${C.line}` }}>
+        {available.map((p) => (
+          <button
+            key={p}
+            onClick={() => setPlatformSel(p)}
+            style={{
+              padding: "6px 16px", borderRadius: 6, fontSize: 13,
+              fontWeight: platform === p ? 600 : 500,
+              background: platform === p ? "#fff" : "transparent",
+              color: platform === p ? C.ink : C.muted,
+              border: platform === p ? `1px solid ${C.line}` : "1px solid transparent",
+            }}
+          >
+            {PLATFORM_LABEL[p]}
+          </button>
+        ))}
+      </div>
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? "rgba(0,119,200,0.07)" : "#fff", border: `1px solid ${C.line}` }}>
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
             <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
             <div className="flex items-baseline gap-2 mt-1.5">
               <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
@@ -1208,7 +1229,7 @@ function SemTab({ client, month, semData }) {
         <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4 px-1" style={{ color: C.muted, fontSize: 13 }}>
           <span>CTR <b style={{ color: C.ink }}>{ctr.toFixed(1)}%</b></span>
           <span>Avg. CPC <b style={{ color: C.ink }}>${cpc.toFixed(2)}</b></span>
-          <span>Cost / conversion <b style={{ color: C.ink }}>${cpa.toFixed(2)}</b></span>
+          {isGoogle && <span>Cost / conversion <b style={{ color: C.ink }}>${cpa.toFixed(2)}</b></span>}
         </div>
       )}
 
@@ -1216,67 +1237,60 @@ function SemTab({ client, month, semData }) {
       <div className="grid lg:grid-cols-3 gap-5 mt-5">
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Spend · Google Ads</h3>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Spend · {PLATFORM_LABEL[platform]}</h3>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
           </div>
           <div style={{ height: 240 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <defs>
-                  <linearGradient id="semSpend" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={C.accent} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
+                  <linearGradient id={`semSpend-${platform}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={C.accent} strokeWidth={2} fill="url(#semSpend)" />
+                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill={`url(#semSpend-${platform})`} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <BarBreakdown title="Spend by platform" rows={byPlatform} fmtVal={fmtMoney} />
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
       </div>
 
-      {/* Spend by market + top campaigns */}
-      <div className="grid lg:grid-cols-3 gap-5 mt-5">
-        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
-        <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
-          </div>
-          <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
-            <span className="uppercase">Campaign</span>
-            <span className="uppercase text-right">Spend</span>
-            <span className="uppercase text-right">Clicks</span>
-            <span className="uppercase text-right">Conv.</span>
-          </div>
-          {topCampaigns.length === 0 ? (
-            <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
-          ) : topCampaigns.map((c, i) => (
-            <div key={`${c.platform}-${c.name}`} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-              <span className="flex items-center gap-2 min-w-0">
-                <span
-                  className="rounded px-1 shrink-0"
-                  style={{ fontSize: 9.5, fontWeight: 700, color: c.platform === "meta" ? "#1877F2" : C.accent, background: c.platform === "meta" ? "rgba(24,119,242,0.12)" : "rgba(0,119,200,0.10)" }}
-                >
-                  {c.platform === "meta" ? "Meta" : "Google"}
-                </span>
-                <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-              </span>
-              <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
-              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
-              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.conversions)}</span>
-            </div>
-          ))}
+      {/* Top campaigns */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · {PLATFORM_LABEL[platform]}</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
         </div>
+        <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+          <span className="uppercase">Campaign</span>
+          <span className="uppercase text-right">Spend</span>
+          <span className="uppercase text-right">Clicks</span>
+          <span className="uppercase text-right">{isGoogle ? "Conv." : "CTR"}</span>
+        </div>
+        {topCampaigns.length === 0 ? (
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
+        ) : topCampaigns.map((c, i) => (
+          <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">
+              {isGoogle ? fmt(c.conversions) : (c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—")}
+            </span>
+          </div>
+        ))}
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Paid figures from Google Ads + Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Conversions are Google-only (Meta conversions aren't exposed by this connector); conversion value isn't tracked, so ROAS is omitted.
+        {isGoogle
+          ? `Google Ads (via Windsor), ${MONTH_FULL[MONTHS[month]]} ${YEAR}. Conversion value isn't tracked in this account, so ROAS is omitted.`
+          : `Meta Ads (via Windsor), ${MONTH_FULL[MONTHS[month]]} ${YEAR}. This connector doesn't expose conversions, so conversions/ROAS are omitted.`}
       </p>
     </div>
   );
