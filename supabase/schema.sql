@@ -298,3 +298,54 @@ do update set
   organic_keywords = excluded.organic_keywords, organic_traffic = excluded.organic_traffic,
   paid_keywords = excluded.paid_keywords, ref_domains = excluded.ref_domains,
   backlinks = excluded.backlinks, semrush_rank = excluded.semrush_rank;
+
+-- ==================================================================
+-- SECTION 6 · seo_keyword_ideas  — SEMrush content-keyword opportunities
+-- Brand-new keywords to target for blog content (not yet ranked for).
+-- Discovered via the SEMrush MCP (phrase_related/phrase_questions),
+-- prioritised by search volume, with a formulated blog title/angle.
+-- Shown on the Blog plan tab; exportable as CSV into the plan sheet.
+-- The app never calls SEMrush — these are cached snapshots.
+-- ==================================================================
+create table if not exists public.seo_keyword_ideas (
+  id              uuid primary key default gen_random_uuid(),
+  client_name     text not null,
+  keyword         text not null,
+  database        text,                 -- SEMrush regional db (e.g. 'th')
+  search_volume   int,
+  suggested_title text,                 -- formulated blog angle
+  snapshot_date   date,
+  created_at      timestamptz default now(),
+  unique (client_name, keyword)
+);
+
+alter table public.seo_keyword_ideas enable row level security;
+
+drop policy if exists "Read keyword ideas for allowed clients" on public.seo_keyword_ideas;
+create policy "Read keyword ideas for allowed clients"
+  on public.seo_keyword_ideas for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_keyword_ideas.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage keyword ideas" on public.seo_keyword_ideas;
+create policy "Service role can manage keyword ideas"
+  on public.seo_keyword_ideas for all using (true) with check (true);
+
+-- Seed IC Khao Yai content ideas (TH volume, June 2026), highest volume first.
+insert into public.seo_keyword_ideas (client_name, keyword, database, search_volume, suggested_title, snapshot_date)
+values
+  ('IC Khao Yai', 'khao yai national park', 'th', 27100, $$Khao Yai National Park: The Complete Visitor's Guide$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai art museum', 'th', 4400, $$Art & Culture in Khao Yai: Museums and Galleries to Visit$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai waterfall', 'th', 3600, $$Chasing Waterfalls in Khao Yai: The Best Falls to See$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai weather', 'th', 1900, $$Best Time to Visit Khao Yai: A Season-by-Season Guide$$, '2026-06-29'),
+  ('IC Khao Yai', 'bangkok to khao yai', 'th', 590, $$Bangkok to Khao Yai: How to Get There$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai tour', 'th', 390, $$Khao Yai Tours & Day Trips: Ways to Explore$$, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai attractions', 'th', 320, $$Top Attractions in Khao Yai Beyond the National Park$$, '2026-06-29')
+on conflict (client_name, keyword) do update set
+  database = excluded.database, search_volume = excluded.search_volume,
+  suggested_title = excluded.suggested_title, snapshot_date = excluded.snapshot_date;

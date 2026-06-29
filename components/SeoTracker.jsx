@@ -823,7 +823,76 @@ function exportPlanCsv(client, rows) {
   }
 }
 
-function BlogPlan({ client, imported, onImport }) {
+// Export discovered keyword ideas as CSV in the blog-plan column format, so the
+// team can drop chosen rows straight into their plan sheet.
+function exportIdeasCsv(client, ideas) {
+  const esc = (s) => `"${String(s).replace(/"/g, '""')}"`;
+  const head = ["Client", "Month", "Keyword", "Title", "SEO meta", "Brief", "Draft", "Published"];
+  const lines = [head.map(esc).join(",")];
+  ideas.forEach((o) => lines.push([client.name, "", o.keyword, o.title, "", "", "", ""].map(esc).join(",")));
+  try {
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slugify(client.name)}-keyword-ideas.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    /* downloads can be blocked in a sandboxed preview */
+  }
+}
+
+// Keyword-opportunities panel: SEMrush content ideas (volume-ranked) with a
+// formulated title, plus a CSV export into the blog plan.
+function KeywordIdeas({ client, ideas }) {
+  if (!ideas || !ideas.length) return null;
+  return (
+    <div className="rounded-lg mb-6 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Keyword ideas</h3>
+          <div style={{ color: C.faint, fontSize: 12 }} className="mt-0.5">
+            New topics to target · SEMrush search volume · by demand
+          </div>
+        </div>
+        <button
+          onClick={() => exportIdeasCsv(client, ideas)}
+          className="rounded-lg px-3.5 py-2 font-medium transition-opacity hover:opacity-90"
+          style={{ background: C.accent, color: "#fff", fontSize: 13 }}
+        >
+          Add to plan (CSV)
+        </button>
+      </div>
+      {ideas.map((o, i) => (
+        <div
+          key={o.keyword}
+          className="flex items-center justify-between gap-4 px-5 py-3"
+          style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}
+        >
+          <div className="min-w-0">
+            <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 16 }} className="leading-snug truncate">
+              {o.title}
+            </div>
+            <div style={{ color: C.muted, fontSize: 12 }} className="mt-0.5 truncate">
+              Targets “{o.keyword}”
+            </div>
+          </div>
+          <div className="text-right" style={{ flexShrink: 0 }}>
+            <div style={{ color: C.accent, fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+              {fmt(o.volume)}
+            </div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.04em" }} className="uppercase">searches/mo</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BlogPlan({ client, imported, onImport, keywordIdeas = [] }) {
   const [paste, setPaste] = useState("");
   const [err, setErr] = useState("");
   const fileRef = useRef(null);
@@ -852,6 +921,7 @@ function BlogPlan({ client, imported, onImport }) {
   if (!imported) {
     return (
       <div>
+        <KeywordIdeas client={client} ideas={keywordIdeas} />
         <h3 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none mb-1.5">
           12-month blog plan
         </h3>
@@ -909,6 +979,7 @@ function BlogPlan({ client, imported, onImport }) {
 
   return (
     <div>
+      <KeywordIdeas client={client} ideas={keywordIdeas} />
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
           <h3 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none">
@@ -964,7 +1035,7 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1528,7 +1599,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </>
       )}
 
-      {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} />}
+      {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} />}
     </div>
   );
 }
@@ -1553,6 +1624,7 @@ export default function App() {
   const [gscError, setGscError] = useState(null);
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
+  const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
 
   // Fetch live GSC data once on mount.
@@ -1576,6 +1648,14 @@ export default function App() {
     fetch("/api/blog-drafts")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setBlogDrafts(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch cached SEMrush content-keyword ideas once on mount.
+  useEffect(() => {
+    fetch("/api/keyword-ideas")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setKeywordIdeas(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1681,6 +1761,7 @@ export default function App() {
                 actionData={actionData}
                 blogDrafts={blogDrafts}
                 semrushData={semrushData}
+                keywordIdeas={keywordIdeas}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
