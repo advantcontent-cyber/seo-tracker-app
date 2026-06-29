@@ -905,7 +905,7 @@ function KeywordIdeas({ client, ideas }) {
   );
 }
 
-function BlogPlan({ client, imported, onImport, keywordIdeas = [] }) {
+function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords = {} }) {
   const [paste, setPaste] = useState("");
   const [err, setErr] = useState("");
   const fileRef = useRef(null);
@@ -1033,7 +1033,26 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [] }) {
             {rows.map((r, i) => (
               <div key={i} className="grid px-4 py-3" style={{ gridTemplateColumns: cols, gap: 12, borderTop: i ? `1px solid ${C.line}` : "none", alignItems: "start" }}>
                 <span style={{ color: C.muted, fontSize: 12.5 }} className="font-medium">{r.monthLabel}</span>
-                <span style={{ color: C.ink, fontSize: 13 }}>{r.keyword}</span>
+                <div className="min-w-0">
+                  <div style={{ color: C.ink, fontSize: 13 }}>{r.keyword}</div>
+                  {(() => {
+                    const m = planKeywords[(r.keyword || "").toLowerCase()];
+                    if (!m || (m.volume == null && m.kd == null)) return null;
+                    const kdColor = m.kd == null ? C.faint : m.kd >= 60 ? C.risk : m.kd >= 30 ? C.watch : C.healthy;
+                    return (
+                      <div className="mt-0.5 flex items-center gap-1.5" style={{ fontSize: 11 }}>
+                        {m.volume != null && (
+                          <span style={{ color: C.muted, fontVariantNumeric: "tabular-nums" }} title="Approx. global search volume">
+                            {fmt(m.volume)}/mo
+                          </span>
+                        )}
+                        {m.kd != null && (
+                          <span style={{ color: kdColor, fontWeight: 600 }} title="Keyword difficulty (TH)">KD {m.kd}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
                 <span style={{ color: C.ink, fontSize: 13 }} className="leading-snug">{r.title}</span>
                 <span style={{ color: C.muted, fontSize: 12.5 }} className="leading-snug">{r.meta}</span>
                 <Cell href={r.briefUrl} label="Brief" color={C.accent} />
@@ -1048,7 +1067,7 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [] }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1612,7 +1631,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </>
       )}
 
-      {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} />}
+      {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
     </div>
   );
 }
@@ -1638,6 +1657,7 @@ export default function App() {
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
   const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
+  const [planKeywords, setPlanKeywords] = useState(null); // SEMrush volume+KD for blog-plan keywords
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
 
   // Fetch live GSC data once on mount.
@@ -1669,6 +1689,14 @@ export default function App() {
     fetch("/api/keyword-ideas")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setKeywordIdeas(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch cached SEMrush metrics for blog-plan keywords once on mount.
+  useEffect(() => {
+    fetch("/api/plan-keywords")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setPlanKeywords(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1775,6 +1803,7 @@ export default function App() {
                 blogDrafts={blogDrafts}
                 semrushData={semrushData}
                 keywordIdeas={keywordIdeas}
+                planKeywords={planKeywords}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />

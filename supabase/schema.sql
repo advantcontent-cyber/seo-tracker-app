@@ -354,3 +354,52 @@ values
 on conflict (client_name, keyword) do update set
   database = excluded.database, search_volume = excluded.search_volume, kd = excluded.kd,
   suggested_title = excluded.suggested_title, snapshot_date = excluded.snapshot_date;
+
+-- ==================================================================
+-- SECTION 7 · seo_plan_keywords  — SEMrush metrics for the blog-plan keywords
+-- Enriches the 12-month blog plan: each plan keyword shows GLOBAL search
+-- volume (approx — summed across top markets TH/US/UK/SG/AU) + LOCAL (TH)
+-- keyword difficulty. Joined to plan rows by lowercase keyword. Only
+-- keywords with SEMrush data are stored; the rest render blank.
+-- The app never calls SEMrush — refreshed via the MCP and cached.
+-- ==================================================================
+create table if not exists public.seo_plan_keywords (
+  id            uuid primary key default gen_random_uuid(),
+  client_name   text not null,
+  keyword       text not null,        -- lowercase, matches plan keyword
+  global_volume int,                  -- approx global (top-markets sum)
+  kd            int,                  -- keyword difficulty, local market (TH)
+  snapshot_date date,
+  created_at    timestamptz default now(),
+  unique (client_name, keyword)
+);
+
+alter table public.seo_plan_keywords enable row level security;
+
+drop policy if exists "Read plan keywords for allowed clients" on public.seo_plan_keywords;
+create policy "Read plan keywords for allowed clients"
+  on public.seo_plan_keywords for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_plan_keywords.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage plan keywords" on public.seo_plan_keywords;
+create policy "Service role can manage plan keywords"
+  on public.seo_plan_keywords for all using (true) with check (true);
+
+-- Seed IC Khao Yai sample-plan keywords that have SEMrush data (June 2026).
+-- (The other ~18 angles returned no measurable volume — editorial topics.)
+insert into public.seo_plan_keywords (client_name, keyword, global_volume, kd, snapshot_date)
+values
+  ('IC Khao Yai', 'things to do in khao yai', 880, 13, '2026-06-29'),
+  ('IC Khao Yai', 'where to stay in khao yai', 140, 24, '2026-06-29'),
+  ('IC Khao Yai', 'best time to visit khao yai', 110, 0, '2026-06-29'),
+  ('IC Khao Yai', 'how to get to khao yai', 100, 0, '2026-06-29'),
+  ('IC Khao Yai', 'where to eat in khao yai', 50, 0, '2026-06-29'),
+  ('IC Khao Yai', 'itinerary for khao yai', 20, null, '2026-06-29')
+on conflict (client_name, keyword) do update set
+  global_volume = excluded.global_volume, kd = excluded.kd, snapshot_date = excluded.snapshot_date;
