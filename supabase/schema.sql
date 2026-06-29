@@ -298,3 +298,68 @@ do update set
   organic_keywords = excluded.organic_keywords, organic_traffic = excluded.organic_traffic,
   paid_keywords = excluded.paid_keywords, ref_domains = excluded.ref_domains,
   backlinks = excluded.backlinks, semrush_rank = excluded.semrush_rank;
+
+-- ==================================================================
+-- SECTION 6 · seo_keyword_volumes  — SEMrush search volume per keyword
+-- Enriches the Tracked-keywords table with real search volume (and CPC /
+-- competition). The app NEVER calls SEMrush — these rows are refreshed via
+-- the SEMrush MCP (phrase_these, ~10 units/keyword) for the current tracked
+-- keyword set and cached here. Joined to GSC queries by lowercase keyword.
+-- ==================================================================
+create table if not exists public.seo_keyword_volumes (
+  id            uuid primary key default gen_random_uuid(),
+  client_name   text not null,
+  keyword       text not null,          -- lowercase, matches GSC query text
+  database      text,                   -- SEMrush regional db (e.g. 'th')
+  search_volume int,
+  cpc           numeric,
+  competition   numeric,
+  snapshot_date date,
+  updated_at    timestamptz default now(),
+  unique (client_name, keyword)
+);
+
+alter table public.seo_keyword_volumes enable row level security;
+
+drop policy if exists "Read keyword volumes for allowed clients" on public.seo_keyword_volumes;
+create policy "Read keyword volumes for allowed clients"
+  on public.seo_keyword_volumes for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_keyword_volumes.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage keyword volumes" on public.seo_keyword_volumes;
+create policy "Service role can manage keyword volumes"
+  on public.seo_keyword_volumes for all using (true) with check (true);
+
+-- Seed IC Khao Yai's tracked-keyword volumes (TH database, June 2026).
+insert into public.seo_keyword_volumes (client_name, keyword, database, search_volume, cpc, competition, snapshot_date)
+values
+  ('IC Khao Yai', 'intercontinental khao yai', 'th', 1600, 0.36, 0.67, '2026-06-29'),
+  ('IC Khao Yai', 'intercontinental khao yai resort', 'th', 480, 0.27, 0.53, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai', 'th', 18100, 0.58, 0.35, '2026-06-29'),
+  ('IC Khao Yai', 'intercon khaoyai', 'th', 390, 0.33, 0.61, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai thailand', 'th', 590, 0.44, 0.48, '2026-06-29'),
+  ('IC Khao Yai', 'primo piazza khao yai', 'th', 1000, 0.40, 0.03, '2026-06-29'),
+  ('IC Khao Yai', 'primo piazza', 'th', 18100, 0.35, 0.08, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai weather', 'th', 1900, 0.00, 0.10, '2026-06-29'),
+  ('IC Khao Yai', 'bangkok to khao yai', 'th', 590, 0.40, 0.54, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai golf club', 'th', 210, 0.44, 0.09, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai golf', 'th', 210, 0.37, 0.14, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai hotels', 'th', 1900, 0.58, 0.67, '2026-06-29'),
+  ('IC Khao Yai', 'what to do in khao yai', 'th', 210, 0.10, 0.98, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai tour', 'th', 390, 0.49, 0.91, '2026-06-29'),
+  ('IC Khao Yai', 'khaoyai thailand', 'th', 590, 0.44, 0.48, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai attractions', 'th', 320, 0.04, 0.58, '2026-06-29'),
+  ('IC Khao Yai', 'things to do in khao yai', 'th', 590, 0.09, 0.89, '2026-06-29'),
+  ('IC Khao Yai', 'train hotel', 'th', 90, 0.00, 0.03, '2026-06-29'),
+  ('IC Khao Yai', 'khao yai art museum', 'th', 4400, 0.25, 0.04, '2026-06-29'),
+  ('IC Khao Yai', 'how to get to khao yai from bangkok', 'th', 30, 0.43, 0.81, '2026-06-29')
+on conflict (client_name, keyword) do update set
+  database = excluded.database, search_volume = excluded.search_volume,
+  cpc = excluded.cpc, competition = excluded.competition,
+  snapshot_date = excluded.snapshot_date, updated_at = now();

@@ -964,7 +964,7 @@ function BlogPlan({ client, imported, onImport }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordVolumes }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1044,9 +1044,14 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     .sort((a, b) => b.gap - a.gap);
   const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
 
+  // Cached SEMrush search volumes for this client, keyed by lowercase keyword.
+  const vols = keywordVolumes?.[client.name] || {};
+  const volumeFor = (q) => (q ? vols[q.toLowerCase()] ?? null : null);
+
   // Tracked keywords: real GSC top queries when connected, else the mock set.
   // change is the query's position shift vs the previous month (positive = moved
-  // up the page).
+  // up the page). volume is SEMrush search volume joined by keyword (null if
+  // not in the cached set).
   const trackedKeywords = curQueries
     ? [...curQueries]
         .filter((row) => isReadableQuery(row.q ?? row.k)) // legible English terms only
@@ -1059,6 +1064,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
             pos: round1(row.position),
             change: prevRow ? round1(prevRow.position - row.position) : 0,
             clicks: Math.round(row.clicks),
+            volume: volumeFor(row.q ?? row.k),
             page: row.page ?? null, // GSC's real ranking URL — the page to check/optimise
           };
         })
@@ -1069,6 +1075,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           pos,
           change: month > 0 ? kwPos(kw, month - 1) - pos : 0,
           clicks: kwClicks(kw, pos),
+          volume: volumeFor(kw.k) ?? kw.v ?? null,
           page: null,
         };
       });
@@ -1324,7 +1331,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div
           className="grid items-center px-5 py-2"
           style={{
-            gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
+            gridTemplateColumns: "2.2fr 0.8fr 0.8fr 0.8fr 0.8fr",
             color: C.faint,
             fontSize: 11.5,
             letterSpacing: "0.04em",
@@ -1332,6 +1339,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           }}
         >
           <span className="uppercase">Keyword</span>
+          <span className="uppercase text-right">Volume</span>
           <span className="uppercase text-right">Position</span>
           <span className="uppercase text-right">Change</span>
           <span className="uppercase text-right">Clicks</span>
@@ -1341,7 +1349,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
             key={kw.k}
             className="grid items-center px-5 py-3"
             style={{
-              gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
+              gridTemplateColumns: "2.2fr 0.8fr 0.8fr 0.8fr 0.8fr",
               borderTop: i ? `1px solid ${C.line}` : "none",
             }}
           >
@@ -1362,6 +1370,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                 {kw.k}
               </span>
             )}
+            <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right" title="SEMrush search volume (TH)">
+              {kw.volume == null ? "—" : fmt(kw.volume)}
+            </span>
             <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
               {kw.pos}
             </span>
@@ -1553,6 +1564,7 @@ export default function App() {
   const [gscError, setGscError] = useState(null);
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
+  const [keywordVolumes, setKeywordVolumes] = useState(null); // SEMrush search volume per client/keyword
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
 
   // Fetch live GSC data once on mount.
@@ -1576,6 +1588,14 @@ export default function App() {
     fetch("/api/blog-drafts")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setBlogDrafts(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch cached SEMrush keyword search volumes once on mount.
+  useEffect(() => {
+    fetch("/api/keyword-volumes")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setKeywordVolumes(json.data); })
       .catch(() => {});
   }, []);
 
@@ -1681,6 +1701,7 @@ export default function App() {
                 actionData={actionData}
                 blogDrafts={blogDrafts}
                 semrushData={semrushData}
+                keywordVolumes={keywordVolumes}
               />
             ) : (
               <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
