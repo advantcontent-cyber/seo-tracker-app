@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   ReferenceDot,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1675,6 +1675,49 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 /*  the dashboard is deployed. The check below is a placeholder.        */
 /* ------------------------------------------------------------------ */
 /* ------------------------------------------------------------------ */
+/*  Left sidebar — brand + Overview + per-property navigation          */
+/* ------------------------------------------------------------------ */
+function Sidebar({ clients, selected, onSelect }) {
+  const item = (active) => ({
+    display: "flex", alignItems: "center", gap: 9, width: "100%",
+    padding: "8px 10px", borderRadius: 8, fontSize: 13.5, textAlign: "left",
+    color: active ? C.ink : C.muted,
+    background: active ? "rgba(0,119,200,0.10)" : "transparent",
+    fontWeight: active ? 600 : 500,
+  });
+  return (
+    <aside
+      className="flex flex-col shrink-0"
+      style={{ width: 248, background: "#fff", borderRight: `1px solid ${C.line}`, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}
+    >
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 26 }} />
+        <span style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17, color: C.ink }}>SEO Progress</span>
+      </div>
+      <nav className="px-3 pb-6 flex-1">
+        <button onClick={() => onSelect(null)} className="transition-colors" style={item(!selected)}>
+          <PieChart size={16} /> Overview
+        </button>
+        <div className="px-2 pt-5 pb-1.5 uppercase" style={{ color: C.faint, fontSize: 11, letterSpacing: "0.06em" }}>
+          Properties
+        </div>
+        {clients.map((c) => (
+          <button
+            key={c.name}
+            onClick={() => onSelect(c)}
+            className="transition-colors mt-0.5"
+            style={item(selected?.name === c.name)}
+          >
+            <StatusDot status={c.status} size={7} />
+            <span className="truncate">{c.name}</span>
+          </button>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  App shell                                                          */
 /* ------------------------------------------------------------------ */
 export default function App() {
@@ -1764,82 +1807,66 @@ export default function App() {
     : [];
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.ink }}>
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.ink, fontFamily: "Inter, system-ui, sans-serif" }} className="flex">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap'); .lf:focus{outline:none;border-color:${C.accent};box-shadow:0 0 0 3px rgba(0,119,200,0.15);}`}</style>
-      <div style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
-          <div className="max-w-6xl mx-auto px-5 md:px-8 py-7">
-            {/* Masthead */}
-            <header className="flex items-end justify-between pb-5 mb-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-              <div>
-                <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 32, marginBottom: 6 }} />
-                <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 26, color: C.ink }} className="leading-none">
-                  SEO Progress
-                </h1>
-              </div>
-              <div className="flex flex-col items-end gap-2.5">
-                {/* Month dropdown */}
-                <div className="relative">
-                  <select
-                    value={month}
-                    onChange={(e) => setMonth(Number(e.target.value))}
-                    className="appearance-none rounded-lg cursor-pointer"
-                    style={{
-                      background: "#fff",
-                      border: `1px solid ${C.line}`,
-                      color: C.ink,
-                      fontSize: 13.5,
-                      fontWeight: 500,
-                      padding: "8px 34px 8px 12px",
-                      fontFamily: "Inter, system-ui, sans-serif",
-                    }}
-                  >
-                    {MONTHS.map((m, i) => (
-                      <option key={m} value={i}>
-                        {MONTH_FULL[m]} {YEAR}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={15}
-                    style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", color: C.muted, pointerEvents: "none" }}
-                  />
-                </div>
-                <div className="flex items-center gap-4">
-                  <span style={{ color: C.faint, fontSize: 12 }}>
-                    {visibleClients.length} {visibleClients.length === 1 ? "property" : "properties"} · {MONTH_FULL[MONTHS[month]]} {YEAR}
-                  </span>
-                  <button
-                    onClick={signOut}
-                    className="transition-colors hover:opacity-70"
-                    style={{ color: C.muted, fontSize: 13 }}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              </div>
-            </header>
 
-            {!ready ? (
-              <div style={{ color: C.faint, fontSize: 14, textAlign: "center", paddingTop: 80 }}>Loading…</div>
-            ) : selected ? (
-              <Detail
-                client={selected}
-                onBack={() => setSelected(null)}
-                month={month}
-                importedPlan={importedPlan}
-                onImportPlan={setImportedPlan}
-                gscData={gscData}
-                gscError={gscError}
-                actionData={actionData}
-                blogDrafts={blogDrafts}
-                semrushData={semrushData}
-                keywordIdeas={keywordIdeas}
-                planKeywords={planKeywords}
-              />
-            ) : (
-              <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
-            )}
+      {ready && <Sidebar clients={visibleClients} selected={selected} onSelect={setSelected} />}
+
+      <div className="flex-1 min-w-0">
+        {/* Top bar — breadcrumb + month + sign out */}
+        <header
+          className="flex items-center justify-between gap-4 px-6 md:px-8"
+          style={{ height: 60, borderBottom: `1px solid ${C.line}`, background: "#fff", position: "sticky", top: 0, zIndex: 10 }}
+        >
+          <div style={{ fontSize: 13.5 }} className="flex items-center gap-2 min-w-0">
+            <span style={{ color: C.faint }}>Dashboards</span>
+            <span style={{ color: C.faint }}>/</span>
+            <span style={{ color: C.ink }} className="font-medium truncate">
+              {selected ? selected.name : "Overview"}
+            </span>
           </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="relative">
+              <select
+                value={month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+                className="appearance-none rounded-lg cursor-pointer"
+                style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "7px 32px 7px 11px", fontFamily: "Inter, system-ui, sans-serif" }}
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={i}>{MONTH_FULL[m]} {YEAR}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, pointerEvents: "none" }} />
+            </div>
+            <button onClick={signOut} className="transition-colors hover:opacity-70" style={{ color: C.muted, fontSize: 13 }}>
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <main className="px-6 md:px-8 py-7">
+          {!ready ? (
+            <div style={{ color: C.faint, fontSize: 14, textAlign: "center", paddingTop: 80 }}>Loading…</div>
+          ) : selected ? (
+            <Detail
+              client={selected}
+              onBack={() => setSelected(null)}
+              month={month}
+              importedPlan={importedPlan}
+              onImportPlan={setImportedPlan}
+              gscData={gscData}
+              gscError={gscError}
+              actionData={actionData}
+              blogDrafts={blogDrafts}
+              semrushData={semrushData}
+              keywordIdeas={keywordIdeas}
+              planKeywords={planKeywords}
+            />
+          ) : (
+            <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
+          )}
+        </main>
       </div>
     </div>
   );
