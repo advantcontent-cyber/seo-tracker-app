@@ -8,7 +8,6 @@ import { createClient } from "@supabase/supabase-js";
 
 const ALL_CLIENTS = [
   "Shinta Mani Wild",
-  "Nomad Greenland",
   "Sora Sukhumvit",
   "IC Khao Yai",
 ];

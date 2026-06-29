@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
 
-const ALL_CLIENTS = ["Shinta Mani Wild", "Nomad Greenland", "Sora Sukhumvit", "IC Khao Yai"];
+const ALL_CLIENTS = ["Shinta Mani Wild", "Sora Sukhumvit", "IC Khao Yai"];
 
 export default async function DraftPage({ params }) {
   const { id } = await params;
