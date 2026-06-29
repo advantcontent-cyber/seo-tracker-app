@@ -219,6 +219,7 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const SERVICES = {
   "IC Khao Yai": ["seo", "sem"],
 };
+const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
 const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
@@ -1327,7 +1328,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
   const b = cur.buckets;
   const read = analystRead(client, month);
-  const [tab, setTab] = useState("overview");
+  const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
+  const [seoSub, setSeoSub] = useState("overview"); // sub-tab within SEO
 
   // Off-page work is no longer part of the program — exclude it from plans.
   // Live tasks from Supabase (seo_action_items) when available; mock otherwise.
@@ -1455,7 +1457,52 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </div>
       </div>
 
-      {/* Analyst read — data interpretation with seasonal & local context */}
+      {/* Service tabs (main) — SEO / SEM / … per the client's subscriptions */}
+      <div className="flex items-center gap-1" style={{ borderBottom: `1px solid ${C.line}` }}>
+        {servicesOf(client.name).map((svc) => (
+          <button
+            key={svc}
+            onClick={() => setService(svc)}
+            className="px-4 py-2.5 transition-colors"
+            style={{
+              fontSize: 14.5,
+              fontWeight: service === svc ? 700 : 500,
+              color: service === svc ? C.ink : C.muted,
+              borderBottom: service === svc ? `2px solid ${C.accent}` : "2px solid transparent",
+              marginBottom: -1,
+            }}
+          >
+            {SVC_LABEL[svc] || svc.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {/* SEO sub-tabs */}
+      {service === "seo" ? (
+        <div className="flex items-center gap-1.5 mt-4 mb-6">
+          {[["overview", "Overview"], ["blog", "Blog plan"]].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setSeoSub(id)}
+              className="px-3 py-1.5 rounded-full transition-colors"
+              style={{
+                fontSize: 13,
+                fontWeight: seoSub === id ? 600 : 500,
+                color: seoSub === id ? C.accent : C.muted,
+                background: seoSub === id ? "rgba(0,119,200,0.10)" : "transparent",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-6" />
+      )}
+
+      {service === "seo" && seoSub === "overview" && (
+        <>
+      {/* Analyst read — organic interpretation with seasonal & local context */}
       {read && (
         <div
           className="rounded-lg p-5 mb-6"
@@ -1474,33 +1521,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           </p>
         </div>
       )}
-
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-        {[
-          ["overview", "Overview"],
-          ...(hasService(client.name, "sem") ? [["sem", "SEM"]] : []),
-          ["blog", "Blog plan"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className="px-3.5 py-2.5 transition-colors"
-            style={{
-              fontSize: 13.5,
-              fontWeight: tab === id ? 600 : 500,
-              color: tab === id ? C.ink : C.muted,
-              borderBottom: tab === id ? `2px solid ${C.accent}` : "2px solid transparent",
-              marginBottom: -1,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "overview" && (
-        <>
       {/* Action-plan progress */}
       <div className="flex items-center gap-3 mb-6">
         <span style={{ color: C.muted, fontSize: 12.5 }} className="font-medium">
@@ -1861,9 +1881,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </>
       )}
 
-      {tab === "sem" && <SemTab client={client} month={month} semData={semData} />}
+      {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
-      {tab === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
+      {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
     </div>
   );
 }
