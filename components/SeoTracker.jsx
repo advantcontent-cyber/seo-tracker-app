@@ -1692,7 +1692,7 @@ function Sidebar({ clients, selected, onSelect }) {
     >
       <div className="flex items-center gap-2.5 px-5 py-5">
         <img src="/amn_logo_blue.png" alt="the amn" style={{ height: 26 }} />
-        <span style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17, color: C.ink }}>SEO Progress</span>
+        <span style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17, color: C.ink }}>Client Dashboard</span>
       </div>
       <nav className="px-3 pb-6 flex-1">
         <button onClick={() => onSelect(null)} className="transition-colors" style={item(!selected)}>
