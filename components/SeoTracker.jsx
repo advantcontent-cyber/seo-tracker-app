@@ -1112,19 +1112,14 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
 /* ------------------------------------------------------------------ */
 const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
 
-// Parse a campaign name like "[Advant] HK_High intent (Hotel)_Search_JUNE"
-// into a market (2-letter code) and a type (Branded / High intent / PMax).
+// Parse a market code from a campaign name. Handles both Google ("[Advant]
+// HK_High intent…") and Meta ("US_Conv_Clickbook_JUN", "SG+HK+TW_Conv…").
 const campaignMarket = (name) => {
-  const m = /\]\s*([A-Za-z]{2})\b/.exec(name || "");
-  return m ? m[1].toUpperCase() : "Other";
+  const cleaned = (name || "").replace(/^\[Advant\]\s*/, "").trim();
+  const m = /^([A-Z]{2}(?:\+[A-Z]{2})*)/.exec(cleaned);
+  return m ? m[1] : "Other";
 };
-const campaignType = (name) => {
-  const s = (name || "").toLowerCase();
-  if (s.includes("pmax") || s.includes("p-max") || s.includes("performance max")) return "PMax";
-  if (s.includes("high intent")) return "High intent";
-  if (s.includes("branded")) return "Branded";
-  return "Other";
-};
+const PLATFORM_LABEL = { google: "Google Ads", meta: "Meta" };
 
 // Horizontal bar breakdown (like the reference "Traffic by Website").
 function BarBreakdown({ title, rows, fmtVal }) {
@@ -1182,13 +1177,15 @@ function SemTab({ client, month, semData }) {
   const trend = MONTHS.map((mo, i) => ({ month: MONTHS[i], spend: sem.monthly?.[MO_NUM_MAP[mo]]?.spend ?? 0 }));
 
   // Breakdowns from this month's campaigns
-  const byKey = (keyFn) => {
+  const byMarket = (() => {
     const agg = {};
-    campaigns.forEach((c) => { const k = keyFn(c.name); agg[k] = (agg[k] || 0) + c.spend; });
+    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
-  };
-  const byMarket = byKey(campaignMarket);
-  const byType   = byKey(campaignType);
+  })();
+  const byPlatform = ["google", "meta"]
+    .map((p) => ({ label: PLATFORM_LABEL[p], value: cur?.[p]?.spend ?? 0 }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value);
   const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
 
   return (
@@ -1240,12 +1237,12 @@ function SemTab({ client, month, semData }) {
             </ResponsiveContainer>
           </div>
         </div>
-        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
+        <BarBreakdown title="Spend by platform" rows={byPlatform} fmtVal={fmtMoney} />
       </div>
 
-      {/* Spend by type + top campaigns */}
+      {/* Spend by market + top campaigns */}
       <div className="grid lg:grid-cols-3 gap-5 mt-5">
-        <BarBreakdown title="Spend by campaign type" rows={byType} fmtVal={fmtMoney} />
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns</h3>
@@ -1260,8 +1257,16 @@ function SemTab({ client, month, semData }) {
           {topCampaigns.length === 0 ? (
             <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
           ) : topCampaigns.map((c, i) => (
-            <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-              <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+            <div key={`${c.platform}-${c.name}`} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span className="flex items-center gap-2 min-w-0">
+                <span
+                  className="rounded px-1 shrink-0"
+                  style={{ fontSize: 9.5, fontWeight: 700, color: c.platform === "meta" ? "#1877F2" : C.accent, background: c.platform === "meta" ? "rgba(24,119,242,0.12)" : "rgba(0,119,200,0.10)" }}
+                >
+                  {c.platform === "meta" ? "Meta" : "Google"}
+                </span>
+                <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+              </span>
               <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
               <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
               <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.conversions)}</span>
@@ -1271,7 +1276,7 @@ function SemTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Paid-search figures from Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Conversion value isn't tracked in this account, so ROAS is omitted.
+        Paid figures from Google Ads + Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Conversions are Google-only (Meta conversions aren't exposed by this connector); conversion value isn't tracked, so ROAS is omitted.
       </p>
     </div>
   );
