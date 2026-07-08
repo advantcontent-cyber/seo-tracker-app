@@ -12,8 +12,10 @@ import {
   PieChart as RePieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1403,28 +1405,32 @@ const TYPE_META = [
 ];
 const Hi = ({ children, color = C.accent }) => <span style={{ color, fontWeight: 600 }}>{children}</span>;
 
-function ReportPie({ title, data }) {
+const PIE_PALETTE = ["#0077C8", "#1A7A50", "#C74E7B", "#B87A00", "#7A5AC2", "#38B6FF", "#E06C4F", "#4A6A8A"];
+
+function ReportPie({ title, subtitle, data, source = "Google Search Console" }) {
   const total = data.reduce((a, d) => a + d.value, 0) || 1;
+  const items = data.map((d, i) => ({ ...d, key: d.key ?? d.label, color: d.color ?? PIE_PALETTE[i % PIE_PALETTE.length] }));
   return (
     <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        {subtitle && <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-0.5">{subtitle}</div>}
       </div>
       <div className="px-5 py-4 flex items-center gap-4">
         <div style={{ width: 128, height: 128, flexShrink: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <RePieChart>
-              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1} stroke="none">
-                {data.map((d) => <Cell key={d.key} fill={d.color} />)}
+              <Pie data={items} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1} stroke="none">
+                {items.map((d) => <Cell key={d.key} fill={d.color} />)}
               </Pie>
               <Tooltip formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
             </RePieChart>
           </ResponsiveContainer>
         </div>
         <div className="flex-1 min-w-0">
-          {data.length === 0 ? (
+          {items.length === 0 ? (
             <span style={{ color: C.muted, fontSize: 12.5 }}>No data.</span>
-          ) : data.map((d) => (
+          ) : items.map((d) => (
             <div key={d.key} className="flex items-center justify-between py-1" style={{ fontSize: 12.5 }}>
               <span className="flex items-center gap-2 min-w-0">
                 <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: d.color }} />
@@ -1438,7 +1444,7 @@ function ReportPie({ title, data }) {
         </div>
       </div>
       <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
-        <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>Google Search Console</span>
+        <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{source}</span>
       </div>
     </div>
   );
@@ -1656,6 +1662,201 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
       <div className="grid md:grid-cols-2 gap-5">
         <QueryPanel title="Branded Queries" description="Terms include your brand, product names, or any variations of them." rows={brandedRows} />
         <QueryPanel title="Non-Branded Queries" description="Terms related to your products or services that users might search for before they have a specific brand in mind." rows={nonBrandedRows} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Organic Traffic Report sub-tab — comprehensive GA4 report           */
+/*  Live GA4 (via /api/traffic-report): summary, channel + device        */
+/*  splits, daily sessions / new-users bars, and page performance.       */
+/* ------------------------------------------------------------------ */
+const GA4_SRC = "Google Analytics 4";
+const fmtRevenue = (n) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function DailyBars({ title, legend, data, dataKey, color }) {
+  return (
+    <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <span className="flex items-center gap-1.5" style={{ fontSize: 12 }}><span className="rounded-full" style={{ width: 8, height: 8, background: color }} /><span style={{ color: C.muted }}>{legend}</span></span>
+      </div>
+      <div style={{ height: 236 }} className="px-2 py-3">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+            <CartesianGrid stroke={C.line} vertical={false} />
+            <XAxis dataKey="date" tickFormatter={(d) => String(Number(d.slice(8)))} tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
+            <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+            <Tooltip labelFormatter={(d) => fmtReportDate(d)} formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+            <Bar dataKey={dataKey} name={legend} fill={color} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="px-5 py-3 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}><GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{GA4_SRC}</span></div>
+    </div>
+  );
+}
+
+function OrganicTraffic({ client, month }) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true); setError(null); setReport(null);
+    fetch(`/api/traffic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`)
+      .then((r) => r.json())
+      .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
+      .catch((e) => { if (live) setError(e.message); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client.name, moNum]);
+
+  if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
+  if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
+  if (!report) return null;
+
+  const { summary, byChannel, byDevice, daily, pages } = report;
+  const chanTotal = byChannel.reduce((a, c) => a + c.value, 0) || 1;
+  const topChan = byChannel[0] || { label: "—", value: 0 };
+  const topDev = byDevice[0] || { label: "—", value: 0 };
+  const engPages = [...pages].sort((a, b) => b.engagement - a.engagement).slice(0, 2);
+
+  const card = { border: `1px solid ${C.line}`, background: "#fff" };
+  const gfoot = (
+    <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+      <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{GA4_SRC}</span>
+    </div>
+  );
+
+  const SUMMARY_ROWS = [
+    { icon: Activity, label: "Sessions", value: fmt(summary.sessions) },
+    { icon: Users, label: "Total users", value: fmt(summary.totalUsers) },
+    { icon: UserPlus, label: "New users", value: fmt(summary.newUsers) },
+    { icon: Target, label: "Conversions", value: fmt(summary.conversions) },
+    { icon: DollarSign, label: "Total revenue", value: fmtRevenue(summary.revenue) },
+  ];
+  const BIG = [
+    { icon: Activity, label: "Sessions", value: summary.sessions, color: C.accent },
+    { icon: Users, label: "Total users", value: summary.totalUsers, color: C.healthy },
+    { icon: UserPlus, label: "New users", value: summary.newUsers, color: C.risk },
+  ];
+  const PGRID = "2.2fr 1fr 1fr 1fr 1.1fr";
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Title banner */}
+      <div className="rounded-lg px-6 py-6" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)` }}>
+        <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 28 }} className="leading-none">Organic Traffic Report</h2>
+      </div>
+
+      {/* Date period · Performance Summary · Summary */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-4 flex-1">
+            <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase mb-2">Date period</div>
+            <div style={{ color: C.ink, fontSize: 14.5 }} className="font-medium">{fmtReportDate(report.from)} – {fmtReportDate(report.to)}</div>
+            <div style={{ color: C.muted, fontSize: 13 }} className="mt-1">Duration: {report.days} days</div>
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Performance Summary</h3>
+          </div>
+          <div className="px-5 py-2 flex-1">
+            {SUMMARY_ROWS.map((r, i) => (
+              <div key={r.label} className="flex items-center justify-between py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <span className="flex items-center gap-2.5" style={{ color: C.muted, fontSize: 13.5 }}><r.icon size={15} style={{ color: C.faint }} /> {r.label}</span>
+                <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+              </div>
+            ))}
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Summary</h3>
+          </div>
+          <p className="px-5 py-4 flex-1 leading-relaxed" style={{ color: C.muted, fontSize: 12.5 }}>
+            Over this period the property drew <Hi>{fmt(summary.sessions)}</Hi> sessions from <Hi>{fmt(summary.totalUsers)}</Hi> total users (<Hi>{fmt(summary.newUsers)}</Hi> new), producing <Hi color={C.healthy}>{fmt(summary.conversions)}</Hi> conversions and <Hi color={C.healthy}>{fmtRevenue(summary.revenue)}</Hi> in revenue. <Hi>{topChan.label}</Hi> was the leading channel at <Hi>{Math.round((topChan.value / chanTotal) * 100)}%</Hi> of sessions, and <Hi>{topDev.label}</Hi> led device categories.
+          </p>
+        </div>
+      </div>
+
+      {/* Recommendations */}
+      <div className="rounded-lg px-6 py-5" style={card}>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Recommendations</h3>
+        <ol className="flex flex-col gap-2.5" style={{ color: C.muted, fontSize: 13 }}>
+          {byChannel[1] && (
+            <li><span style={{ color: C.faint }}>1.</span> The <Hi>{byChannel[0].label}</Hi> and <Hi>{byChannel[1].label}</Hi> channels drive <Hi color={C.healthy}>{fmt(byChannel[0].value + byChannel[1].value)} sessions</Hi> combined — study their sources and messaging to replicate what works.</li>
+          )}
+          <li><span style={{ color: C.faint }}>{byChannel[1] ? 2 : 1}.</span> <Hi>{topDev.label}</Hi> users contribute <Hi color={C.healthy}>{fmt(topDev.value)} sessions</Hi> — prioritise that device experience to lift engagement and conversions.</li>
+          {engPages.length >= 2 && (
+            <li><span style={{ color: C.faint }}>{byChannel[1] ? 3 : 2}.</span> High-engagement pages like <Hi>{engPages[0].page}</Hi> (<Hi color={C.healthy}>{(engPages[0].engagement * 100).toFixed(1)}%</Hi>) and <Hi>{engPages[1].page}</Hi> (<Hi color={C.healthy}>{(engPages[1].engagement * 100).toFixed(1)}%</Hi>) deserve clear calls-to-action to convert that interest.</li>
+          )}
+        </ol>
+      </div>
+
+      {/* Big numbers */}
+      <div className="grid md:grid-cols-3 gap-5">
+        {BIG.map((c) => (
+          <div key={c.label} className="rounded-lg flex flex-col" style={card}>
+            <div className="px-5 py-4 flex-1 flex items-center gap-3">
+              <span className="rounded-lg flex items-center justify-center" style={{ width: 40, height: 40, background: c.color }}><c.icon size={20} color="#fff" /></span>
+              <div>
+                <div style={{ color: C.faint, fontSize: 11.5 }}>{c.label}</div>
+                <div style={{ color: C.ink, fontSize: 28, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold">{fmt(c.value)}</div>
+              </div>
+            </div>
+            {gfoot}
+          </div>
+        ))}
+      </div>
+
+      {/* Channel + device pies */}
+      <div className="grid md:grid-cols-2 gap-5">
+        <ReportPie title="Sessions by Channel" subtitle="Sessions / Session default channel grouping" data={byChannel} source={GA4_SRC} />
+        <ReportPie title="Sessions by Device Category" subtitle="Sessions / Device category" data={byDevice} source={GA4_SRC} />
+      </div>
+
+      {/* Daily bars */}
+      <DailyBars title="Monthly Sessions Trend" legend="Sessions" data={daily} dataKey="sessions" color={C.risk} />
+      <DailyBars title="New Users Month on Month" legend="New users" data={daily} dataKey="newUsers" color={C.risk} />
+
+      {/* Page performance */}
+      <div className="rounded-lg overflow-hidden" style={card}>
+        <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Page Performance</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: 620 }}>
+            <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: PGRID, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+              <span className="uppercase">Page path and screen class</span>
+              <span className="uppercase text-right">Sessions</span>
+              <span className="uppercase text-right">Total users</span>
+              <span className="uppercase text-right">New users</span>
+              <span className="uppercase text-right">Engagement rate</span>
+            </div>
+            {pages.length === 0 ? (
+              <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No page data this month.</div>
+            ) : pages.map((p, i) => (
+              <div key={p.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: PGRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <span style={{ color: C.accent, fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }} className="truncate pr-3" title={p.page}>{p.page}</span>
+                <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(p.sessions)}</span>
+                <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(p.users)}</span>
+                <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(p.newUsers)}</span>
+                <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{(p.engagement * 100).toFixed(2)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {gfoot}
       </div>
     </div>
   );
@@ -2151,7 +2352,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -2504,6 +2705,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
       {service === "seo" && seoSub === "visibility" && <OrganicVisibility client={client} month={month} gscData={gscData} queryRows={queryRows} />}
+
+      {service === "seo" && seoSub === "traffic" && <OrganicTraffic client={client} month={month} />}
 
       {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
 
