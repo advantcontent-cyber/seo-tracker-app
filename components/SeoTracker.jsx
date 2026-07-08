@@ -1455,6 +1455,39 @@ function AiSearch({ client, aiData }) {
         {ai.engines.map((e) => <EngineRow key={e.key} e={e} />)}
       </div>
 
+      {/* Top landing pages from AI — combined across engines, with the per-engine
+          split shown as chips (the prompt itself is never passed by AI engines). */}
+      {ai.pages?.length > 0 && (
+        <div className="rounded-lg overflow-hidden mt-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top pages from AI</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it</span>
+          </div>
+          <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+            <span className="uppercase">Page</span>
+            <span className="uppercase">Engines</span>
+            <span className="uppercase text-right">Sess.</span>
+            <span className="uppercase text-right">Conv.</span>
+          </div>
+          {ai.pages.map((p) => (
+            <div key={p.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", borderTop: `1px solid ${C.line}` }}>
+              <span style={{ color: C.accent, fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }} className="truncate pr-3" title={p.page}>{p.page}</span>
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pr-3">
+                {p.engines.map((e) => (
+                  <span key={e.key} className="inline-flex items-center gap-1.5" style={{ fontSize: 12 }}>
+                    <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: ENGINE_COLOR[e.key] || C.accent }} />
+                    <span style={{ color: C.muted }}>{e.label}</span>
+                    <span style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{fmt(e.sessions)}</span>
+                  </span>
+                ))}
+              </span>
+              <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(p.sessions)}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(p.conversions)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Bing — surfaced separately (search surface, not pure chat AI) */}
       {ai.bing && (
         <div className="rounded-lg overflow-hidden mt-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
