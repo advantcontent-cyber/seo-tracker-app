@@ -9,8 +9,11 @@ import {
   Tooltip,
   CartesianGrid,
   ReferenceDot,
+  PieChart as RePieChart,
+  Pie,
+  Cell,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1384,6 +1387,281 @@ function QueryPanel({ title, description, rows }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Organic Visibility Report sub-tab — comprehensive GSC report        */
+/*  Live GSC (via /api/organic-report): daily web series + search-type   */
+/*  split; summary/funnel/branded tables reuse gscData-derived data.     */
+/* ------------------------------------------------------------------ */
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtReportDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${MONTH_ABBR[m - 1]} ${d}, ${y}`; };
+const fmtPct = (v) => `${(v * 100).toFixed(2)}%`;
+// Search-type slice colours (app palette).
+const TYPE_META = [
+  { key: "web", label: "web search", color: "#0077C8" },
+  { key: "image", label: "image search", color: "#1A7A50" },
+  { key: "video", label: "video search", color: "#C74E7B" },
+  { key: "news", label: "news", color: "#B87A00" },
+];
+const Hi = ({ children, color = C.accent }) => <span style={{ color, fontWeight: 600 }}>{children}</span>;
+
+function ReportPie({ title, data }) {
+  const total = data.reduce((a, d) => a + d.value, 0) || 1;
+  return (
+    <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+      </div>
+      <div className="px-5 py-4 flex items-center gap-4">
+        <div style={{ width: 128, height: 128, flexShrink: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <RePieChart>
+              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1} stroke="none">
+                {data.map((d) => <Cell key={d.key} fill={d.color} />)}
+              </Pie>
+              <Tooltip formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+            </RePieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex-1 min-w-0">
+          {data.length === 0 ? (
+            <span style={{ color: C.muted, fontSize: 12.5 }}>No data.</span>
+          ) : data.map((d) => (
+            <div key={d.key} className="flex items-center justify-between py-1" style={{ fontSize: 12.5 }}>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: d.color }} />
+                <span style={{ color: C.muted }} className="truncate">{d.label}</span>
+              </span>
+              <span style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }} className="shrink-0 pl-2">
+                {fmt(d.value)} <span style={{ color: C.faint }}>({((d.value / total) * 100).toFixed(1)}%)</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>Google Search Console</span>
+      </div>
+    </div>
+  );
+}
+
+function OrganicVisibility({ client, month, gscData, queryRows }) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true); setError(null); setReport(null);
+    fetch(`/api/organic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`)
+      .then((r) => r.json())
+      .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
+      .catch((e) => { if (live) setError(e.message); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client.name, moNum]);
+
+  if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
+  if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
+  if (!report) return null;
+
+  const { summary, daily, byType } = report;
+  const conv = summary.impressions ? summary.clicks / summary.impressions : 0;
+
+  // Branded / non-branded totals + top non-branded query (from live GSC queries).
+  const agg = (branded) => (queryRows || []).filter((r) => isBrandQuery(client.name, r.k) === branded)
+    .reduce((a, r) => ({ impr: a.impr + r.impressions, clk: a.clk + r.clicks }), { impr: 0, clk: 0 });
+  const bAgg = agg(true), nbAgg = agg(false);
+  const brandedRows = (queryRows || []).filter((r) => isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
+  const nonBrandedRows = (queryRows || []).filter((r) => !isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
+  const topIntent = [...nonBrandedRows].sort((a, b) => b.clicks - a.clicks)[0];
+
+  // Daily peaks for the narrative.
+  const peakClicks = daily.reduce((m, d) => (d.clicks > m.clicks ? d : m), { clicks: -1 });
+  const peakImpr = daily.reduce((m, d) => (d.impressions > m.impressions ? d : m), { impressions: -1 });
+
+  const imprPie = TYPE_META.map((t) => ({ ...t, value: byType[t.key]?.impressions || 0 })).filter((d) => d.value > 0);
+  const clkPie = TYPE_META.map((t) => ({ ...t, value: byType[t.key]?.clicks || 0 })).filter((d) => d.value > 0);
+
+  const SUMMARY_ROWS = [
+    { icon: Eye, label: "Impressions", value: fmt(summary.impressions) },
+    { icon: MousePointerClick, label: "Clicks", value: fmt(summary.clicks) },
+    { icon: Percent, label: "CTR", value: fmtPct(summary.ctr) },
+    { icon: TrendingUp, label: "Average rank", value: summary.avgPos.toFixed(2) },
+  ];
+
+  const card = { border: `1px solid ${C.line}`, background: "#fff" };
+  const gfoot = (
+    <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+      <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>Google Search Console</span>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Title banner */}
+      <div className="rounded-lg px-6 py-6" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)` }}>
+        <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 28 }} className="leading-none">Organic Visibility Report</h2>
+      </div>
+
+      {/* Date period · Performance Summary · Summary */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-4 flex-1">
+            <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase mb-2">Date period</div>
+            <div style={{ color: C.ink, fontSize: 14.5 }} className="font-medium">{fmtReportDate(report.from)} – {fmtReportDate(report.to)}</div>
+            <div style={{ color: C.muted, fontSize: 13 }} className="mt-1">Duration: {report.days} days</div>
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Performance Summary</h3>
+          </div>
+          <div className="px-5 py-3 flex-1">
+            {SUMMARY_ROWS.map((r, i) => (
+              <div key={r.label} className="flex items-center justify-between py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <span className="flex items-center gap-2.5" style={{ color: C.muted, fontSize: 13.5 }}>
+                  <r.icon size={15} style={{ color: C.faint }} /> {r.label}
+                </span>
+                <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+              </div>
+            ))}
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Summary</h3>
+          </div>
+          <p className="px-5 py-4 flex-1 leading-relaxed" style={{ color: C.muted, fontSize: 12.5 }}>
+            Over this period the property recorded <Hi>{fmt(summary.impressions)}</Hi> impressions and <Hi>{fmt(summary.clicks)}</Hi> clicks, a <Hi color={C.healthy}>{fmtPct(summary.ctr)}</Hi> CTR at an average rank of <Hi color={summary.avgPos > 10 ? C.risk : C.healthy}>{summary.avgPos.toFixed(2)}</Hi>.
+            {peakClicks.clicks >= 0 && <> Daily performance peaked at <Hi>{fmt(peakClicks.clicks)}</Hi> clicks on {fmtReportDate(peakClicks.date)} and <Hi>{fmt(peakImpr.impressions)}</Hi> impressions on {fmtReportDate(peakImpr.date)}.</>}
+            {" "}Branded queries drove <Hi>{fmt(bAgg.impr)}</Hi> impressions and <Hi>{fmt(bAgg.clk)}</Hi> clicks, while non-branded queries generated <Hi>{fmt(nbAgg.impr)}</Hi> impressions and <Hi>{fmt(nbAgg.clk)}</Hi> clicks.
+          </p>
+        </div>
+      </div>
+
+      {/* Recommendations */}
+      <div className="rounded-lg px-6 py-5" style={card}>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Recommendations</h3>
+        <ol className="flex flex-col gap-2.5" style={{ color: C.muted, fontSize: 13 }}>
+          {topIntent && (
+            <li><span style={{ color: C.faint }}>1.</span> Optimise content for <Hi>non-branded keywords</Hi>, especially “{topIntent.k}”, which drew <Hi color={C.healthy}>{fmt(topIntent.clicks)} clicks</Hi> from {fmt(topIntent.impressions)} impressions — a clear high-intent opportunity.</li>
+          )}
+          <li>
+            <span style={{ color: C.faint }}>{topIntent ? 2 : 1}.</span>{" "}
+            {summary.avgPos > 10
+              ? <>Average rank of <Hi color={C.risk}>{summary.avgPos.toFixed(2)}</Hi> is below page one — prioritise on-page fixes and internal links on the highest-impression pages to lift visibility.</>
+              : <>Average rank of <Hi color={C.healthy}>{summary.avgPos.toFixed(2)}</Hi> is strong — protect it by refreshing the top pages and monitoring for slippage.</>}
+          </li>
+          {(byType.image?.impressions > 0 || byType.video?.impressions > 0) && (
+            <li>
+              <span style={{ color: C.faint }}>{topIntent ? 3 : 2}.</span>{" "}
+              {byType.image?.impressions > 0
+                ? <>Image search drove <Hi color={C.healthy}>{fmt(byType.image.impressions)} impressions</Hi> and {fmt(byType.image.clicks)} clicks — optimise image alt text, filenames and captions to capture more of it.</>
+                : <>Video search drove <Hi color={C.healthy}>{fmt(byType.video.impressions)} impressions</Hi> — invest in video schema and thumbnails to convert that exposure.</>}
+            </li>
+          )}
+        </ol>
+      </div>
+
+      {/* Impressions / Clicks (web search) */}
+      <div className="grid md:grid-cols-2 gap-5">
+        {[
+          { icon: Eye, label: "Impressions", desc: "How many links to your site a user saw on Google search results.", value: summary.impressions, color: C.accent },
+          { icon: MousePointerClick, label: "Clicks", desc: "Count of clicks from a Google search result that landed the user on your property.", value: summary.clicks, color: C.risk },
+        ].map((c) => (
+          <div key={c.label} className="rounded-lg flex flex-col" style={card}>
+            <div className="px-5 py-4 flex-1">
+              <div style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{c.label} (Web search)</div>
+              <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1 mb-3 leading-relaxed">{c.desc}</div>
+              <div className="flex items-center gap-3">
+                <span className="rounded-lg flex items-center justify-center" style={{ width: 40, height: 40, background: c.color }}><c.icon size={20} color="#fff" /></span>
+                <div>
+                  <div style={{ color: C.faint, fontSize: 11.5 }}>{c.label}</div>
+                  <div style={{ color: C.ink, fontSize: 30, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold">{fmt(c.value)}</div>
+                </div>
+              </div>
+            </div>
+            {gfoot}
+          </div>
+        ))}
+      </div>
+
+      {/* Distributions + funnel */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <ReportPie title="Impressions distribution" data={imprPie} />
+        <ReportPie title="Clicks distribution" data={clkPie} />
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Impressions and clicks funnel</h3>
+          </div>
+          <div className="px-5 py-4 flex-1">
+            <svg viewBox="0 0 200 74" width="100%" height="84" style={{ display: "block" }}>
+              <polygon points="8,6 192,6 122,44 78,44" fill={C.risk} />
+              <polygon points="78,44 122,44 108,68 92,68" fill={C.healthy} />
+            </svg>
+            <div className="mt-3">
+              <div className="flex items-center justify-between py-1.5" style={{ fontSize: 12.5 }}>
+                <span className="flex items-center gap-2"><span className="rounded-full" style={{ width: 8, height: 8, background: C.risk }} /><span style={{ color: C.muted }}>Impressions</span></span>
+                <span style={{ color: C.ink }}>{fmt(summary.impressions)} <span style={{ color: C.faint }}>100.00%</span></span>
+              </div>
+              <div className="flex items-center justify-between py-1.5" style={{ fontSize: 12.5, borderTop: `1px solid ${C.line}` }}>
+                <span className="flex items-center gap-2"><span className="rounded-full" style={{ width: 8, height: 8, background: C.healthy }} /><span style={{ color: C.muted }}>Clicks</span></span>
+                <span style={{ color: C.ink }}>{fmt(summary.clicks)} <span style={{ color: C.faint }}>{fmtPct(conv)}</span></span>
+              </div>
+              <div className="flex items-center justify-between py-1.5" style={{ fontSize: 12.5, borderTop: `1px solid ${C.line}` }}>
+                <span style={{ color: C.muted }}>Total conversion rate</span>
+                <span style={{ color: C.accent }} className="font-semibold">{fmtPct(conv)}</span>
+              </div>
+            </div>
+          </div>
+          {gfoot}
+        </div>
+      </div>
+
+      {/* Daily clicks & impressions (web search) */}
+      <div className="rounded-lg" style={card}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks and impressions (web search)</h3>
+          <span className="flex items-center gap-3" style={{ fontSize: 12 }}>
+            <span className="flex items-center gap-1.5"><span className="rounded-full" style={{ width: 8, height: 8, background: C.risk }} /><span style={{ color: C.muted }}>Clicks</span></span>
+            <span className="flex items-center gap-1.5"><span className="rounded-full" style={{ width: 8, height: 8, background: C.healthy }} /><span style={{ color: C.muted }}>Impressions</span></span>
+          </span>
+        </div>
+        <div style={{ height: 260 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={daily} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="oviImpr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.healthy} stopOpacity={0.22} /><stop offset="100%" stopColor={C.healthy} stopOpacity={0} /></linearGradient>
+                <linearGradient id="oviClk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.risk} stopOpacity={0.22} /><stop offset="100%" stopColor={C.risk} stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="date" tickFormatter={(d) => String(Number(d.slice(8)))} tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={18} />
+              <YAxis yAxisId="clicks" orientation="left" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
+              <YAxis yAxisId="impr" orientation="right" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+              <Tooltip labelFormatter={(d) => fmtReportDate(d)} formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area yAxisId="impr" type="monotone" dataKey="impressions" stroke={C.healthy} strokeWidth={2} fill="url(#oviImpr)" />
+              <Area yAxisId="clicks" type="monotone" dataKey="clicks" stroke={C.risk} strokeWidth={2} fill="url(#oviClk)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        {gfoot}
+      </div>
+
+      {/* Branded / non-branded performance */}
+      <div className="grid md:grid-cols-2 gap-5">
+        <QueryPanel title="Branded Queries" description="Terms include your brand, product names, or any variations of them." rows={brandedRows} />
+        <QueryPanel title="Non-Branded Queries" description="Terms related to your products or services that users might search for before they have a specific brand in mind." rows={nonBrandedRows} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Keyword Explorer sub-tab — live SEMrush shortlist from a page URL   */
 /*  POSTs a URL to /api/keyword-explorer, which reads seed terms from   */
 /*  the page and returns ~10 high-volume keyword ideas (keyword,        */
@@ -1873,7 +2151,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -2224,6 +2502,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       )}
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
+
+      {service === "seo" && seoSub === "visibility" && <OrganicVisibility client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
       {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
 
