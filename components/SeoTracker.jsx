@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   ReferenceDot,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -860,20 +860,21 @@ function exportIdeasCsv(client, ideas) {
 // slots with editorial angles — skipping any whose keyword an idea already
 // covers. Scheduled 2 posts/month across the plan window.
 function buildPlanFromIdeas(client, ideas) {
-  const ideaRows = (ideas || []).map((o) => ({
-    client: client.name, keyword: o.keyword, title: o.title, meta: "",
-    status: "planned", briefUrl: null, draftUrl: null, pubUrl: null,
-  }));
-  const used = new Set(ideaRows.map((r) => r.keyword.toLowerCase()));
-  const editorial = blogPlan(client)
-    .filter((r) => !used.has((r.keyword || "").toLowerCase()))
-    .map((r) => ({ ...r, status: "planned", briefUrl: null, draftUrl: null, pubUrl: null }));
-  const combined = [...ideaRows, ...editorial].slice(0, PLAN_MONTHS.length * 2);
-  combined.forEach((r, i) => {
+  // Plan is built ONLY from the data-backed SEMrush keyword ideas — each idea
+  // becomes a planned post with its formulated title. No invented/editorial
+  // padding, so every row traces back to a real SEMrush keyword. A client with
+  // N ideas gets an N-row plan (capped at 24), scheduled 2 posts/month.
+  const rows = (ideas || [])
+    .slice(0, PLAN_MONTHS.length * 2)
+    .map((o) => ({
+      client: client.name, keyword: o.keyword, title: o.title, meta: "",
+      status: "planned", briefUrl: null, draftUrl: null, pubUrl: null,
+    }));
+  rows.forEach((r, i) => {
     const [mo, yr] = PLAN_MONTHS[Math.floor(i / 2)] || PLAN_MONTHS[PLAN_MONTHS.length - 1];
     r.monthLabel = `${mo} ${yr}`;
   });
-  return combined;
+  return rows;
 }
 
 // Keyword-opportunities panel: SEMrush content ideas (volume-ranked) with a
@@ -1338,7 +1339,145 @@ function SemTab({ client, month, semData }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData }) {
+/* ------------------------------------------------------------------ */
+/*  AI Search sub-tab — generative-engine referral traffic (GA4)        */
+/*  ChatGPT/Gemini/Claude/Perplexity/Copilot referrals landing on the   */
+/*  property; Bing shown on its own line. Referral traffic only — Google */
+/*  AI Overviews are not separable in GSC and are excluded. Live via     */
+/*  /api/ai (lib/ai.js). series arrays are indexed to MONTHS (Mar–Jun).  */
+/* ------------------------------------------------------------------ */
+const ENGINE_COLOR = {
+  chatgpt: "#10A37F", gemini: "#4285F4", claude: "#CC785C",
+  perplexity: "#20808D", copilot: "#0A6ED1", bing: "#0C7DBB",
+};
+
+function AiKpi({ label, value, sub }) {
+  return (
+    <div className="rounded-lg p-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase mb-1.5">{label}</div>
+      <div style={{ color: C.ink, fontSize: 24, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold truncate">{value}</div>
+      {sub && <div className="mt-1.5">{sub}</div>}
+    </div>
+  );
+}
+
+function AiSearch({ client, aiData }) {
+  const ai = aiData?.[client.name] || null;
+
+  if (aiData == null)
+    return <div className="py-12 text-center" style={{ color: C.muted, fontSize: 13 }}>Loading AI referral data…</div>;
+  if (!ai || ai.totals.sessions === 0)
+    return (
+      <div className="rounded-lg p-8 text-center" style={{ border: `1px dashed ${C.line}`, background: "#fff" }}>
+        <Sparkles size={22} color={C.faint} className="mx-auto mb-2" />
+        <div style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">No AI-engine referrals yet</div>
+        <div style={{ color: C.muted, fontSize: 13 }}>No sessions from ChatGPT, Gemini, Claude, Perplexity or Copilot landed on this property in Mar–Jun {YEAR}.</div>
+      </div>
+    );
+
+  const t = ai.totals;
+  const mom = t.series[LAST - 1] ? Math.round(((t.series[LAST] - t.series[LAST - 1]) / t.series[LAST - 1]) * 100) : 0;
+  const top = ai.engines[0];
+  const trend = MONTHS.map((label, i) => ({ month: label, sessions: t.series[i] }));
+  const share = (n) => (t.sessions ? Math.round((n / t.sessions) * 100) : 0);
+  const GRID = "1.5fr 0.8fr 0.9fr 1.4fr 108px";
+
+  const EngineRow = ({ e }) => (
+    <div className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: `1px solid ${C.line}` }}>
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: ENGINE_COLOR[e.key] || C.accent }} />
+        <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate">{e.label}</span>
+      </span>
+      <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(e.sessions)}</span>
+      <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(e.conversions)}</span>
+      <span className="flex items-center gap-2 pl-3">
+        <div className="flex-1 rounded-full" style={{ background: C.bg, height: 7 }}>
+          <div className="rounded-full" style={{ width: `${Math.max(4, share(e.sessions))}%`, height: 7, background: ENGINE_COLOR[e.key] || C.accent }} />
+        </div>
+        <span style={{ color: C.faint, fontSize: 11.5, width: 30 }} className="text-right tabular-nums">{share(e.sessions)}%</span>
+      </span>
+      <span className="flex justify-end"><Sparkline series={e.series} w={96} h={26} /></span>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Scope note + live badge */}
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <p style={{ color: C.muted, fontSize: 12.5, maxWidth: 620 }} className="leading-relaxed">
+          Referral sessions from generative AI engines — visitors who clicked a citation link in an AI answer and landed on the site (GA4, by session source). Google AI Overview impressions aren’t separable in Search Console and are excluded.
+        </p>
+        <span className="rounded-full px-2 py-0.5 font-medium shrink-0" style={{ fontSize: 10.5, letterSpacing: "0.04em", background: "rgba(87,168,110,0.15)", color: C.healthy }}>Live GA4</span>
+      </div>
+
+      {/* KPI tiles */}
+      <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <AiKpi label={`AI sessions · ${MONTHS[LAST]}`} value={fmt(t.series[LAST])} sub={<Delta value={mom} suffix="%" size="lg" />} />
+        <AiKpi label={`AI sessions · Mar–${MONTHS[LAST]}`} value={fmt(t.sessions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>{ai.engines.length} engine{ai.engines.length > 1 ? "s" : ""}</span>} />
+        <AiKpi label={`AI conversions · Mar–${MONTHS[LAST]}`} value={fmt(t.conversions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>GA4 key events</span>} />
+        <AiKpi label="Top engine" value={top.label} sub={<span style={{ color: C.faint, fontSize: 12 }}>{share(top.sessions)}% of AI sessions</span>} />
+      </div>
+
+      {/* Trend */}
+      <div className="rounded-lg mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">AI referral sessions</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · monthly</span>
+        </div>
+        <div style={{ height: 200 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="aiSessions" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
+              <Tooltip formatter={(v) => [fmt(v), "Sessions"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="sessions" stroke={C.accent} strokeWidth={2} fill="url(#aiSessions)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Per-engine breakdown */}
+      <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+          <span className="uppercase">Engine</span>
+          <span className="uppercase text-right">Sessions</span>
+          <span className="uppercase text-right">Conv.</span>
+          <span className="uppercase pl-3">Share</span>
+          <span className="uppercase text-right">Mar–{MONTHS[LAST]}</span>
+        </div>
+        {ai.engines.map((e) => <EngineRow key={e.key} e={e} />)}
+      </div>
+
+      {/* Bing — surfaced separately (search surface, not pure chat AI) */}
+      {ai.bing && (
+        <div className="rounded-lg overflow-hidden mt-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <span style={{ color: C.muted, fontSize: 12 }}>Shown separately — Bing is a search surface (and Copilot’s engine), not counted in the AI totals above.</span>
+          </div>
+          <div className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID }}>
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: ENGINE_COLOR.bing }} />
+              <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate">Bing</span>
+            </span>
+            <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.sessions)}</span>
+            <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.conversions)}</span>
+            <span className="pl-3" />
+            <span className="flex justify-end"><Sparkline series={ai.bing.series} w={96} h={26} /></span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, aiData }) {
   // liveGsc() returns real Windsor data for this client/month when connected,
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
@@ -1521,7 +1660,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["ai", "AI Search"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -1924,6 +2063,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
+      {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
+
       {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
     </div>
   );
@@ -2005,6 +2146,7 @@ export default function App() {
   const [planKeywords, setPlanKeywords] = useState(null); // SEMrush volume+KD for blog-plan keywords
   const [semData, setSemData] = useState(null); // live Google Ads (paid) metrics per client
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
+  const [aiData, setAiData] = useState(null); // live AI-engine referral traffic per client (GA4)
 
   // Fetch live GSC data once on mount.
   useEffect(() => {
@@ -2059,6 +2201,14 @@ export default function App() {
     fetch("/api/sem")
       .then((r) => r.json())
       .then((json) => { if (json.ok) setSemData(json.data); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch live AI-engine referral traffic (GA4) once on mount.
+  useEffect(() => {
+    fetch("/api/ai")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setAiData(json.data); })
       .catch(() => {});
   }, []);
 
@@ -2143,6 +2293,7 @@ export default function App() {
               keywordIdeas={keywordIdeas}
               planKeywords={planKeywords}
               semData={semData}
+              aiData={aiData}
             />
           ) : (
             <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
