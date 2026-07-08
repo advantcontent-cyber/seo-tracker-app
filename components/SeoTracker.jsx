@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   ReferenceDot,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2 } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1340,6 +1340,122 @@ function SemTab({ client, month, semData }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Keyword Explorer sub-tab — live SEMrush shortlist from a page URL   */
+/*  POSTs a URL to /api/keyword-explorer, which reads seed terms from   */
+/*  the page and returns ~10 high-volume keyword ideas (keyword,        */
+/*  volume, KD) sorted by volume. On-demand only — no caching.          */
+/* ------------------------------------------------------------------ */
+function KeywordExplorer({ client }) {
+  const [url, setUrl] = useState(`https://${client.domain}/`);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [keywords, setKeywords] = useState(null);
+
+  // Re-prefill and clear results when switching properties.
+  useEffect(() => {
+    setUrl(`https://${client.domain}/`);
+    setKeywords(null);
+    setError(null);
+  }, [client.domain]);
+
+  const run = async () => {
+    if (!url.trim() || loading) return;
+    setLoading(true); setError(null); setKeywords(null);
+    try {
+      const res = await fetch("/api/keyword-explorer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: url.trim(), database: "us" }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Something went wrong");
+      setKeywords(json.keywords);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // KD bands: <30 easy (green), 30–59 moderate, 60+ hard (red).
+  const kdColor = (kd) => (kd == null ? C.faint : kd < 30 ? C.healthy : kd < 60 ? C.watch : C.risk);
+
+  return (
+    <div>
+      <p style={{ color: C.muted, fontSize: 12.5, maxWidth: 620 }} className="leading-relaxed mb-4">
+        Enter a page URL to get ~10 general, high-volume keyword ideas for its SEO strategy — pulled live from SEMrush, sorted by monthly search volume. Seeds are read from the page’s title and headings.
+      </p>
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-end gap-3 mb-5">
+        <label className="flex-1" style={{ minWidth: 280 }}>
+          <span style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase block mb-1.5">Page URL</span>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="https://example.com/page"
+            className="w-full rounded-lg px-3 py-2 outline-none"
+            style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 13.5 }}
+          />
+        </label>
+        <label>
+          <span style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase block mb-1.5">Market</span>
+          <select
+            value="us"
+            disabled
+            className="rounded-lg px-3 py-2 outline-none"
+            style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 13.5 }}
+          >
+            <option value="us">United States</option>
+          </select>
+        </label>
+        <button
+          onClick={run}
+          disabled={loading || !url.trim()}
+          className="rounded-lg px-4 py-2 font-semibold inline-flex items-center gap-2 transition-opacity"
+          style={{ background: C.accent, color: "#fff", fontSize: 13.5, opacity: loading || !url.trim() ? 0.55 : 1 }}
+        >
+          {loading ? <><Loader2 size={15} className="animate-spin" /> Searching…</> : <><Search size={15} /> Get keywords</>}
+        </button>
+      </div>
+
+      {/* Inline error */}
+      {error && (
+        <div className="rounded-lg px-4 py-3 mb-5" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Empty result */}
+      {keywords && keywords.length === 0 && !error && (
+        <div className="rounded-lg p-6 text-center" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13 }}>
+          No keyword ideas found for that page.
+        </div>
+      )}
+
+      {/* Results table */}
+      {keywords && keywords.length > 0 && (
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: "2.6fr 0.9fr 0.9fr", color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+            <span className="uppercase">Keyword</span>
+            <span className="uppercase text-right">Volume</span>
+            <span className="uppercase text-right" title="SEMrush keyword difficulty — 0 easy, 100 hard">KD</span>
+          </div>
+          {keywords.map((k, i) => (
+            <div key={k.keyword} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.9fr 0.9fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate pr-3">{k.keyword}</span>
+              <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(k.volume)}</span>
+              <span className="text-right font-medium" style={{ color: kdColor(k.kd), fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{k.kd == null ? "—" : k.kd}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  AI Search sub-tab — generative-engine referral traffic (GA4)        */
 /*  ChatGPT/Gemini/Claude/Perplexity/Copilot referrals landing on the   */
 /*  property; Bing shown on its own line. Referral traffic only — Google */
@@ -1693,7 +1809,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["ai", "AI Search"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -2097,6 +2213,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
       {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
+
+      {service === "seo" && seoSub === "explorer" && <KeywordExplorer client={client} />}
 
       {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
     </div>
