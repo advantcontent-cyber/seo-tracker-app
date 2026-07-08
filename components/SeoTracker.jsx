@@ -1347,29 +1347,38 @@ function SemTab({ client, month, semData }) {
 /* ------------------------------------------------------------------ */
 function KeywordExplorer({ client }) {
   const [url, setUrl] = useState(`https://${client.domain}/`);
+  const [seeds, setSeeds] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [keywords, setKeywords] = useState(null);
+  const [usedSeeds, setUsedSeeds] = useState(null);
 
   // Re-prefill and clear results when switching properties.
   useEffect(() => {
     setUrl(`https://${client.domain}/`);
+    setSeeds("");
     setKeywords(null);
     setError(null);
+    setUsedSeeds(null);
   }, [client.domain]);
 
   const run = async () => {
     if (!url.trim() || loading) return;
     setLoading(true); setError(null); setKeywords(null);
+    const typedSeeds = seeds.trim();
     try {
       const res = await fetch("/api/keyword-explorer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), database: "us" }),
+        body: JSON.stringify({ url: url.trim(), database: "us", seeds: typedSeeds }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Something went wrong");
       setKeywords(json.keywords);
+      setUsedSeeds(json.seeds || []);
+      // If the analyst didn't type seeds, surface the auto-detected ones so
+      // they can refine and re-run.
+      if (!typedSeeds && json.seeds?.length) setSeeds(json.seeds.join(", "));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1383,7 +1392,7 @@ function KeywordExplorer({ client }) {
   return (
     <div>
       <p style={{ color: C.muted, fontSize: 12.5, maxWidth: 620 }} className="leading-relaxed mb-4">
-        Enter a page URL to get ~10 general, high-volume keyword ideas for its SEO strategy — pulled live from SEMrush, sorted by monthly search volume. Seeds are read from the page’s title and headings.
+        Enter a page URL to get ~10 general, high-volume keyword ideas for its SEO strategy — pulled live from SEMrush, sorted by monthly search volume. Seed terms are auto-detected from the page; edit them to steer the results (e.g. “khao yai resort”).
       </p>
 
       {/* Controls */}
@@ -1395,6 +1404,17 @@ function KeywordExplorer({ client }) {
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run()}
             placeholder="https://example.com/page"
+            className="w-full rounded-lg px-3 py-2 outline-none"
+            style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 13.5 }}
+          />
+        </label>
+        <label className="flex-1" style={{ minWidth: 220 }}>
+          <span style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase block mb-1.5">Seed keyword(s)</span>
+          <input
+            value={seeds}
+            onChange={(e) => setSeeds(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="auto-detected — or type your own, comma-separated"
             className="w-full rounded-lg px-3 py-2 outline-none"
             style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 13.5 }}
           />
@@ -1431,6 +1451,13 @@ function KeywordExplorer({ client }) {
       {keywords && keywords.length === 0 && !error && (
         <div className="rounded-lg p-6 text-center" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13 }}>
           No keyword ideas found for that page.
+        </div>
+      )}
+
+      {/* Which seeds produced these results */}
+      {keywords && keywords.length > 0 && usedSeeds?.length > 0 && (
+        <div style={{ color: C.faint, fontSize: 12 }} className="mb-2">
+          Seeds used: <span style={{ color: C.muted }}>{usedSeeds.join(", ")}</span>
         </div>
       )}
 

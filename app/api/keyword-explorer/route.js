@@ -9,7 +9,7 @@
 
 import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
-import { phraseRelated, phraseThese } from "../../../lib/semrush";
+import { phraseFullsearch, phraseThese } from "../../../lib/semrush";
 
 const ALL_CLIENTS = ["Shinta Mani Wild", "Sora Sukhumvit", "IC Khao Yai"];
 
@@ -51,6 +51,7 @@ export async function POST(req) {
   try { body = await req.json(); } catch { body = {}; }
   const url = (body.url || "").trim();
   const database = (body.database || "us").trim() || "us";
+  const providedSeeds = parseSeeds(body.seeds); // caller-supplied seeds override page extraction
   if (!url) return Response.json({ error: "A URL is required" }, { status: 400 });
 
   let parsed;
@@ -59,6 +60,12 @@ export async function POST(req) {
 
   // Role gate: if the URL is a known client's site, require access to it.
   const host = parsed.hostname.replace(/^www\./, "");
+  // Brand = the registrable domain label only (e.g. "intercontinental"), NOT
+  // subdomains — for khaoyai.intercontinental.com the "khaoyai" subdomain is the
+  // destination, and dropping it would nuke every "khao yai" keyword. (Assumes a
+  // single-part TLD like .com, which all the properties use.)
+  const labels = host.split(".");
+  const brand = [(labels.length >= 2 ? labels[labels.length - 2] : labels[0]).toLowerCase()].filter((s) => s.length > 2);
   const match = DOMAIN_CLIENT.find((d) => host === d.host || host.endsWith("." + d.host));
   if (match && !allowed.includes(match.client))
     return Response.json({ error: "You're not authorised for this property" }, { status: 403 });
@@ -68,17 +75,22 @@ export async function POST(req) {
     return Response.json({ error: "SEMrush is not configured (SEMRUSH_API_KEY missing)" }, { status: 500 });
 
   try {
-    // 3. Fetch the page + extract seed terms (simple heuristic, no LLM)
-    const { seeds, brand } = await extractSeeds(parsed);
-    if (!seeds.length)
-      return Response.json({ error: "Couldn't read any keywords from that page" }, { status: 422 });
+    // 3. Seeds: use the caller's if provided, else extract from the page
+    //    (simple heuristic, no LLM). Provided seeds skip the page fetch.
+    let seeds = providedSeeds;
+    if (!seeds.length) {
+      seeds = await extractSeeds(parsed, brand);
+      if (!seeds.length)
+        return Response.json({ error: "Couldn't read any keywords from that page — type a seed keyword instead" }, { status: 422 });
+    }
 
-    // 4. Discovery: phrase_related on the top 2-3 seeds
-    const related = (await Promise.all(seeds.slice(0, 3).map((s) => phraseRelated(s, database)))).flat();
+    // 4. Discovery: phrase_fullsearch on the seeds (up to 6) — variations
+    //    containing each seed, so results stay on-topic.
+    const found = (await Promise.all(seeds.slice(0, 6).map((s) => phraseFullsearch(s, database, 20)))).flat();
 
     // Dedupe (keep the higher-volume duplicate); drop the site's own brand terms.
     const seen = new Map();
-    for (const k of related) {
+    for (const k of found) {
       const key = k.keyword.toLowerCase();
       if (!key || isBrand(key, brand)) continue;
       const cur = seen.get(key);
@@ -107,7 +119,8 @@ export async function POST(req) {
       .slice(0, 10)
       .map((k) => ({ keyword: k.keyword, volume: Math.round(k.volume ?? 0), kd: k.kd != null ? Math.round(k.kd) : null }));
 
-    return Response.json({ ok: true, keywords });
+    // Echo the seeds used so the UI can show + let the analyst refine them.
+    return Response.json({ ok: true, keywords, seeds });
   } catch (err) {
     console.error("[/api/keyword-explorer]", err);
     return Response.json({ error: err.message || "Keyword lookup failed" }, { status: 500 });
@@ -116,7 +129,23 @@ export async function POST(req) {
 
 /* ---------------- seed extraction (heuristic, server-side) ---------------- */
 
-async function extractSeeds(parsed) {
+// Normalise caller-supplied seeds (string with comma/newline/semicolon
+// separators, or an array) into up to 6 clean phrases. The analyst's own
+// wording is respected — no brand/stopword stripping here.
+function parseSeeds(input) {
+  if (!input) return [];
+  const arr = Array.isArray(input) ? input : String(input).split(/[,;\n]/);
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const c = (raw || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").slice(0, 6).join(" ");
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+async function extractSeeds(parsed, brand) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   let html;
@@ -145,25 +174,24 @@ async function extractSeeds(parsed) {
   const h1s   = grabAll(html, /<h1[^>]*>([\s\S]*?)<\/h1>/gi);
   const h2s   = grabAll(html, /<h2[^>]*>([\s\S]*?)<\/h2>/gi);
 
-  // Brand tokens from the host labels (drop the site's own name from results).
-  const host = parsed.hostname.replace(/^www\./, "");
-  const brand = host.split(".").slice(0, -1).map((s) => s.toLowerCase()).filter((s) => s.length > 2);
-
-  // Candidate phrases, best first: title's primary segment, H1s, a couple H2s,
-  // then the meta description as a fallback.
-  const candidates = [splitTitle(title), ...h1s, ...h2s.slice(0, 2), desc].filter(Boolean);
+  // Candidate phrases: title's primary segment, the meta description broken
+  // into short clauses (a full sentence is a poor seed; its clauses are good
+  // ones), then H1s and every H2. Keep 2–6-word phrases and try up to 6 —
+  // marketing-fluff headings often return nothing, so breadth matters.
+  const descClauses = desc.split(/[,.;:]|\s(?:and|in|with|offering|featuring|for|at)\s/i);
+  const candidates = [splitTitle(title), ...descClauses, ...h1s, ...h2s].filter(Boolean);
   const seeds = [];
   const seen = new Set();
   for (const phrase of candidates) {
     const cleaned = cleanSeed(phrase, brand);
     const words = cleaned.split(" ").filter(Boolean);
-    if (words.length >= 1 && words.length <= 6 && !seen.has(cleaned)) {
+    if (words.length >= 2 && words.length <= 6 && !seen.has(cleaned)) {
       seen.add(cleaned);
       seeds.push(cleaned);
     }
-    if (seeds.length >= 3) break;
+    if (seeds.length >= 6) break;
   }
-  return { seeds, brand };
+  return seeds;
 }
 
 const grab = (html, re) => { const m = html.match(re); return m ? decodeEntities(stripTags(m[1])) : ""; };
