@@ -1339,6 +1339,50 @@ function SemTab({ client, month, semData }) {
   );
 }
 
+/* Google "G" mark — inline SVG so it stays self-contained (no external asset). */
+function GoogleG({ size = 15 }) {
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-label="Google" style={{ display: "block", flexShrink: 0 }}>
+      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
+      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
+      <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z" />
+      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+    </svg>
+  );
+}
+
+/* One branded/non-branded query panel: title + description, then a GSC
+   performance table (Keyword | Impressions | Clicks), sorted by impressions. */
+function QueryPanel({ title, description, rows }) {
+  const GRID = "2.2fr 1fr 0.8fr";
+  return (
+    <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">{title}</h3>
+        <p style={{ color: C.muted, fontSize: 12.5 }} className="mt-1 leading-relaxed">{description}</p>
+      </div>
+      <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+        <span className="uppercase">Keyword</span>
+        <span className="uppercase flex items-center justify-end gap-1">Impressions <ChevronDown size={11} /></span>
+        <span className="uppercase text-right">Clicks</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No queries this month.</div>
+      ) : rows.map((r, i) => (
+        <div key={r.k} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate pr-3">{r.k}</span>
+          <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.impressions)}</span>
+          <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.clicks)}</span>
+        </div>
+      ))}
+      <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <GoogleG size={15} />
+        <span style={{ color: C.faint, fontSize: 11.5 }}>Google Search Console</span>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Keyword Explorer sub-tab — live SEMrush shortlist from a page URL   */
 /*  POSTs a URL to /api/keyword-explorer, which reads seed terms from   */
@@ -1734,34 +1778,27 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     .sort((a, b) => b.gap - a.gap);
   const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
 
-  // Tracked keywords: real GSC top queries when connected, else the mock set.
-  // change is the query's position shift vs the previous month (positive = moved
-  // up the page).
-  const trackedKeywords = curQueries
+  // GSC queries split into branded vs non-branded (brand terms per client),
+  // each sorted by impressions. Real GSC top queries when connected, else mock.
+  const queryRows = curQueries
     ? [...curQueries]
         .filter((row) => isReadableQuery(row.q ?? row.k)) // legible English terms only
-        .sort((a, b) => b.clicks - a.clicks) // most-clicked queries first for the table
-        .slice(0, 25)
-        .map((row) => {
-          const prevRow = queriesFor(month - 1)?.find((p) => p.q === row.q);
-          return {
-            k: row.k ?? row.q,
-            pos: round1(row.position),
-            change: prevRow ? round1(prevRow.position - row.position) : 0,
-            clicks: Math.round(row.clicks),
-            page: row.page ?? null, // GSC's real ranking URL — the page to check/optimise
-          };
-        })
+        .map((row) => ({
+          k: row.k ?? row.q,
+          impressions: Math.round(row.impressions ?? 0),
+          clicks: Math.round(row.clicks ?? 0),
+        }))
     : client.keywords.map((kw) => {
         const pos = kwPos(kw, month);
-        return {
-          k: kw.k,
-          pos,
-          change: month > 0 ? kwPos(kw, month - 1) - pos : 0,
-          clicks: kwClicks(kw, pos),
-          page: null,
-        };
+        return { k: kw.k, impressions: kw.v, clicks: Math.round(kw.v * ctrFor(pos)) };
       });
+  const bySplit = (branded) =>
+    queryRows
+      .filter((r) => isBrandQuery(client.name, r.k) === branded)
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 10);
+  const brandedQueries = bySplit(true);
+  const nonBrandedQueries = bySplit(false);
 
   // Cached SEMrush snapshot for this client (null until seeded).
   const sem = semrushData?.[client.name] || null;
@@ -2020,69 +2057,18 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </div>
       )}
 
-      {/* Tracked keywords */}
-      <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-            Tracked keywords
-          </h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>
-            {trackedKeywords.length} {curQueries ? "from GSC" : "tracked"}
-          </span>
-        </div>
-        <div
-          className="grid items-center px-5 py-2"
-          style={{
-            gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
-            color: C.faint,
-            fontSize: 11.5,
-            letterSpacing: "0.04em",
-            borderBottom: `1px solid ${C.line}`,
-          }}
-        >
-          <span className="uppercase">Keyword</span>
-          <span className="uppercase text-right">Position</span>
-          <span className="uppercase text-right">Change</span>
-          <span className="uppercase text-right">Clicks</span>
-        </div>
-        {trackedKeywords.map((kw, i) => (
-          <div
-            key={kw.k}
-            className="grid items-center px-5 py-3"
-            style={{
-              gridTemplateColumns: "2.4fr 0.8fr 0.8fr 0.8fr",
-              borderTop: i ? `1px solid ${C.line}` : "none",
-            }}
-          >
-            {kw.page ? (
-              <a
-                href={kw.page}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 min-w-0 hover:opacity-70 transition-opacity"
-                style={{ color: C.ink, fontSize: 14 }}
-                title={`Ranking page: ${shortUrl(kw.page)}`}
-              >
-                <span className="truncate">{kw.k}</span>
-                <ExternalLink size={12} style={{ color: C.faint, flexShrink: 0 }} />
-              </a>
-            ) : (
-              <span style={{ color: C.ink, fontSize: 14 }} className="truncate">
-                {kw.k}
-              </span>
-            )}
-            <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">
-              {kw.pos}
-            </span>
-            <span className="flex justify-end">
-              {/* invert: a smaller position number is an improvement */}
-              <Delta value={kw.change} invert />
-            </span>
-            <span style={{ color: C.muted, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="text-right">
-              {fmt(kw.clicks)}
-            </span>
-          </div>
-        ))}
+      {/* Branded vs non-branded queries (Google Search Console) */}
+      <div className="grid md:grid-cols-2 gap-5 mt-5">
+        <QueryPanel
+          title="Branded Queries"
+          description="Terms include your brand, product names, or any variations of them."
+          rows={brandedQueries}
+        />
+        <QueryPanel
+          title="Non-Branded Queries"
+          description="Terms related to your products or services that users might search for before they have a specific brand in mind."
+          rows={nonBrandedQueries}
+        />
       </div>
 
       {/* Content opportunities */}
