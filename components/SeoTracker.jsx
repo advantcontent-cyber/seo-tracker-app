@@ -15,7 +15,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1863,6 +1863,234 @@ function OrganicTraffic({ client, month }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Organic Conversions Report sub-tab — comprehensive GA4 report        */
+/*  Live GA4 (via /api/conversions-report): conversions/revenue summary,  */
+/*  device + session revenue pies, daily series, and page / traffic /     */
+/*  geo / engagement breakdowns.                                          */
+/* ------------------------------------------------------------------ */
+function ConvTable({ title, colLabel, rows, mono }) {
+  const GRID = "2.2fr 1fr 1fr 1.2fr";
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: 560 }}>
+          <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+            <span className="uppercase">{colLabel}</span>
+            <span className="uppercase text-right">Conversions</span>
+            <span className="uppercase text-right">Transactions</span>
+            <span className="uppercase text-right">Total revenue</span>
+          </div>
+          {rows.length === 0 ? (
+            <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No data this month.</div>
+          ) : rows.map((r, i) => (
+            <div key={r.label} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span className="truncate pr-3" style={{ color: mono ? C.accent : C.ink, fontSize: 12.5, fontFamily: mono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit" }} title={r.label}>{r.label}</span>
+              <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.conversions)}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.transactions)}</span>
+              <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmtRevenue(r.revenue)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="px-5 py-3 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}><GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{GA4_SRC}</span></div>
+    </div>
+  );
+}
+
+function OrganicConversions({ client, month }) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true); setError(null); setReport(null);
+    fetch(`/api/conversions-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
+      .catch((e) => { if (live) setError(e.message); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client.name, moNum]);
+
+  if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
+  if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
+  if (!report) return null;
+
+  const { summary, daily, byDevice, bySession, pages, traffic, geo, engagement } = report;
+  const topSession = bySession[0], topDevice = byDevice[0];
+  const revPages = [...pages].sort((a, b) => b.revenue - a.revenue).slice(0, 2);
+
+  const card = { border: `1px solid ${C.line}`, background: "#fff" };
+  const gfoot = (
+    <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+      <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{GA4_SRC}</span>
+    </div>
+  );
+
+  const SUMMARY_ROWS = [
+    { icon: Target, label: "Conversions", value: fmt(summary.conversions) },
+    { icon: Receipt, label: "Transactions", value: fmt(summary.transactions) },
+    { icon: DollarSign, label: "Total revenue", value: fmtRevenue(summary.revenue) },
+    { icon: Activity, label: "Event count", value: fmt(summary.eventCount) },
+    { icon: ShoppingCart, label: "Ecommerce purchases", value: fmt(summary.ecommercePurchases) },
+    { icon: Banknote, label: "Purchase revenue", value: fmtRevenue(summary.purchaseRevenue) },
+  ];
+  const BIG = [
+    { icon: Target, label: "Conversions", value: fmt(summary.conversions), color: C.accent },
+    { icon: DollarSign, label: "Total revenue", value: fmtRevenue(summary.revenue), color: C.healthy },
+    { icon: Activity, label: "Event count", value: fmt(summary.eventCount), color: C.accent },
+    { icon: ShoppingCart, label: "Ecommerce purchases", value: fmt(summary.ecommercePurchases), color: C.watch },
+    { icon: Banknote, label: "Purchase revenue", value: fmtRevenue(summary.purchaseRevenue), color: C.healthy },
+    { icon: Receipt, label: "Transactions", value: fmt(summary.transactions), color: C.risk },
+  ];
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Title banner */}
+      <div className="rounded-lg px-6 py-6" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)` }}>
+        <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 28 }} className="leading-none">Organic Conversions Report</h2>
+      </div>
+
+      {/* Date period · Performance Summary · Summary */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-4 flex-1">
+            <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase mb-2">Date period</div>
+            <div style={{ color: C.ink, fontSize: 14.5 }} className="font-medium">{fmtReportDate(report.from)} – {fmtReportDate(report.to)}</div>
+            <div style={{ color: C.muted, fontSize: 13 }} className="mt-1">Duration: {report.days} days</div>
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Performance Summary</h3>
+          </div>
+          <div className="px-5 py-2 flex-1">
+            {SUMMARY_ROWS.map((r, i) => (
+              <div key={r.label} className="flex items-center justify-between py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <span className="flex items-center gap-2.5" style={{ color: C.muted, fontSize: 13.5 }}><r.icon size={15} style={{ color: C.faint }} /> {r.label}</span>
+                <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+              </div>
+            ))}
+          </div>
+          {gfoot}
+        </div>
+
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Summary</h3>
+          </div>
+          <p className="px-5 py-4 flex-1 leading-relaxed" style={{ color: C.muted, fontSize: 12.5 }}>
+            Over this period the property recorded <Hi>{fmt(summary.conversions)}</Hi> conversions and <Hi color={C.healthy}>{fmtRevenue(summary.revenue)}</Hi> in total revenue, from <Hi>{fmt(summary.eventCount)}</Hi> events.
+            {summary.transactions > 0
+              ? <> Ecommerce contributed <Hi>{fmt(summary.ecommercePurchases)}</Hi> purchases across <Hi>{fmt(summary.transactions)}</Hi> transactions ({fmtRevenue(summary.purchaseRevenue)} purchase revenue).</>
+              : <> No ecommerce transactions were recorded — conversions here are engagement/lead events rather than purchases.</>}
+            {topSession && <> {topSession.label} was the top revenue source at <Hi color={C.healthy}>{fmtRevenue(topSession.value)}</Hi>.</>}
+          </p>
+        </div>
+      </div>
+
+      {/* Recommendations */}
+      <div className="rounded-lg px-6 py-5" style={card}>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Recommendations</h3>
+        <ol className="flex flex-col gap-2.5" style={{ color: C.muted, fontSize: 13 }}>
+          {topSession
+            ? <li><span style={{ color: C.faint }}>1.</span> Invest more in <Hi>{topSession.label}</Hi>, which generated <Hi color={C.healthy}>{fmtRevenue(topSession.value)}</Hi> in revenue — the strongest converting source this period.</li>
+            : <li><span style={{ color: C.faint }}>1.</span> No revenue is attributed yet — set up GA4 ecommerce / key-event values so conversions can be tied to revenue by source.</li>}
+          {topDevice && <li><span style={{ color: C.faint }}>2.</span> <Hi>{topDevice.label}</Hi> leads revenue at <Hi color={C.healthy}>{fmtRevenue(topDevice.value)}</Hi> — prioritise that device experience to protect and grow it.</li>}
+          {revPages.length >= 2 && revPages[0].revenue > 0 && (
+            <li><span style={{ color: C.faint }}>{topDevice ? 3 : 2}.</span> Pages <Hi>{revPages[0].label}</Hi> ({fmtRevenue(revPages[0].revenue)}) and <Hi>{revPages[1].label}</Hi> ({fmtRevenue(revPages[1].revenue)}) drive the most revenue — replicate their journeys across lower-performing pages.</li>
+          )}
+        </ol>
+      </div>
+
+      {/* Big numbers (6) */}
+      <div className="grid md:grid-cols-3 gap-5">
+        {BIG.map((c) => (
+          <div key={c.label} className="rounded-lg flex flex-col" style={card}>
+            <div className="px-5 py-4 flex-1 flex items-center gap-3">
+              <span className="rounded-lg flex items-center justify-center" style={{ width: 40, height: 40, background: c.color }}><c.icon size={20} color="#fff" /></span>
+              <div className="min-w-0">
+                <div style={{ color: C.faint, fontSize: 11.5 }} className="truncate">{c.label}</div>
+                <div style={{ color: C.ink, fontSize: 26, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold truncate">{c.value}</div>
+              </div>
+            </div>
+            {gfoot}
+          </div>
+        ))}
+      </div>
+
+      {/* Revenue pies */}
+      <div className="grid md:grid-cols-2 gap-5">
+        <ReportPie title="Revenue by Device Category" subtitle="Total revenue / Device category" data={byDevice} source={GA4_SRC} />
+        <ReportPie title="Revenue by Session" subtitle="Total revenue / Source / medium" data={bySession} source={GA4_SRC} />
+      </div>
+
+      {/* Daily conversions area */}
+      <div className="rounded-lg" style={card}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Conversions</h3>
+          <span className="flex items-center gap-1.5" style={{ fontSize: 12 }}><span className="rounded-full" style={{ width: 8, height: 8, background: C.accent }} /><span style={{ color: C.muted }}>Conversions</span></span>
+        </div>
+        <div style={{ height: 220 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={daily} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+              <defs><linearGradient id="ocvConv" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.accent} stopOpacity={0.22} /><stop offset="100%" stopColor={C.accent} stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="date" tickFormatter={(d) => String(Number(d.slice(8)))} tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={18} />
+              <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+              <Tooltip labelFormatter={(d) => fmtReportDate(d)} formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="conversions" stroke={C.accent} strokeWidth={2} fill="url(#ocvConv)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        {gfoot}
+      </div>
+
+      {/* Conversions by month (daily bars) */}
+      <DailyBars title="Organic Conversions by Month" legend="Conversions" data={daily} dataKey="conversions" color={C.accent} />
+
+      {/* Revenue & transactions (dual-axis bars) */}
+      <div className="rounded-lg" style={card}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Organic Revenue and Transactions Month on Month</h3>
+          <span className="flex items-center gap-3" style={{ fontSize: 12 }}>
+            <span className="flex items-center gap-1.5"><span className="rounded-full" style={{ width: 8, height: 8, background: C.accent }} /><span style={{ color: C.muted }}>Total revenue</span></span>
+            <span className="flex items-center gap-1.5"><span className="rounded-full" style={{ width: 8, height: 8, background: C.healthy }} /><span style={{ color: C.muted }}>Transactions</span></span>
+          </span>
+        </div>
+        <div style={{ height: 236 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={daily} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="date" tickFormatter={(d) => String(Number(d.slice(8)))} tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
+              <YAxis yAxisId="rev" orientation="left" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+              <YAxis yAxisId="txn" orientation="right" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={30} />
+              <Tooltip labelFormatter={(d) => fmtReportDate(d)} formatter={(v, n) => [n === "Total revenue" ? fmtRevenue(v) : fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+              <Bar yAxisId="rev" dataKey="revenue" name="Total revenue" fill={C.accent} radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="txn" dataKey="transactions" name="Transactions" fill={C.healthy} radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {gfoot}
+      </div>
+
+      {/* Breakdown tables */}
+      <ConvTable title="Page Paths Performance" colLabel="Page path and screen class" rows={pages} mono />
+      <ConvTable title="Traffic acquisition conversions" colLabel="Session source / medium" rows={traffic} />
+      <ConvTable title="Demographics conversions" colLabel="Country" rows={geo} />
+      <ConvTable title="Engagement conversions" colLabel="Event name" rows={engagement} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Keyword Explorer sub-tab — live SEMrush shortlist from a page URL   */
 /*  POSTs a URL to /api/keyword-explorer, which reads seed terms from   */
 /*  the page and returns ~10 high-volume keyword ideas (keyword,        */
@@ -2352,7 +2580,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -2707,6 +2935,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
       {service === "seo" && seoSub === "traffic" && <OrganicTraffic key={`${client.name}-${month}`} client={client} month={month} />}
+
+      {service === "seo" && seoSub === "conversions" && <OrganicConversions key={`${client.name}-${month}`} client={client} month={month} />}
 
       {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
 
