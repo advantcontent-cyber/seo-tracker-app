@@ -43,7 +43,7 @@ export async function GET(req) {
 
   try {
     const report = await fetchOrganicReport(client, year, month);
-    return Response.json({ ok: true, ...report });
+    return Response.json({ ok: true, ...report }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (err) {
     console.error("[/api/organic-report]", err);
     return Response.json({ error: err.message }, { status: 500 });
