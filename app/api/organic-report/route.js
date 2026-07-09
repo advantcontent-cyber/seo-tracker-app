@@ -7,6 +7,10 @@ import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
 import { fetchOrganicReport } from "../../../lib/organic-report";
 
+// Per-property, per-month — never cache the route response (each client must get
+// its own data, not a cached first response).
+export const dynamic = "force-dynamic";
+
 // The four connected GSC properties (matches lib/gsc.js PROPERTY_MAP).
 const ALL_CLIENTS = ["Shinta Mani Wild", "Sora Sukhumvit", "Nomad Greenland", "IC Khao Yai"];
 

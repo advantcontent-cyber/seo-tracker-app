@@ -7,6 +7,9 @@ import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
 import { fetchTrafficReport } from "../../../lib/traffic-report";
 
+// Per-property, per-month — never cache the route response.
+export const dynamic = "force-dynamic";
+
 const ALL_CLIENTS = ["Shinta Mani Wild", "Sora Sukhumvit", "Nomad Greenland", "IC Khao Yai"];
 
 export async function GET(req) {

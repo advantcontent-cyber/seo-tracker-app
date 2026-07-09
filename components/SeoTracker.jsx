@@ -1459,7 +1459,7 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   useEffect(() => {
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    fetch(`/api/organic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`)
+    fetch(`/api/organic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
       .catch((e) => { if (live) setError(e.message); })
@@ -1707,7 +1707,7 @@ function OrganicTraffic({ client, month }) {
   useEffect(() => {
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    fetch(`/api/traffic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`)
+    fetch(`/api/traffic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
       .catch((e) => { if (live) setError(e.message); })
