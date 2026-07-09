@@ -1826,8 +1826,8 @@ function OrganicTraffic({ client, month }) {
       </div>
 
       {/* Daily bars */}
-      <DailyBars title="Monthly Sessions Trend" legend="Sessions" data={daily} dataKey="sessions" color={C.risk} />
-      <DailyBars title="New Users Month on Month" legend="New users" data={daily} dataKey="newUsers" color={C.risk} />
+      <DailyBars title="Monthly Sessions Trend" legend="Sessions" data={daily} dataKey="sessions" color={C.accent} />
+      <DailyBars title="New Users Month on Month" legend="New users" data={daily} dataKey="newUsers" color={C.accent} />
 
       {/* Page performance */}
       <div className="rounded-lg overflow-hidden" style={card}>
