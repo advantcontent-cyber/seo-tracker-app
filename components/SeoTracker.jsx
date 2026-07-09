@@ -2091,6 +2091,178 @@ function OrganicConversions({ client, month }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Summary sub-tab — headline metrics rolled up from GSC + GA4          */
+/*  Live via /api/summary-report (visibility + traffic + conversion       */
+/*  headline metrics + KPI progress + recommendations).                   */
+/* ------------------------------------------------------------------ */
+const niceGoal = (v) => {
+  if (v <= 0) return 100;
+  const target = v / 0.8;
+  const mag = Math.pow(10, Math.floor(Math.log10(target)));
+  for (const s of [1, 2, 2.5, 5]) if (s * mag >= target) return s * mag;
+  return 10 * mag;
+};
+
+function SectionBanner({ title }) {
+  return (
+    <div className="rounded-lg px-6 py-3.5" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)` }}>
+      <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 20 }} className="leading-none">{title}</h2>
+    </div>
+  );
+}
+
+function KpiBar({ label, value, color }) {
+  const goal = niceGoal(value);
+  const pct = Math.min(100, (value / goal) * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span style={{ color: C.ink, fontSize: 13 }} className="font-medium">{label}</span>
+        <span style={{ color: C.muted, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{fmt(value)} / {fmt(goal)}</span>
+      </div>
+      <div className="rounded-full" style={{ background: C.bg, height: 9 }}>
+        <div className="rounded-full" style={{ width: `${Math.max(3, pct)}%`, height: 9, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function SummaryMetric({ icon: Icon, label, desc, value, color, source }) {
+  return (
+    <div className="rounded-lg flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-4 flex-1">
+        <div style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{label}</div>
+        {desc && <div style={{ color: C.muted, fontSize: 12 }} className="mt-1 mb-3 leading-relaxed">{desc}</div>}
+        <div className="flex items-center gap-3 mt-2">
+          <span className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 38, height: 38, background: color }}><Icon size={19} color="#fff" /></span>
+          <div className="min-w-0">
+            <div style={{ color: C.faint, fontSize: 11.5 }} className="truncate">{label}</div>
+            <div style={{ color: C.ink, fontSize: 25, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold truncate">{value}</div>
+          </div>
+        </div>
+      </div>
+      <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>{source}</span>
+      </div>
+    </div>
+  );
+}
+
+function OrganicSummary({ client, month }) {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true); setError(null); setReport(null);
+    fetch(`/api/summary-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load summary"); })
+      .catch((e) => { if (live) setError(e.message); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client.name, moNum]);
+
+  if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading summary…</div>;
+  if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
+  if (!report) return null;
+
+  const { visibility: v, traffic: t, conversions: c, topPages, topDevice, topChannel } = report;
+  const GSC = "Google Search Console", GA4 = "Google Analytics 4";
+  const card = { border: `1px solid ${C.line}`, background: "#fff" };
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Title + Date period */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2 rounded-lg px-6 flex items-center" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)`, minHeight: 120 }}>
+          <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 26 }} className="leading-none">{client.name} · Report Summary</h2>
+        </div>
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-4 flex-1">
+            <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.05em" }} className="uppercase mb-2">Date period</div>
+            <div style={{ color: C.ink, fontSize: 14.5 }} className="font-medium">{fmtReportDate(report.from)} – {fmtReportDate(report.to)}</div>
+            <div style={{ color: C.muted, fontSize: 13 }} className="mt-1">Duration: {report.days} days</div>
+          </div>
+          <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}><GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>GSC + GA4</span></div>
+        </div>
+      </div>
+
+      {/* Summary narrative + KPI progress */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="rounded-lg" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}><h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">Summary</h3></div>
+          <p className="px-5 py-4 leading-relaxed" style={{ color: C.muted, fontSize: 13 }}>
+            This month the property recorded a conversion rate of <Hi color={C.healthy}>{fmtPct(c.conversionRate)}</Hi> ({fmt(c.conversions)} conversions across {fmt(t.sessions)} sessions), signalling {c.conversionRate >= 0.5 ? "strong" : "steady"} engagement.
+            {c.revenue > 0
+              ? <> Total revenue reached <Hi color={C.healthy}>{fmtRevenue(c.revenue)}</Hi> across {fmt(c.transactions)} transactions.</>
+              : <> No purchase revenue is tracked for this property, so conversions reflect engagement/lead events.</>}
+            {" "}Organic search sits at an average position of <Hi color={v.avgPos > 10 ? C.risk : C.healthy}>{v.avgPos.toFixed(2)}</Hi>{v.avgPos > 10 ? ", indicating room to improve keyword rankings." : "."}
+          </p>
+        </div>
+        <div className="rounded-lg flex flex-col" style={card}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}><h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">SEO KPIs Progress</h3></div>
+          <div className="px-5 py-4 flex-1 flex flex-col justify-center gap-3.5">
+            <KpiBar label="Impressions" value={v.impressions} color={C.risk} />
+            <KpiBar label="Clicks" value={v.clicks} color={C.accent} />
+            <KpiBar label="Sessions" value={t.sessions} color="#C74E7B" />
+            <KpiBar label="Conversions" value={c.conversions} color={C.watch} />
+          </div>
+          <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}><GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>GSC + GA4</span></div>
+        </div>
+      </div>
+
+      {/* Traffic Metrics */}
+      <SectionBanner title="Traffic Metrics" />
+      <div className="grid md:grid-cols-3 gap-5">
+        <SummaryMetric icon={Activity} label="Sessions" desc="The number of sessions that began on your site or app." value={fmt(t.sessions)} color={C.accent} source={GA4} />
+        <SummaryMetric icon={Users} label="Total users" desc="Distinct users who logged at least one event." value={fmt(t.totalUsers)} color={C.healthy} source={GA4} />
+        <SummaryMetric icon={UserPlus} label="New users" desc="Distinct new users who logged at least one event." value={fmt(t.newUsers)} color={C.risk} source={GA4} />
+      </div>
+
+      {/* Visibility Metrics */}
+      <SectionBanner title="Visibility Metrics" />
+      <div className="grid md:grid-cols-3 gap-5">
+        <SummaryMetric icon={Eye} label="Impressions" desc="How many links to your site a user saw on Google search results." value={fmt(v.impressions)} color={C.accent} source={GSC} />
+        <SummaryMetric icon={MousePointerClick} label="Clicks" desc="Clicks from a Google search result that landed on your property." value={fmt(v.clicks)} color={C.risk} source={GSC} />
+        <SummaryMetric icon={TrendingUp} label="Avg. organic position" desc="Organic Google search average position (lower is better)." value={v.avgPos.toFixed(2)} color={C.watch} source={GSC} />
+      </div>
+
+      {/* Conversion Metrics */}
+      <SectionBanner title="Conversion Metrics" />
+      <div className="grid md:grid-cols-3 gap-5">
+        <SummaryMetric icon={Target} label="Conversions" desc="The count of conversion events." value={fmt(c.conversions)} color={C.accent} source={GA4} />
+        <SummaryMetric icon={Percent} label="Conversion rate" desc="Conversions as a share of sessions." value={fmtPct(c.conversionRate)} color={C.healthy} source={GA4} />
+        <SummaryMetric icon={DollarSign} label="Total revenue" desc="Revenue from purchases, subscriptions and advertising." value={fmtRevenue(c.revenue)} color={C.healthy} source={GA4} />
+      </div>
+      <div className="grid md:grid-cols-3 gap-5">
+        <SummaryMetric icon={ShoppingCart} label="Ecommerce purchases" desc="The number of times users completed a purchase." value={fmt(c.ecommercePurchases)} color={C.watch} source={GA4} />
+        <SummaryMetric icon={Banknote} label="Average purchase revenue" desc="Average revenue per transaction." value={fmtRevenue(c.avgPurchaseRevenue)} color={C.healthy} source={GA4} />
+        <SummaryMetric icon={Receipt} label="Transactions" desc="The count of transaction events with purchase revenue." value={fmt(c.transactions)} color={C.risk} source={GA4} />
+      </div>
+
+      {/* Recommendations */}
+      <div className="rounded-lg px-6 py-5" style={card}>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Recommendations</h3>
+        <ol className="flex flex-col gap-2.5" style={{ color: C.muted, fontSize: 13 }}>
+          {topPages.length >= 2 && (
+            <li><span style={{ color: C.faint }}>1.</span> Optimise content and CTAs on <Hi>{topPages[0].page}</Hi> and <Hi>{topPages[1].page}</Hi>, given their engagement (<Hi color={C.healthy}>{(topPages[0].engagement * 100).toFixed(1)}%</Hi> and {(topPages[1].engagement * 100).toFixed(1)}%){topPages[0].revenue > 0 && <> and {fmtRevenue(topPages[0].revenue)} revenue from {topPages[0].page}</>}.</li>
+          )}
+          {topDevice && topDevice.value > 0 && (
+            <li><span style={{ color: C.faint }}>{topPages.length >= 2 ? 2 : 1}.</span> Allocate more budget to <Hi>{topDevice.label}</Hi>-focused campaigns — it contributes the highest revenue at <Hi color={C.healthy}>{fmtRevenue(topDevice.value)}</Hi>.</li>
+          )}
+          {topChannel && (
+            <li><span style={{ color: C.faint }}>{[topPages.length >= 2, topDevice && topDevice.value > 0].filter(Boolean).length + 1}.</span> Investigate the <Hi>{topChannel.label}</Hi> channel, which accounts for <Hi color={C.healthy}>{fmt(topChannel.value)} sessions</Hi>, to formalise or further leverage that traffic.</li>
+          )}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Keyword Explorer sub-tab — live SEMrush shortlist from a page URL   */
 /*  POSTs a URL to /api/keyword-explorer, which reads seed terms from   */
 /*  the page and returns ~10 high-volume keyword ideas (keyword,        */
@@ -2580,7 +2752,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["overview", "Overview"], ["summary", "Summary"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -2931,6 +3103,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       )}
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
+
+      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} />}
 
       {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
