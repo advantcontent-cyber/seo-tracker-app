@@ -2704,9 +2704,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
-      {service === "seo" && seoSub === "visibility" && <OrganicVisibility client={client} month={month} gscData={gscData} queryRows={queryRows} />}
+      {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
-      {service === "seo" && seoSub === "traffic" && <OrganicTraffic client={client} month={month} />}
+      {service === "seo" && seoSub === "traffic" && <OrganicTraffic key={`${client.name}-${month}`} client={client} month={month} />}
 
       {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
 
