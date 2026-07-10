@@ -320,7 +320,7 @@ const isNoiseQuery = (k) => {
 // shows only legible, relevant terms.
 const isReadableQuery = (q) => {
   if (!q) return false;
-  if (/[^ -ɏ]/.test(q)) return false;      // non-Latin script (Thai, CJK, …)
+  if (/[^\u0000-\u024f]/.test(q)) return false;      // non-Latin script (Thai, CJK, …)
   return /[a-z]+\s+[a-z]/i.test(q.trim());            // at least two words of letters
 };
 
@@ -1471,7 +1471,7 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
   if (!report) return null;
 
-  const { summary, daily, byType } = report;
+  const { summary, deltas, daily, byType } = report;
   const conv = summary.impressions ? summary.clicks / summary.impressions : 0;
 
   // Branded / non-branded totals + top non-branded query (from live GSC queries).
@@ -1490,10 +1490,10 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const clkPie = TYPE_META.map((t) => ({ ...t, value: byType[t.key]?.clicks || 0 })).filter((d) => d.value > 0);
 
   const SUMMARY_ROWS = [
-    { icon: Eye, label: "Impressions", value: fmt(summary.impressions) },
-    { icon: MousePointerClick, label: "Clicks", value: fmt(summary.clicks) },
-    { icon: Percent, label: "CTR", value: fmtPct(summary.ctr) },
-    { icon: TrendingUp, label: "Average rank", value: summary.avgPos.toFixed(2) },
+    { icon: Eye, label: "Impressions", value: fmt(summary.impressions), delta: deltas.impressions, suffix: "%" },
+    { icon: MousePointerClick, label: "Clicks", value: fmt(summary.clicks), delta: deltas.clicks, suffix: "%" },
+    { icon: Percent, label: "CTR", value: fmtPct(summary.ctr), delta: deltas.ctr },
+    { icon: TrendingUp, label: "Average rank", value: summary.avgPos.toFixed(2), delta: deltas.avgPos, invert: true },
   ];
 
   const card = { border: `1px solid ${C.line}`, background: "#fff" };
@@ -1531,7 +1531,10 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
                 <span className="flex items-center gap-2.5" style={{ color: C.muted, fontSize: 13.5 }}>
                   <r.icon size={15} style={{ color: C.faint }} /> {r.label}
                 </span>
-                <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+                <span className="flex items-center gap-2">
+                  <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+                  {r.delta != null && <Delta value={r.delta} suffix={r.suffix} invert={r.invert} />}
+                </span>
               </div>
             ))}
           </div>
@@ -1719,7 +1722,7 @@ function OrganicTraffic({ client, month }) {
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
   if (!report) return null;
 
-  const { summary, byChannel, byDevice, daily, pages } = report;
+  const { summary, deltas, byChannel, byDevice, daily, pages } = report;
   const chanTotal = byChannel.reduce((a, c) => a + c.value, 0) || 1;
   const topChan = byChannel[0] || { label: "—", value: 0 };
   const topDev = byDevice[0] || { label: "—", value: 0 };
@@ -1733,11 +1736,11 @@ function OrganicTraffic({ client, month }) {
   );
 
   const SUMMARY_ROWS = [
-    { icon: Activity, label: "Sessions", value: fmt(summary.sessions) },
-    { icon: Users, label: "Total users", value: fmt(summary.totalUsers) },
-    { icon: UserPlus, label: "New users", value: fmt(summary.newUsers) },
-    { icon: Target, label: "Conversions", value: fmt(summary.conversions) },
-    { icon: DollarSign, label: "Total revenue", value: fmtRevenue(summary.revenue) },
+    { icon: Activity, label: "Sessions", value: fmt(summary.sessions), delta: deltas.sessions, suffix: "%" },
+    { icon: Users, label: "Total users", value: fmt(summary.totalUsers), delta: deltas.totalUsers, suffix: "%" },
+    { icon: UserPlus, label: "New users", value: fmt(summary.newUsers), delta: deltas.newUsers, suffix: "%" },
+    { icon: Target, label: "Conversions", value: fmt(summary.conversions), delta: deltas.conversions, suffix: "%" },
+    { icon: DollarSign, label: "Total revenue", value: fmtRevenue(summary.revenue), delta: deltas.revenue, suffix: "%" },
   ];
   const BIG = [
     { icon: Activity, label: "Sessions", value: summary.sessions, color: C.accent },
@@ -1772,7 +1775,10 @@ function OrganicTraffic({ client, month }) {
             {SUMMARY_ROWS.map((r, i) => (
               <div key={r.label} className="flex items-center justify-between py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
                 <span className="flex items-center gap-2.5" style={{ color: C.muted, fontSize: 13.5 }}><r.icon size={15} style={{ color: C.faint }} /> {r.label}</span>
-                <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+                <span className="flex items-center gap-2">
+                  <span style={{ color: C.ink, fontSize: 14, fontVariantNumeric: "tabular-nums" }} className="font-medium">{r.value}</span>
+                  {r.delta != null && <Delta value={r.delta} suffix={r.suffix} />}
+                </span>
               </div>
             ))}
           </div>
@@ -2127,7 +2133,7 @@ function KpiBar({ label, value, color }) {
   );
 }
 
-function SummaryMetric({ icon: Icon, label, desc, value, color, source }) {
+function SummaryMetric({ icon: Icon, label, desc, value, color, source, delta, suffix = "%", invert = false }) {
   return (
     <div className="rounded-lg flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-4 flex-1">
@@ -2137,7 +2143,10 @@ function SummaryMetric({ icon: Icon, label, desc, value, color, source }) {
           <span className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 38, height: 38, background: color }}><Icon size={19} color="#fff" /></span>
           <div className="min-w-0">
             <div style={{ color: C.faint, fontSize: 11.5 }} className="truncate">{label}</div>
-            <div style={{ color: C.ink, fontSize: 25, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold truncate">{value}</div>
+            <div className="flex items-center gap-2">
+              <div style={{ color: C.ink, fontSize: 25, fontVariantNumeric: "tabular-nums" }} className="leading-none font-semibold truncate">{value}</div>
+              {delta != null && <Delta value={delta} suffix={suffix} invert={invert} />}
+            </div>
           </div>
         </div>
       </div>
@@ -2169,7 +2178,7 @@ function OrganicSummary({ client, month }) {
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
   if (!report) return null;
 
-  const { visibility: v, traffic: t, conversions: c, topPages, topDevice, topChannel } = report;
+  const { visibility: v, traffic: t, conversions: c, deltas: d, topPages, topDevice, topChannel } = report;
   const GSC = "Google Search Console", GA4 = "Google Analytics 4";
   const card = { border: `1px solid ${C.line}`, background: "#fff" };
 
@@ -2217,25 +2226,25 @@ function OrganicSummary({ client, month }) {
       {/* Traffic Metrics */}
       <SectionBanner title="Traffic Metrics" />
       <div className="grid md:grid-cols-3 gap-5">
-        <SummaryMetric icon={Activity} label="Sessions" desc="The number of sessions that began on your site or app." value={fmt(t.sessions)} color={C.accent} source={GA4} />
-        <SummaryMetric icon={Users} label="Total users" desc="Distinct users who logged at least one event." value={fmt(t.totalUsers)} color={C.healthy} source={GA4} />
-        <SummaryMetric icon={UserPlus} label="New users" desc="Distinct new users who logged at least one event." value={fmt(t.newUsers)} color={C.risk} source={GA4} />
+        <SummaryMetric icon={Activity} label="Sessions" desc="The number of sessions that began on your site or app." value={fmt(t.sessions)} color={C.accent} source={GA4} delta={d.traffic.sessions} />
+        <SummaryMetric icon={Users} label="Total users" desc="Distinct users who logged at least one event." value={fmt(t.totalUsers)} color={C.healthy} source={GA4} delta={d.traffic.totalUsers} />
+        <SummaryMetric icon={UserPlus} label="New users" desc="Distinct new users who logged at least one event." value={fmt(t.newUsers)} color={C.risk} source={GA4} delta={d.traffic.newUsers} />
       </div>
 
       {/* Visibility Metrics */}
       <SectionBanner title="Visibility Metrics" />
       <div className="grid md:grid-cols-3 gap-5">
-        <SummaryMetric icon={Eye} label="Impressions" desc="How many links to your site a user saw on Google search results." value={fmt(v.impressions)} color={C.accent} source={GSC} />
-        <SummaryMetric icon={MousePointerClick} label="Clicks" desc="Clicks from a Google search result that landed on your property." value={fmt(v.clicks)} color={C.risk} source={GSC} />
-        <SummaryMetric icon={TrendingUp} label="Avg. organic position" desc="Organic Google search average position (lower is better)." value={v.avgPos.toFixed(2)} color={C.watch} source={GSC} />
+        <SummaryMetric icon={Eye} label="Impressions" desc="How many links to your site a user saw on Google search results." value={fmt(v.impressions)} color={C.accent} source={GSC} delta={d.visibility.impressions} />
+        <SummaryMetric icon={MousePointerClick} label="Clicks" desc="Clicks from a Google search result that landed on your property." value={fmt(v.clicks)} color={C.risk} source={GSC} delta={d.visibility.clicks} />
+        <SummaryMetric icon={TrendingUp} label="Avg. organic position" desc="Organic Google search average position (lower is better)." value={v.avgPos.toFixed(2)} color={C.watch} source={GSC} delta={d.visibility.avgPos} suffix="" invert />
       </div>
 
       {/* Conversion Metrics */}
       <SectionBanner title="Conversion Metrics" />
       <div className="grid md:grid-cols-3 gap-5">
-        <SummaryMetric icon={Target} label="Conversions" desc="The count of conversion events." value={fmt(c.conversions)} color={C.accent} source={GA4} />
-        <SummaryMetric icon={Percent} label="Conversion rate" desc="Conversions as a share of sessions." value={fmtPct(c.conversionRate)} color={C.healthy} source={GA4} />
-        <SummaryMetric icon={DollarSign} label="Total revenue" desc="Revenue from purchases, subscriptions and advertising." value={fmtRevenue(c.revenue)} color={C.healthy} source={GA4} />
+        <SummaryMetric icon={Target} label="Conversions" desc="The count of conversion events." value={fmt(c.conversions)} color={C.accent} source={GA4} delta={d.conversions.conversions} />
+        <SummaryMetric icon={Percent} label="Conversion rate" desc="Conversions as a share of sessions." value={fmtPct(c.conversionRate)} color={C.healthy} source={GA4} delta={d.conversions.conversionRate} suffix="" />
+        <SummaryMetric icon={DollarSign} label="Total revenue" desc="Revenue from purchases, subscriptions and advertising." value={fmtRevenue(c.revenue)} color={C.healthy} source={GA4} delta={d.conversions.revenue} />
       </div>
       <div className="grid md:grid-cols-3 gap-5">
         <SummaryMetric icon={ShoppingCart} label="Ecommerce purchases" desc="The number of times users completed a purchase." value={fmt(c.ecommercePurchases)} color={C.watch} source={GA4} />
