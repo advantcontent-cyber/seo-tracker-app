@@ -64,8 +64,8 @@ const TASK = {
   done: { label: "Done", color: C.healthy, rank: 2 },
 };
 
-const MONTHS = ["Mar", "Apr", "May", "Jun"];
-const MONTH_FULL = { Mar: "March", Apr: "April", May: "May", Jun: "June" };
+const MONTHS = ["Mar", "Apr", "May", "Jun", "Jul"];
+const MONTH_FULL = { Mar: "March", Apr: "April", May: "May", Jun: "June", Jul: "July" };
 const YEAR = 2026;
 
 /* ------------------------------------------------------------------ */
@@ -444,7 +444,7 @@ function StatusDot({ status, size = 8 }) {
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
 function Portfolio({ clients, onSelect, month, gscData }) {
-  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
 
   // Returns real GSC figures for the given client+month when connected,
   // falls back to the mock gsc() for unconnected properties.
@@ -1117,7 +1117,7 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
 /* ------------------------------------------------------------------ */
 /*  SEM (paid search) tab — Google Ads via Windsor                      */
 /* ------------------------------------------------------------------ */
-const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
 
 // Parse a market code from a campaign name. Handles both Google ("[Advant]
 // HK_High intent…") and Meta ("US_Conv_Clickbook_JUN", "SG+HK+TW_Conv…").
@@ -1454,7 +1454,7 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -1705,7 +1705,7 @@ function OrganicTraffic({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -1910,7 +1910,7 @@ function OrganicConversions({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -2161,7 +2161,7 @@ function OrganicSummary({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[MONTHS[month]];
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -2590,7 +2590,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // falling back to the mock gsc() function for unconnected properties.
   const liveGsc = (c, m) => {
     const mo = MONTHS[m]; // e.g. "Jun"
-    const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[mo];
+    const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[mo];
     const live = gscData?.[c.name]?.[moNum];
     if (!live) return gsc(c, m); // mock fallback
     return {
@@ -2611,7 +2611,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const dPct = (key) => (prev ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : 0);
   // Use real Windsor clicks series when available, fall back to mock traffic array.
   const cs = isLive
-    ? MONTHS.map((mo) => { const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6 }[mo]; return gscData[client.name][moNum]?.clicks ?? 0; })
+    ? MONTHS.map((mo) => { const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[mo]; return gscData[client.name][moNum]?.clicks ?? 0; })
     : series(client);
   const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
   const b = cur.buckets;
@@ -2629,7 +2629,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Shared by
   // both the tracked-keyword table and the content-opportunity finder below.
-  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6 };
+  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
   const queriesFor = (m) => {
     if (m < 0) return null;
     return gscData?.[client.name]?.[MO_NUM[MONTHS[m]]]?.topQueries ?? null;
