@@ -610,90 +610,6 @@ function Portfolio({ clients, onSelect, month, gscData }) {
 /* ------------------------------------------------------------------ */
 /*  Detail view                                                        */
 /* ------------------------------------------------------------------ */
-function Stat({ label, value, delta, suffix = "", invert = false }) {
-  return (
-    <div className="px-5 py-4" style={{ borderRight: `1px solid ${C.line}` }}>
-      <div style={{ color: C.faint, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase mb-1.5">
-        {label}
-      </div>
-      <div className="flex items-baseline gap-2">
-        <span style={{ color: C.ink, fontSize: 24, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-          {value}
-        </span>
-        {delta !== undefined && <Delta value={delta} suffix={suffix} invert={invert} size="lg" />}
-      </div>
-    </div>
-  );
-}
-
-// ─── Destination knowledge base ──────────────────────────────────────────────
-// Per-property seasonal demand context for the Mar–Jun window. `level` is the
-// natural demand strength of that month (peak/high/shoulder/low) at the
-// destination — independent of SEO. The read below reconciles it with the
-// month's actual click movement, so a rise into a low season is correctly framed
-// as SEO momentum rather than seasonal tailwind.
-const CONTEXT = {
-  "Shinta Mani Wild": {
-    Mar: { level: "peak", text: "March is peak dry season in the Cardamoms — the prime trekking window and the property's strongest natural demand" },
-    Apr: { level: "high", text: "April is the hot tail of the dry season", event: "Khmer New Year (mid-April) lifts regional and domestic interest." },
-    May: { level: "shoulder", text: "May turns toward green season as the first rains arrive and Western demand softens" },
-    Jun: { level: "low", text: "June is low green season — lush but wet, the quietest stretch for inbound luxury travel" },
-  },
-  "Nomad Greenland": {
-    Mar: { level: "shoulder", text: "March is late winter — aurora and ski-touring season before the summer window opens", event: "Northern-lights demand peaks in the dark months before the summer pivot." },
-    Apr: { level: "shoulder", text: "April is shoulder season as winter activities wind down and summer planning begins" },
-    May: { level: "high", text: "May is the pre-season ramp as travellers book ahead of the summer" },
-    Jun: { level: "peak", text: "June opens the summer season — midnight sun, open water, peak booking demand", event: "Midnight-sun season begins — the year's highest planning and booking intent." },
-  },
-  "Sora Sukhumvit": {
-    Mar: { level: "high", text: "March is hot season in Bangkok — steady urban and corporate demand" },
-    Apr: { level: "peak", text: "April is defined by Songkran", event: "Songkran (Thai New Year, mid-April) drives a sharp staycation and leisure spike." },
-    May: { level: "shoulder", text: "May is the pre-monsoon lull as the hot season ends" },
-    Jun: { level: "low", text: "June is green/low season — softer inbound leisure over a steady corporate base" },
-  },
-  "IC Khao Yai": {
-    Mar: { level: "high", text: "March is hot season — still a popular cool-air weekend escape from Bangkok" },
-    Apr: { level: "peak", text: "April brings Songkran and long weekends", event: "Songkran and April long weekends spike the Bangkok domestic-escape market." },
-    May: { level: "shoulder", text: "May's early rains green the hills; demand steadies between holidays" },
-    Jun: { level: "shoulder", text: "June is green low season — quieter midweek, weekend domestic demand holding" },
-  },
-};
-
-// Compose a short analyst read: a data lead (real GSC fields), then the seasonal
-// reconciliation, then the month's headline event if there is one.
-function analystRead(client, month) {
-  const ctx = CONTEXT[client.name];
-  if (!ctx) return null;
-  const n = ctx[MONTHS[month]];
-  if (!n) return null;
-  const cur = gsc(client, month);
-  const prev = month > 0 ? gsc(client, month - 1) : null;
-  const moM = prev ? Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100) : null;
-  const dir = moM == null ? "base" : moM > 1 ? "up" : moM < -1 ? "down" : "flat";
-  const high = n.level === "peak" || n.level === "high";
-  const low = n.level === "low";
-  const pos = cur.avgPos.toFixed(1);
-
-  let posPhrase;
-  if (!prev) posPhrase = `average position at ${pos}`;
-  else if (cur.avgPos < prev.avgPos - 0.05) posPhrase = `average position improving from ${prev.avgPos.toFixed(1)} to ${pos}`;
-  else if (cur.avgPos > prev.avgPos + 0.05) posPhrase = `average position slipping from ${prev.avgPos.toFixed(1)} to ${pos}`;
-  else posPhrase = `average position holding near ${pos}`;
-
-  let lead;
-  if (moM == null) lead = `Organic clicks open the window at ${fmt(cur.clicks)} with ${posPhrase} — the ${MONTH_FULL[MONTHS[month]]} baseline.`;
-  else if (dir === "flat") lead = `Organic clicks held roughly flat month-over-month at ${fmt(cur.clicks)}, ${posPhrase}.`;
-  else lead = `Organic clicks ${dir === "up" ? "rose" : "eased"} ${Math.abs(moM)}% month-over-month to ${fmt(cur.clicks)}, ${posPhrase}.`;
-
-  let verdict;
-  if (dir === "base") verdict = high ? "a strong month to anchor the trend against" : low ? "a soft demand month, so steady figures read as resilient" : "a neutral month to set the baseline";
-  else if (dir === "up") verdict = high ? "and the growth rides with that peak demand" : low ? "so the growth is SEO momentum working against the seasonal grain, not the calendar" : "and rising clicks point to good positioning into the season";
-  else if (dir === "down") verdict = high ? "so the softening is a real concern, not a seasonal excuse" : low ? "so part of the dip is seasonal, though the underlying trend still bears watching" : "and the easing fits the shoulder-season cool-down";
-  else verdict = high ? "holding in step with peak demand" : "roughly in line with seasonal demand";
-
-  return `${lead} ${n.text} — ${verdict}.${n.event ? " " + n.event : ""}`;
-}
-
 // ─── 12-month blog plan ──────────────────────────────────────────────────────
 // Short destination labels for templating titles/keywords.
 const PLACE = {
@@ -1153,8 +1069,8 @@ function BarBreakdown({ title, rows, fmtVal }) {
   );
 }
 
-// Paid-media narrative for the month — analogous to analystRead() for organic.
-// Summarises combined Google + Meta spend, MoM, efficiency, and platform split.
+// Paid-media narrative for the month — summarises combined Google + Meta
+// spend, MoM, efficiency, and platform split.
 function semRead(sem, month) {
   const cur = sem?.monthly?.[MO_NUM_MAP[MONTHS[month]]];
   if (!cur || !cur.spend) return null;
@@ -2869,23 +2785,13 @@ function AiSearch({ client, aiData }) {
 }
 
 function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, aiData }) {
-  const cur = liveGscFor(client, month, gscData);
-  const prev = month > 0 ? liveGscFor(client, month - 1, gscData) : null;
-  const dPct = (key) => (prev ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : 0);
   const isLive = !!gscData?.[client.name];
-  const { chartData } = clicksTrendFor(client, month, gscData);
-  const b = cur.buckets;
-  const read = analystRead(client, month);
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
-  const [seoSub, setSeoSub] = useState("overview"); // sub-tab within SEO
-
-  const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, month, actionData);
-  const pct = plan.length ? Math.round((deliveredToDate / plan.length) * 100) : 0;
-  const blogPicks = blogPicksFor(client, month, gscData);
+  const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
-  // the tracked-keyword table below (branded vs non-branded queries).
+  // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
   const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
   const queriesFor = (m) => {
     if (m < 0) return null;
@@ -2893,8 +2799,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   };
   const curQueries = queriesFor(month);
 
-  // GSC queries split into branded vs non-branded (brand terms per client),
-  // each sorted by impressions. Real GSC top queries when connected, else mock.
   const queryRows = curQueries
     ? [...curQueries]
         .filter((row) => isReadableQuery(row.q ?? row.k)) // legible English terms only
@@ -2907,24 +2811,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         const pos = kwPos(kw, month);
         return { k: kw.k, impressions: kw.v, clicks: Math.round(kw.v * ctrFor(pos)) };
       });
-  const bySplit = (branded) =>
-    queryRows
-      .filter((r) => isBrandQuery(client.name, r.k) === branded)
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 10);
-  const brandedQueries = bySplit(true);
-  const nonBrandedQueries = bySplit(false);
-
-  // Cached SEMrush snapshot for this client (null until seeded).
-  const sem = semrushData?.[client.name] || null;
-  const semTiles = sem ? [
-    { label: "Authority Score", value: sem.metrics.authority_score, delta: sem.deltas.authority_score },
-    { label: "Organic Traffic", value: sem.metrics.organic_traffic, delta: sem.deltas.organic_traffic },
-    { label: "Organic Keywords", value: sem.metrics.organic_keywords, delta: sem.deltas.organic_keywords },
-    { label: "Paid Keywords", value: sem.metrics.paid_keywords, delta: sem.deltas.paid_keywords },
-    { label: "Ref. Domains", value: sem.metrics.ref_domains, delta: sem.deltas.ref_domains },
-    { label: "Backlinks", value: sem.metrics.backlinks, delta: sem.deltas.backlinks },
-  ] : [];
 
   return (
     <div>
@@ -2988,7 +2874,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* SEO sub-tabs */}
       {service === "seo" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["overview", "Overview"], ["summary", "Summary"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+          {[["summary", "Summary"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSeoSub(id)}
@@ -3006,165 +2892,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </div>
       ) : (
         <div className="mt-6" />
-      )}
-
-      {service === "seo" && seoSub === "overview" && (
-        <>
-      {/* Analyst read — organic interpretation with seasonal & local context */}
-      {read && (
-        <div
-          className="rounded-lg p-5 mb-6"
-          style={{ background: C.accent, color: "#fff" }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", opacity: 0.7 }} className="uppercase font-semibold">
-              The read · {MONTH_FULL[MONTHS[month]]} {YEAR}
-            </span>
-          </div>
-          <p style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17.5, lineHeight: 1.55 }}>
-            {read}
-          </p>
-          <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 10 }}>
-            Generated from the month's figures and a destination knowledge base — a starting interpretation to sanity-check, not a substitute for your read.
-          </p>
-        </div>
-      )}
-      {/* Action-plan progress */}
-      <div className="flex items-center gap-3 mb-6">
-        <span style={{ color: C.muted, fontSize: 12.5 }} className="font-medium">
-          Action plan
-        </span>
-        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.line, width: 200 }}>
-          <div style={{ width: `${pct}%`, height: "100%", background: C.accent }} />
-        </div>
-        <span style={{ color: C.ink, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }} className="font-medium">
-          {deliveredToDate}/{plan.length} delivered
-        </span>
-        <span style={{ color: C.faint, fontSize: 12.5 }}>· through {MONTHS[month]} {YEAR}</span>
-      </div>
-
-      {/* KPI strip — Google Search Console */}
-      <div
-        className="grid grid-cols-2 md:grid-cols-4 rounded-lg overflow-hidden mb-6"
-        style={{ border: `1px solid ${C.line}`, background: "#fff" }}
-      >
-        <Stat label="Clicks" value={fmt(cur.clicks)} delta={Math.round(momPct(client, month))} suffix="%" />
-        <Stat label="Impressions" value={fmt(cur.impressions)} delta={dPct("impressions")} suffix="%" />
-        <Stat label="Avg CTR" value={`${(cur.ctr * 100).toFixed(1)}%`} delta={prev ? r1((cur.ctr - prev.ctr) * 100) : 0} />
-        <Stat label="Avg position" value={r1(cur.avgPos)} delta={prev ? r1(cur.avgPos - prev.avgPos) : 0} invert />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Trend */}
-        <div className="lg:col-span-2">
-          <OrganicClicksTrendCard chartData={chartData} momValue={Math.round(momPct(client, month))} month={month} />
-        </div>
-
-        {/* Query positions + coverage (GSC) */}
-        <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold mb-4">
-            Query positions
-          </h3>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            {[
-              ["Top 3", b.t3],
-              ["Top 10", b.t10],
-              ["Top 20", b.t20],
-              ["Top 100", b.t100],
-            ].map(([l, v]) => (
-              <div key={l} className="rounded-md px-3 py-2.5" style={{ background: C.bg }}>
-                <div style={{ color: C.faint, fontSize: 11.5 }}>{l}</div>
-                <div style={{ color: C.ink, fontSize: 19, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-                  {v}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-4 mb-5" style={{ fontSize: 13 }}>
-            <span className="inline-flex items-center gap-1.5">
-              <Delta value={b.new} /> <span style={{ color: C.muted }}>new</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Delta value={-b.lost} /> <span style={{ color: C.muted }}>lost</span>
-            </span>
-          </div>
-
-          <div className="pt-4" style={{ borderTop: `1px solid ${C.line}` }}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span style={{ color: C.muted, fontSize: 13 }}>Index coverage</span>
-              <span style={{ color: C.faint, fontSize: 11.5 }}>GSC</span>
-            </div>
-            <div className="flex gap-5" style={{ fontSize: 12.5, color: C.muted }}>
-              <span>
-                <span style={{ color: C.healthy, fontSize: 16, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-                  {fmt(cur.indexed)}
-                </span>{" "}
-                indexed
-              </span>
-              <span>
-                <span style={{ color: cur.issues ? C.watch : C.faint, fontSize: 16, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-                  {cur.issues}
-                </span>{" "}
-                with issues
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search visibility — SEMrush (cached snapshot) */}
-      {sem && (
-        <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-              Search visibility
-            </h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>
-              SEMrush · {sem.scope}{sem.database ? ` · ${sem.database.toUpperCase()}` : ""} · {sem.snapshotDate}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3" style={{ gap: 1, background: C.line }}>
-            {semTiles.map((t) => (
-              <div key={t.label} className="px-5 py-4" style={{ background: "#fff" }}>
-                <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase">
-                  {t.label}
-                </div>
-                <div className="flex items-baseline gap-2 mt-1.5">
-                  <span style={{ color: C.ink, fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                    {t.value == null ? "—" : fmt(t.value)}
-                  </span>
-                  {t.delta != null && <Delta value={t.delta} suffix="%" />}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Branded vs non-branded queries (Google Search Console) */}
-      <div className="grid md:grid-cols-2 gap-5 mt-5">
-        <QueryPanel
-          title="Branded Queries"
-          description="Terms include your brand, product names, or any variations of them."
-          rows={brandedQueries}
-        />
-        <QueryPanel
-          title="Non-Branded Queries"
-          description="Terms related to your products or services that users might search for before they have a specific brand in mind."
-          rows={nonBrandedQueries}
-        />
-      </div>
-
-      {/* Content opportunities */}
-      <div className="mt-5">
-        <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
-      </div>
-
-      {/* Action plan — scoped to the selected month */}
-      <div className="mt-5">
-        <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
-      </div>
-        </>
       )}
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
