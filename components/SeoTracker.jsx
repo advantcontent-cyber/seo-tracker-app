@@ -2157,7 +2157,278 @@ function SummaryMetric({ icon: Icon, label, desc, value, color, source, delta, s
   );
 }
 
-function OrganicSummary({ client, month }) {
+/* ------------------------------------------------------------------ */
+/*  Shared Overview/Summary data helpers — the same GSC clicks trend,   */
+/*  content-opportunity, and action-plan logic feeds both the Overview  */
+/*  sub-tab and the Summary sub-tab (which will absorb Overview later). */
+/* ------------------------------------------------------------------ */
+const MO_NUM_BY_LABEL = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
+
+// liveGscFor() returns real Windsor data for this client/month when connected,
+// falling back to the mock gsc() function for unconnected properties.
+function liveGscFor(client, month, gscData) {
+  const moNum = MO_NUM_BY_LABEL[MONTHS[month]];
+  const live = gscData?.[client.name]?.[moNum];
+  if (!live) return gsc(client, month); // mock fallback
+  return {
+    clicks: live.clicks,
+    impressions: live.impressions,
+    ctr: live.ctr,
+    avgPos: live.avgPos,
+    // Index coverage not in Windsor GSC data — keep mock estimate
+    indexed: gsc(client, month).indexed,
+    issues: gsc(client, month).issues,
+    buckets: gsc(client, month).buckets,
+  };
+}
+
+// Real Windsor clicks series when available, mock traffic array otherwise.
+function clicksTrendFor(client, month, gscData) {
+  const isLive = !!gscData?.[client.name];
+  const cs = isLive
+    ? MONTHS.map((mo) => gscData[client.name][MO_NUM_BY_LABEL[mo]]?.clicks ?? 0)
+    : series(client);
+  const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
+  return { isLive, cs, chartData };
+}
+
+// Content opportunities: queries with proven demand (impressions) leaking
+// clicks because they sit below the top of page 1. Returns the month's top 2
+// blog-intent picks. Uses real GSC queries when connected, else mock keywords.
+function blogPicksFor(client, month, gscData) {
+  const curQueries = gscData?.[client.name]?.[MO_NUM_BY_LABEL[MONTHS[month]]]?.topQueries ?? null;
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const opps = (curQueries
+    ? curQueries.map((row) => {
+        const k = row.k ?? row.q;
+        const pos = row.position;
+        const impressions = Math.round(row.impressions ?? 0);
+        const curClicks = Math.round(row.clicks ?? 0);
+        return { k, pos, impressions, curClicks, page: row.page ?? null };
+      })
+    : client.keywords.map((kw) => {
+        const pos = kwPos(kw, month);
+        const impressions = kw.v;
+        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)), page: null };
+      })
+  )
+    .map(({ k, pos, impressions, curClicks, page }) => {
+      const gap = Math.max(0, Math.round(impressions * ctrFor(Math.min(pos, 3))) - curClicks);
+      const intent = intentOf(k);
+      return { k, pos: round1(pos), impressions, gap, intent, url: page || pageUrl(client.domain, k, intent) };
+    })
+    .filter((o) => o.gap > 0 && !isNoiseQuery(o.k) && !isBrandQuery(client.name, o.k))
+    .sort((a, b) => b.gap - a.gap);
+  return opps.filter((o) => o.intent === "blog").slice(0, 2);
+}
+
+// Action plan for one month — active tasks plus delivered/upcoming counts.
+// Off-page work is no longer part of the program — excluded from plans.
+// Live tasks from Supabase (seo_action_items) when available; mock otherwise.
+function actionPlanFor(client, month, actionData) {
+  const planSource = actionData?.[client.name] ?? ACTION_PLANS[client.name] ?? [];
+  const plan = planSource.filter((t) => t.cat !== "Off-page");
+  const { active, deliveredToDate, upcoming } = monthlyPlan(plan, month);
+  return { plan, active, deliveredToDate, upcoming };
+}
+
+// "Organic clicks · GSC" trend card — shared by Overview and Summary.
+function OrganicClicksTrendCard({ chartData, momValue, month }) {
+  return (
+    <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
+          Organic clicks · GSC
+        </h3>
+        <Delta value={momValue} suffix="% MoM" size="lg" />
+      </div>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+          <defs>
+            <linearGradient id="gClicksTrend" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C.accent} stopOpacity={0.18} />
+              <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={C.line} vertical={false} />
+          <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
+          <Tooltip
+            contentStyle={{
+              background: "#fff",
+              border: `1px solid ${C.line}`,
+              borderRadius: 8,
+              fontSize: 13,
+              color: C.ink,
+            }}
+            labelStyle={{ color: C.muted }}
+            formatter={(v) => [fmt(v), "Clicks"]}
+          />
+          <Area type="monotone" dataKey="clicks" stroke={C.accent} strokeWidth={2} fill="url(#gClicksTrend)" />
+          <ReferenceDot x={MONTHS[month]} y={chartData[month]?.clicks} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// "Content opportunities" card — shared by Overview and Summary.
+function ContentOpportunitiesCard({ blogPicks, blogDrafts, client, month }) {
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
+          Content opportunities
+        </h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>High-impression queries leaking clicks</span>
+      </div>
+
+      <div className="px-5 py-4" style={{ background: C.bg }}>
+        <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase font-medium mb-2.5">
+          Suggested posts · {MONTH_FULL[MONTHS[month]]} {YEAR} · 2 / month
+        </div>
+        {blogPicks.length ? (
+          <div className="grid md:grid-cols-2 gap-3">
+            {blogPicks.map((o) => {
+              const draft = blogDrafts?.[client.name]?.[o.k.toLowerCase()];
+              const draftLabel = draft
+                ? { planned: "Draft planned", drafting: "Draft ready", live: "Published" }[draft.status] || "Draft ready"
+                : null;
+              return (
+                <div key={o.k} className="rounded-lg p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+                  <span
+                    className="rounded-full px-1.5 py-0.5"
+                    style={{ background: "rgba(31,78,74,0.1)", color: C.accent, fontSize: 10, fontWeight: 600 }}
+                  >
+                    BLOG POST
+                  </span>
+                  <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 17 }} className="mt-2 leading-snug">
+                    {draft?.title || titleCase(o.k)}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
+                    Write a post targeting “{o.k}” · {fmt(o.impressions)} impressions/mo
+                  </div>
+                  <div style={{ color: C.healthy, fontSize: 13 }} className="mt-1.5 font-medium">
+                    +{fmt(o.gap)} clicks/mo potential
+                  </div>
+                  {draft?.url ? (
+                    <a
+                      href={draft.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 mt-2.5 rounded-full px-2.5 py-1 hover:opacity-80 transition-opacity"
+                      style={{ background: "rgba(0,119,200,0.1)", color: C.accent, fontSize: 11.5, fontWeight: 600 }}
+                    >
+                      <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                      {draftLabel} — view
+                    </a>
+                  ) : (
+                    <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-2.5">
+                      No draft yet
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p style={{ color: C.muted, fontSize: 13 }}>
+            No clear blog opportunity in the tracked set this month — the full GSC query export would surface more.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Action-plan card, scoped to the selected month — shared by Overview and Summary.
+function ActionPlanCard({ plan, active, deliveredToDate, upcoming, month }) {
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
+          {MONTH_FULL[MONTHS[month]]} {YEAR} action plan
+        </h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>
+          {deliveredToDate} of {plan.length} delivered to date
+        </span>
+      </div>
+
+      {active.length === 0 && (
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13.5 }}>
+          No active work scheduled in {MONTHS[month]}.
+          {upcoming > 0 && ` ${upcoming} ${upcoming === 1 ? "task is" : "tasks are"} queued to begin in later months.`}
+        </div>
+      )}
+
+      {active.map(({ task: a, status: st }, row) => {
+        const done = st === "done";
+        const TIcon = done ? Check : Clock;
+        return (
+          <div
+            key={a.task}
+            className="flex items-start gap-3.5 px-5 py-3.5"
+            style={{ borderTop: row ? `1px solid ${C.line}` : "none" }}
+          >
+            {/* Status for this month */}
+            <span
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+              style={{
+                border: `1px solid ${done ? "transparent" : C.line}`,
+                background: done ? "rgba(74,124,89,0.12)" : "rgba(184,137,60,0.12)",
+                color: TASK[st].color,
+                fontSize: 12,
+                width: 116,
+                justifyContent: "center",
+                fontWeight: 500,
+              }}
+            >
+              <TIcon size={13} strokeWidth={2.25} />
+              {done ? "Delivered" : "In progress"}
+            </span>
+
+            {/* Task body */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span style={{ color: PRIORITY[a.priority].color, fontSize: 11 }} className="font-semibold uppercase tracking-wide">
+                  {PRIORITY[a.priority].label}
+                </span>
+                <span style={{ color: C.faint }}>·</span>
+                <span style={{ color: C.faint, fontSize: 11, letterSpacing: "0.04em" }} className="uppercase">
+                  {a.cat}
+                </span>
+              </div>
+              <div
+                style={{
+                  color: done ? C.faint : C.ink,
+                  fontSize: 14.5,
+                  textDecoration: done ? "line-through" : "none",
+                }}
+                className="font-medium leading-snug"
+              >
+                {a.task}
+              </div>
+              <div style={{ color: C.muted, fontSize: 13 }} className="mt-1 leading-snug">
+                {a.detail}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {active.length > 0 && upcoming > 0 && (
+        <div
+          className="px-5 py-2.5"
+          style={{ borderTop: `1px solid ${C.line}`, background: C.bg, color: C.faint, fontSize: 12.5 }}
+        >
+          {upcoming} more {upcoming === 1 ? "task" : "tasks"} queued for later months
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2181,6 +2452,12 @@ function OrganicSummary({ client, month }) {
   const { visibility: v, traffic: t, conversions: c, deltas: d, topPages, topDevice, topChannel } = report;
   const GSC = "Google Search Console", GA4 = "Google Analytics 4";
   const card = { border: `1px solid ${C.line}`, background: "#fff" };
+
+  // Same trend/opportunity/action-plan data as the Overview sub-tab — pulled
+  // in here so Summary can absorb these cards once Overview is retired.
+  const { chartData } = clicksTrendFor(client, month, gscData);
+  const blogPicks = blogPicksFor(client, month, gscData);
+  const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, month, actionData);
 
   return (
     <div className="flex flex-col gap-5">
@@ -2222,6 +2499,12 @@ function OrganicSummary({ client, month }) {
           <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}><GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>GSC + GA4</span></div>
         </div>
       </div>
+
+      {/* Organic clicks trend, content opportunities, action plan — same
+          cards as Overview, folded into Summary ahead of Overview's removal. */}
+      <OrganicClicksTrendCard chartData={chartData} momValue={Math.round(momPct(client, month))} month={month} />
+      <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
+      <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
 
       {/* Traffic Metrics */}
       <SectionBanner title="Traffic Metrics" />
@@ -2586,85 +2869,29 @@ function AiSearch({ client, aiData }) {
 }
 
 function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, aiData }) {
-  // liveGsc() returns real Windsor data for this client/month when connected,
-  // falling back to the mock gsc() function for unconnected properties.
-  const liveGsc = (c, m) => {
-    const mo = MONTHS[m]; // e.g. "Jun"
-    const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[mo];
-    const live = gscData?.[c.name]?.[moNum];
-    if (!live) return gsc(c, m); // mock fallback
-    return {
-      clicks:      live.clicks,
-      impressions: live.impressions,
-      ctr:         live.ctr,
-      avgPos:      live.avgPos,
-      // Index coverage not in Windsor GSC data — keep mock estimate
-      indexed:     gsc(c, m).indexed,
-      issues:      gsc(c, m).issues,
-      buckets:     gsc(c, m).buckets,
-    };
-  };
-  const isLive = !!gscData?.[client.name];
-
-  const cur = liveGsc(client, month);
-  const prev = month > 0 ? liveGsc(client, month - 1) : null;
+  const cur = liveGscFor(client, month, gscData);
+  const prev = month > 0 ? liveGscFor(client, month - 1, gscData) : null;
   const dPct = (key) => (prev ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : 0);
-  // Use real Windsor clicks series when available, fall back to mock traffic array.
-  const cs = isLive
-    ? MONTHS.map((mo) => { const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[mo]; return gscData[client.name][moNum]?.clicks ?? 0; })
-    : series(client);
-  const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
+  const isLive = !!gscData?.[client.name];
+  const { chartData } = clicksTrendFor(client, month, gscData);
   const b = cur.buckets;
   const read = analystRead(client, month);
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
   const [seoSub, setSeoSub] = useState("overview"); // sub-tab within SEO
 
-  // Off-page work is no longer part of the program — exclude it from plans.
-  // Live tasks from Supabase (seo_action_items) when available; mock otherwise.
-  const planSource = actionData?.[client.name] ?? ACTION_PLANS[client.name] ?? [];
-  const plan = planSource.filter((t) => t.cat !== "Off-page");
-  const { active, deliveredToDate, upcoming } = monthlyPlan(plan, month);
+  const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, month, actionData);
   const pct = plan.length ? Math.round((deliveredToDate / plan.length) * 100) : 0;
+  const blogPicks = blogPicksFor(client, month, gscData);
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
-  // when connected. Each row is { q/k, clicks, impressions, position }. Shared by
-  // both the tracked-keyword table and the content-opportunity finder below.
+  // when connected. Each row is { q/k, clicks, impressions, position }. Used by
+  // the tracked-keyword table below (branded vs non-branded queries).
   const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
   const queriesFor = (m) => {
     if (m < 0) return null;
     return gscData?.[client.name]?.[MO_NUM[MONTHS[m]]]?.topQueries ?? null;
   };
-  const round1 = (n) => Math.round(n * 10) / 10;
   const curQueries = queriesFor(month);
-
-  // Content opportunities: queries with proven demand (impressions) leaking
-  // clicks because they sit below the top of page 1. Gap = the extra clicks we'd
-  // capture at position 3. Blog-intent picks become the month's suggested posts.
-  // Uses real GSC queries when connected (impressions + position are real, clicks
-  // straight from GSC), else the mock keyword set with kw.v as the demand proxy.
-  const opps = (curQueries
-    ? curQueries.map((row) => {
-        const k = row.k ?? row.q;
-        const pos = row.position;
-        const impressions = Math.round(row.impressions ?? 0);
-        const curClicks = Math.round(row.clicks ?? 0);
-        return { k, pos, impressions, curClicks, page: row.page ?? null };
-      })
-    : client.keywords.map((kw) => {
-        const pos = kwPos(kw, month);
-        const impressions = kw.v;
-        return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)), page: null };
-      })
-  )
-    .map(({ k, pos, impressions, curClicks, page }) => {
-      const gap = Math.max(0, Math.round(impressions * ctrFor(Math.min(pos, 3))) - curClicks);
-      const intent = intentOf(k);
-      // Prefer GSC's real ranking URL; fall back to a derived slug for mock data.
-      return { k, pos: round1(pos), impressions, gap, intent, url: page || pageUrl(client.domain, k, intent) };
-    })
-    .filter((o) => o.gap > 0 && !isNoiseQuery(o.k) && !isBrandQuery(client.name, o.k))
-    .sort((a, b) => b.gap - a.gap);
-  const blogPicks = opps.filter((o) => o.intent === "blog").slice(0, 2);
 
   // GSC queries split into branded vs non-branded (brand terms per client),
   // each sorted by impressions. Real GSC top queries when connected, else mock.
@@ -2829,39 +3056,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Trend */}
-        <div className="lg:col-span-2 rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-              Organic clicks · GSC
-            </h3>
-            <Delta value={Math.round(momPct(client, month))} suffix="% MoM" size="lg" />
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-              <defs>
-                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.18} />
-                  <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={C.line} vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
-              <Tooltip
-                contentStyle={{
-                  background: "#fff",
-                  border: `1px solid ${C.line}`,
-                  borderRadius: 8,
-                  fontSize: 13,
-                  color: C.ink,
-                }}
-                labelStyle={{ color: C.muted }}
-                formatter={(v) => [fmt(v), "Clicks"]}
-              />
-              <Area type="monotone" dataKey="clicks" stroke={C.accent} strokeWidth={2} fill="url(#g)" />
-              <ReferenceDot x={MONTHS[month]} y={cs[month]} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="lg:col-span-2">
+          <OrganicClicksTrendCard chartData={chartData} momValue={Math.round(momPct(client, month))} month={month} />
         </div>
 
         {/* Query positions + coverage (GSC) */}
@@ -2960,160 +3156,20 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       </div>
 
       {/* Content opportunities */}
-      <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-            Content opportunities
-          </h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>High-impression queries leaking clicks</span>
-        </div>
-
-        {/* Suggested posts for the month */}
-        <div className="px-5 py-4" style={{ background: C.bg, borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase font-medium mb-2.5">
-            Suggested posts · {MONTH_FULL[MONTHS[month]]} {YEAR} · 2 / month
-          </div>
-          {blogPicks.length ? (
-            <div className="grid md:grid-cols-2 gap-3">
-              {blogPicks.map((o) => {
-                const draft = blogDrafts?.[client.name]?.[o.k.toLowerCase()];
-                const draftLabel = draft
-                  ? { planned: "Draft planned", drafting: "Draft ready", live: "Published" }[draft.status] || "Draft ready"
-                  : null;
-                return (
-                <div key={o.k} className="rounded-lg p-4" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-                  <span
-                    className="rounded-full px-1.5 py-0.5"
-                    style={{ background: "rgba(31,78,74,0.1)", color: C.accent, fontSize: 10, fontWeight: 600 }}
-                  >
-                    BLOG POST
-                  </span>
-                  <div style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 17 }} className="mt-2 leading-snug">
-                    {draft?.title || titleCase(o.k)}
-                  </div>
-                  <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
-                    Write a post targeting “{o.k}” · {fmt(o.impressions)} impressions/mo
-                  </div>
-                  <div style={{ color: C.healthy, fontSize: 13 }} className="mt-1.5 font-medium">
-                    +{fmt(o.gap)} clicks/mo potential
-                  </div>
-                  {draft?.url ? (
-                    <a
-                      href={draft.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 mt-2.5 rounded-full px-2.5 py-1 hover:opacity-80 transition-opacity"
-                      style={{ background: "rgba(0,119,200,0.1)", color: C.accent, fontSize: 11.5, fontWeight: 600 }}
-                    >
-                      <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                      {draftLabel} — view
-                    </a>
-                  ) : (
-                    <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-2.5">
-                      No draft yet
-                    </div>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p style={{ color: C.muted, fontSize: 13 }}>
-              No clear blog opportunity in the tracked set this month — the full GSC query export would surface more.
-            </p>
-          )}
-        </div>
-
+      <div className="mt-5">
+        <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
       </div>
 
       {/* Action plan — scoped to the selected month */}
-      <div className="rounded-lg mt-5 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-            {MONTH_FULL[MONTHS[month]]} {YEAR} action plan
-          </h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>
-            {deliveredToDate} of {plan.length} delivered to date
-          </span>
-        </div>
-
-        {active.length === 0 && (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13.5 }}>
-            No active work scheduled in {MONTHS[month]}.
-            {upcoming > 0 && ` ${upcoming} ${upcoming === 1 ? "task is" : "tasks are"} queued to begin in later months.`}
-          </div>
-        )}
-
-        {active.map(({ task: a, status: st }, row) => {
-          const done = st === "done";
-          const TIcon = done ? Check : Clock;
-          return (
-            <div
-              key={a.task}
-              className="flex items-start gap-3.5 px-5 py-3.5"
-              style={{ borderTop: row ? `1px solid ${C.line}` : "none" }}
-            >
-              {/* Status for this month */}
-              <span
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
-                style={{
-                  border: `1px solid ${done ? "transparent" : C.line}`,
-                  background: done ? "rgba(74,124,89,0.12)" : "rgba(184,137,60,0.12)",
-                  color: TASK[st].color,
-                  fontSize: 12,
-                  width: 116,
-                  justifyContent: "center",
-                  fontWeight: 500,
-                }}
-              >
-                <TIcon size={13} strokeWidth={2.25} />
-                {done ? "Delivered" : "In progress"}
-              </span>
-
-              {/* Task body */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span style={{ color: PRIORITY[a.priority].color, fontSize: 11 }} className="font-semibold uppercase tracking-wide">
-                    {PRIORITY[a.priority].label}
-                  </span>
-                  <span style={{ color: C.faint }}>·</span>
-                  <span style={{ color: C.faint, fontSize: 11, letterSpacing: "0.04em" }} className="uppercase">
-                    {a.cat}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    color: done ? C.faint : C.ink,
-                    fontSize: 14.5,
-                    textDecoration: done ? "line-through" : "none",
-                  }}
-                  className="font-medium leading-snug"
-                >
-                  {a.task}
-                </div>
-                <div style={{ color: C.muted, fontSize: 13 }} className="mt-1 leading-snug">
-                  {a.detail}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {active.length > 0 && upcoming > 0 && (
-          <div
-            className="px-5 py-2.5"
-            style={{ borderTop: `1px solid ${C.line}`, background: C.bg, color: C.faint, fontSize: 12.5 }}
-          >
-            {upcoming} more {upcoming === 1 ? "task" : "tasks"} queued for later months
-          </div>
-        )}
+      <div className="mt-5">
+        <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
       </div>
         </>
       )}
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
-      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} />}
+      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} />}
 
       {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
