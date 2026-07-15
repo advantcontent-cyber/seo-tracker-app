@@ -14,8 +14,10 @@ import {
   Cell,
   BarChart,
   Bar,
+  LineChart,
+  Line,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -2138,6 +2140,40 @@ function blogPicksFor(client, month, gscData) {
   return opps.filter((o) => o.intent === "blog").slice(0, 2);
 }
 
+// Commercial/optimise-intent queries sitting just off page one (position
+// 4-20) — "almost there" pages worth an on-page push. Powers the Generate
+// Report feature's "Where the interest is" section. Mirrors blogPicksFor's
+// shape but filtered to intent === "optimise" instead of "blog".
+function nearPageOneFor(client, month, gscData) {
+  const curQueries = gscData?.[client.name]?.[MO_NUM_BY_LABEL[MONTHS[month]]]?.topQueries ?? null;
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const rows = (curQueries
+    ? curQueries.map((row) => {
+        const k = row.k ?? row.q;
+        const pos = row.position;
+        const impressions = Math.round(row.impressions ?? 0);
+        return { k, pos, impressions, page: row.page ?? null };
+      })
+    : client.keywords.map((kw) => {
+        const pos = kwPos(kw, month);
+        return { k: kw.k, pos, impressions: kw.v, page: null };
+      })
+  )
+    .map(({ k, pos, impressions, page }) => {
+      const intent = intentOf(k);
+      return { k, pos: round1(pos), impressions, intent, url: page || pageUrl(client.domain, k, intent) };
+    })
+    .filter((o) =>
+      o.pos > 3 && o.pos <= 20 &&
+      o.intent === "optimise" &&
+      isReadableQuery(o.k) &&
+      !isNoiseQuery(o.k) &&
+      !isBrandQuery(client.name, o.k)
+    )
+    .sort((a, b) => b.impressions - a.impressions);
+  return rows.slice(0, 3);
+}
+
 // Action plan for one month — active tasks plus delivered/upcoming counts.
 // Off-page work is no longer part of the program — excluded from plans.
 // Live tasks from Supabase (seo_action_items) when available; mock otherwise.
@@ -2344,10 +2380,13 @@ function ActionPlanCard({ plan, active, deliveredToDate, upcoming, month }) {
   );
 }
 
-function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
+function OrganicSummary({ client, month, gscData, actionData, blogDrafts, aiData }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState(null);
+  const [reportView, setReportView] = useState(null);
   const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
 
   useEffect(() => {
@@ -2361,6 +2400,9 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
     return () => { live = false; };
   }, [client.name, moNum]);
 
+  // Close any open report view when switching client/month underneath it.
+  useEffect(() => { setReportView(null); setGenError(null); }, [client.name, moNum]);
+
   if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading summary…</div>;
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
   if (!report) return null;
@@ -2373,7 +2415,37 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
   // in here so Summary can absorb these cards once Overview is retired.
   const { chartData } = clicksTrendFor(client, month, gscData);
   const blogPicks = blogPicksFor(client, month, gscData);
+  const nearPageOneQueries = nearPageOneFor(client, month, gscData);
   const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, month, actionData);
+  const monthLabel = MONTH_FULL[MONTHS[month]];
+
+  async function handleGenerateReport() {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/generate-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client: client.name,
+          year: YEAR,
+          month: moNum,
+          summary: report,
+          blogPicks,
+          nearPageOneQueries,
+          actionPlan: { plan, active, deliveredToDate, upcoming },
+          ai: aiData?.[client.name] || null,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Failed to generate report");
+      setReportView(json.report);
+    } catch (e) {
+      setGenError(e.message);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -2469,6 +2541,268 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
           folded into Summary ahead of Overview's removal. */}
       <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
       <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
+
+      {/* Generate Report — narrative monthly report, written from this same
+          data via an LLM (see lib/report-narrative.js), plus daily GSC and
+          geography data fetched fresh server-side. */}
+      <div className="rounded-lg px-6 py-6 flex items-center justify-between gap-4 flex-wrap" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div>
+          <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">Generate report</h3>
+          <p style={{ color: C.muted, fontSize: 13 }}>
+            A narrative, printable {monthLabel} {YEAR} report for {client.name} — written fresh from this month's data.
+          </p>
+          {genError && <p style={{ color: C.risk, fontSize: 12.5 }} className="mt-1.5">{genError}</p>}
+        </div>
+        <button
+          onClick={handleGenerateReport}
+          disabled={generating}
+          className="shrink-0 inline-flex items-center gap-2 rounded-full px-5 py-2.5 transition-opacity"
+          style={{ background: C.accent, color: "#fff", fontSize: 13.5, fontWeight: 500, opacity: generating ? 0.6 : 1 }}
+        >
+          {generating ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+          {generating ? "Writing report…" : "Generate report"}
+        </button>
+      </div>
+
+      {reportView && (
+        <ReportView client={client} monthLabel={monthLabel} report={reportView} onClose={() => setReportView(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Generate Report — a narrative, printable monthly report. The button   */
+/*  lives at the bottom of the Summary tab; ReportView renders full-screen */
+/*  over the dashboard and isolates itself for window.print() via the     */
+/*  #amn-report-print / .no-print convention below.                       */
+/* ------------------------------------------------------------------ */
+const NEXT_STEP_TAG = {
+  "Quick win":  C.healthy,
+  "Build":      C.watch,
+  "Groundwork": C.faint,
+};
+
+function ReportKpi({ label, value, delta, suffix = "", invert = false }) {
+  return (
+    <div>
+      <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.04em" }} className="uppercase mb-1.5">{label}</div>
+      <div style={{ color: C.ink, fontSize: 26, fontVariantNumeric: "tabular-nums" }} className="font-semibold mb-1">{value}</div>
+      {delta != null && <Delta value={delta} suffix={suffix} invert={invert} size="sm" />}
+    </div>
+  );
+}
+
+function ReportSection({ no, title, alt, children }) {
+  return (
+    <section className="px-8 py-10 md:px-14 md:py-14" style={{ background: alt ? C.bg : "#fff", borderTop: `1px solid ${C.line}` }}>
+      <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.08em", fontFamily: "ui-monospace, monospace" }} className="uppercase mb-3">{no}</div>
+      <h2 style={{ color: C.ink, fontFamily: "Spectral, Georgia, serif", fontSize: 28 }} className="mb-4 leading-tight">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function ReportView({ client, monthLabel, report, onClose }) {
+  const { facts, daily, geo, narrative } = report;
+  const h = facts.headline;
+
+  const dailyData = daily.map((d) => ({ date: d.date.slice(8, 10), clicks: d.clicks, impressions: d.impressions }));
+  const aiTrend = facts.aiSearch ? MONTHS.map((m, i) => ({ month: m, sessions: facts.aiSearch.totals?.series?.[i] ?? 0 })) : [];
+
+  return (
+    <div
+      id="amn-report-print"
+      className="fixed inset-0 z-50 overflow-y-auto"
+      style={{ background: "#fff" }}
+    >
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #amn-report-print, #amn-report-print * { visibility: visible; }
+          #amn-report-print { position: absolute; inset: 0; width: 100%; height: auto; overflow: visible; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      {/* Controls — hidden on print */}
+      <div className="no-print sticky top-0 z-10 flex items-center justify-between px-6 py-3" style={{ background: C.ink, color: "#fff" }}>
+        <span className="flex items-center gap-2" style={{ fontSize: 13.5 }}>
+          <FileText size={15} /> {client.name} · {monthLabel} {facts.year} report
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5"
+            style={{ background: C.accent, color: "#fff", fontSize: 12.5, fontWeight: 500 }}
+          >
+            <Printer size={13} /> Print / Save as PDF
+          </button>
+          <button
+            onClick={onClose}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5"
+            style={{ background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12.5, fontWeight: 500 }}
+          >
+            <X size={13} /> Close
+          </button>
+        </div>
+      </div>
+
+      {/* Masthead */}
+      <header className="px-8 py-10 md:px-14 md:py-14" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)`, color: "#fff" }}>
+        <div className="flex items-center gap-2 mb-6" style={{ fontSize: 13, opacity: 0.85 }}>
+          <GoogleG size={14} /> {client.domain} · Organic Search · Google
+        </div>
+        <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 40 }} className="leading-none mb-3">{monthLabel} Search Report</h1>
+        <p style={{ fontSize: 14.5, opacity: 0.85 }}>
+          Organic search performance for {monthLabel} {facts.year}, measured against the prior month. Prepared by the AMN.
+        </p>
+      </header>
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 px-8 py-8 md:px-14" style={{ background: C.bg, borderBottom: `1px solid ${C.line}` }}>
+        <ReportKpi label="Visits from Google" value={fmt(h.visits)} delta={h.visitsDelta} suffix="%" />
+        <ReportKpi label="Times shown in search" value={fmt(h.impressions)} delta={h.impressionsDelta} suffix="%" />
+        <ReportKpi label="Look-to-visit rate" value={fmtPct(h.ctr)} />
+        <ReportKpi label="Avg. position" value={h.avgPos.toFixed(2)} delta={h.avgPosDelta} invert />
+      </div>
+
+      {/* 00 — Report Summary */}
+      <ReportSection no="00 — Report Summary" title={`${client.name} · Report Summary`}>
+        <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }} className="max-w-3xl">{narrative.summary}</p>
+      </ReportSection>
+
+      {/* 01 — Daily performance */}
+      <ReportSection no="01 — Daily performance" title="How the month unfolded day by day" alt>
+        <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }} className="max-w-3xl mb-5">{narrative.dailyPerformance}</p>
+        <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={dailyData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gReportDaily" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.22} />
+                  <stop offset="100%" stopColor={C.accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+              <Tooltip contentStyle={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, fontSize: 12 }} />
+              <Area type="monotone" dataKey="clicks" name="Visits" stroke={C.accent} strokeWidth={2} fill="url(#gReportDaily)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        {(facts.bestDay || facts.peakImpressionsDay) && (
+          <div className="flex flex-wrap gap-8 mt-5">
+            {facts.bestDay && (
+              <div><span style={{ color: C.ink, fontSize: 20 }} className="font-semibold tabular-nums">{fmt(facts.bestDay.clicks)}</span> <span style={{ color: C.muted, fontSize: 13 }}>visits on {facts.bestDay.date}, the best day</span></div>
+            )}
+            {facts.peakImpressionsDay && (
+              <div><span style={{ color: C.ink, fontSize: 20 }} className="font-semibold tabular-nums">{fmt(facts.peakImpressionsDay.impressions)}</span> <span style={{ color: C.muted, fontSize: 13 }}>impressions on {facts.peakImpressionsDay.date}, the peak</span></div>
+            )}
+          </div>
+        )}
+      </ReportSection>
+
+      {/* 02 — Where the interest is */}
+      <ReportSection no="02 — Where the interest is" title="Where the interest is">
+        <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }} className="max-w-3xl mb-5">{narrative.interestNarrative}</p>
+        {facts.nearPageOneQueries.length > 0 && (
+          <div className="rounded-lg overflow-hidden mb-4" style={{ border: `1px solid ${C.line}` }}>
+            <div className="px-5 py-3" style={{ borderBottom: `1px solid ${C.line}`, background: C.bg }}>
+              <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Booking-intent searches, close to page one</h3>
+            </div>
+            {facts.nearPageOneQueries.map((q, i) => (
+              <div key={q.k} className="flex items-center justify-between px-5 py-3" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <div>
+                  <div style={{ color: C.ink, fontSize: 13.5 }} className="font-medium">{q.k}</div>
+                  <div style={{ color: C.faint, fontSize: 12 }}>Shown {fmt(q.impressions)} times · position {q.pos}</div>
+                </div>
+                <span className="rounded-full px-2.5 py-1" style={{ background: "rgba(0,119,200,0.1)", color: C.accent, fontSize: 11, fontWeight: 600 }}>
+                  {q.pos <= 10 ? "Almost there" : "Close to page 1"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {narrative.interestWarning && (
+          <div className="rounded-lg px-4 py-3" style={{ background: "rgba(184,122,0,0.08)", border: `1px solid rgba(184,122,0,0.3)`, color: C.watch, fontSize: 13 }}>
+            <b>Worth fixing first.</b> {narrative.interestWarning}
+          </div>
+        )}
+      </ReportSection>
+
+      {/* 03 — Geography */}
+      {geo.length > 0 && (
+        <ReportSection no="03 — Where guests are searching from" title="Where guests are searching from" alt>
+          <div className="grid md:grid-cols-2 gap-6 items-center">
+            <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={geo} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
+                  <CartesianGrid stroke={C.line} horizontal={false} />
+                  <XAxis type="number" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="country" tick={{ fill: C.ink, fontSize: 11.5 }} axisLine={false} tickLine={false} width={90} />
+                  <Tooltip contentStyle={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, fontSize: 12 }} />
+                  <Bar dataKey="sessions" fill={C.accent} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>{narrative.geography}</p>
+          </div>
+        </ReportSection>
+      )}
+
+      {/* 04 — AI search */}
+      {facts.aiSearch && (
+        <ReportSection no="04 — AI search" title="Fewer or more? How AI referrals moved">
+          <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }} className="max-w-3xl mb-5">{narrative.aiSearch}</p>
+          <div className="rounded-lg p-5 mb-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={aiTrend} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+                <Tooltip contentStyle={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="sessions" name="Sessions from AI tools" stroke={C.ink} strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {narrative.aiSearchNote && (
+            <div className="rounded-lg px-4 py-3" style={{ background: C.bg, border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }}>
+              <b>Read with care.</b> {narrative.aiSearchNote}
+            </div>
+          )}
+        </ReportSection>
+      )}
+
+      {/* 05 — What we'll do next */}
+      <ReportSection no="05 — What we'll do next" title="What we'll do next" alt>
+        <div className="grid md:grid-cols-2 gap-4">
+          {(narrative.nextSteps || []).map((step, i) => (
+            <div
+              key={i}
+              className="rounded-lg p-5"
+              style={{ border: `1px solid ${C.line}`, background: "#fff", gridColumn: i === (narrative.nextSteps.length - 1) && narrative.nextSteps.length % 2 === 1 ? "1 / -1" : undefined }}
+            >
+              <span
+                className="inline-block rounded-full px-2.5 py-1 mb-3"
+                style={{ background: `${NEXT_STEP_TAG[step.tag] || C.faint}1A`, color: NEXT_STEP_TAG[step.tag] || C.faint, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.04em" }}
+              >
+                {(step.tag || "").toUpperCase()}
+              </span>
+              <div style={{ color: C.faint, fontSize: 12 }} className="mb-1">{i + 1}</div>
+              <h3 style={{ color: C.ink, fontSize: 15.5 }} className="font-semibold mb-1.5">{step.title}</h3>
+              <p style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </ReportSection>
+
+      <footer className="flex flex-wrap items-center justify-between gap-2 px-8 py-6 md:px-14" style={{ borderTop: `1px solid ${C.line}`, color: C.faint, fontSize: 12 }}>
+        <span>Prepared by the AMN</span>
+        <span>{client.name} · {monthLabel} {facts.year}</span>
+        <span>Source: Google Search Console + Google Analytics 4 (Windsor.ai)</span>
+      </footer>
     </div>
   );
 }
@@ -2899,7 +3233,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "sem" && <SemTab client={client} month={month} semData={semData} />}
 
-      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} />}
+      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
       {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
