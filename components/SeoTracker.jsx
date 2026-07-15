@@ -2416,11 +2416,9 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
         </div>
       </div>
 
-      {/* Organic clicks trend, content opportunities, action plan — same
-          cards as Overview, folded into Summary ahead of Overview's removal. */}
+      {/* Organic clicks trend — same card as Overview, folded into Summary
+          ahead of Overview's removal. */}
       <OrganicClicksTrendCard chartData={chartData} momValue={Math.round(momPct(client, month))} month={month} />
-      <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
-      <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
 
       {/* Traffic Metrics */}
       <SectionBanner title="Traffic Metrics" />
@@ -2466,6 +2464,11 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts }) {
           )}
         </ol>
       </div>
+
+      {/* Content opportunities + action plan — same cards as Overview,
+          folded into Summary ahead of Overview's removal. */}
+      <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
+      <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
     </div>
   );
 }
