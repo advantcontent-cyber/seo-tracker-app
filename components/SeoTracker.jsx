@@ -241,6 +241,7 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // detail tabs render. Default is SEO-only.
 const SERVICES = {
   "IC Khao Yai": ["seo", "sem"],
+  "Nomad Greenland": ["seo", "sem"],
   "Azerai Ke Ga Bay": ["sem"],
   "Azerai La Residence, Hue": ["sem"],
 };
