@@ -2972,25 +2972,32 @@ function AiKpi({ label, value, sub }) {
   );
 }
 
-function AiSearch({ client, aiData }) {
+function AiSearch({ client, aiData, month }) {
   const ai = aiData?.[client.name] || null;
+  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const monthLabel = MONTH_FULL[MONTHS[month]];
 
   if (aiData == null)
     return <div className="py-12 text-center" style={{ color: C.muted, fontSize: 13 }}>Loading AI referral data…</div>;
-  if (!ai || ai.totals.sessions === 0)
+
+  const mo = ai?.byMonth?.[moNum] || null;
+
+  if (!ai || !mo || mo.totals.sessions === 0)
     return (
       <div className="rounded-lg p-8 text-center" style={{ border: `1px dashed ${C.line}`, background: "#fff" }}>
         <Sparkles size={22} color={C.faint} className="mx-auto mb-2" />
-        <div style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">No AI-engine referrals yet</div>
-        <div style={{ color: C.muted, fontSize: 13 }}>No sessions from ChatGPT, Gemini, Claude, Perplexity or Copilot landed on this property in Mar–Jun {YEAR}.</div>
+        <div style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">No AI-engine referrals this month</div>
+        <div style={{ color: C.muted, fontSize: 13 }}>No sessions from ChatGPT, Gemini, Claude, Perplexity or Copilot landed on this property in {monthLabel} {YEAR}.</div>
       </div>
     );
 
-  const t = ai.totals;
-  const mom = t.series[LAST - 1] ? Math.round(((t.series[LAST] - t.series[LAST - 1]) / t.series[LAST - 1]) * 100) : 0;
-  const top = ai.engines[0];
+  const t = ai.totals; // full Mar–Jul series, kept for the trend chart only
+  const prevSessions = month > 0 ? t.series[month - 1] : null;
+  const mom = prevSessions ? Math.round(((t.series[month] - prevSessions) / prevSessions) * 100) : 0;
+  const activeEngines = mo.engines.filter((e) => e.sessions > 0 || e.conversions > 0);
+  const top = mo.engines[0];
   const trend = MONTHS.map((label, i) => ({ month: label, sessions: t.series[i] }));
-  const share = (n) => (t.sessions ? Math.round((n / t.sessions) * 100) : 0);
+  const share = (n) => (mo.totals.sessions ? Math.round((n / mo.totals.sessions) * 100) : 0);
   const GRID = "1.5fr 0.8fr 0.9fr 1.4fr 108px";
 
   const EngineRow = ({ e }) => (
@@ -3023,17 +3030,17 @@ function AiSearch({ client, aiData }) {
 
       {/* KPI tiles */}
       <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-        <AiKpi label={`AI sessions · ${MONTHS[LAST]}`} value={fmt(t.series[LAST])} sub={<Delta value={mom} suffix="%" size="lg" />} />
-        <AiKpi label={`AI sessions · Mar–${MONTHS[LAST]}`} value={fmt(t.sessions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>{ai.engines.length} engine{ai.engines.length > 1 ? "s" : ""}</span>} />
-        <AiKpi label={`AI conversions · Mar–${MONTHS[LAST]}`} value={fmt(t.conversions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>GA4 key events</span>} />
+        <AiKpi label={`AI sessions · ${monthLabel}`} value={fmt(mo.totals.sessions)} sub={<Delta value={mom} suffix="%" size="lg" />} />
+        <AiKpi label={`AI conversions · ${monthLabel}`} value={fmt(mo.totals.conversions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>GA4 key events</span>} />
         <AiKpi label="Top engine" value={top.label} sub={<span style={{ color: C.faint, fontSize: 12 }}>{share(top.sessions)}% of AI sessions</span>} />
+        <AiKpi label="Engines active" value={activeEngines.length} sub={<span style={{ color: C.faint, fontSize: 12 }}>with referrals in {monthLabel}</span>} />
       </div>
 
       {/* Trend */}
       <div className="rounded-lg mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">AI referral sessions</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · monthly</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · monthly trend, Mar–{MONTHS[LAST]}</span>
         </div>
         <div style={{ height: 200 }} className="px-2 py-3">
           <ResponsiveContainer width="100%" height="100%">
@@ -3049,6 +3056,7 @@ function AiSearch({ client, aiData }) {
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
               <Tooltip formatter={(v) => [fmt(v), "Sessions"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
               <Area type="monotone" dataKey="sessions" stroke={C.accent} strokeWidth={2} fill="url(#aiSessions)" />
+              <ReferenceDot x={MONTHS[month]} y={trend[month]?.sessions} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -3058,21 +3066,21 @@ function AiSearch({ client, aiData }) {
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Engine</span>
-          <span className="uppercase text-right">Sessions</span>
+          <span className="uppercase text-right">Sessions · {monthLabel}</span>
           <span className="uppercase text-right">Conv.</span>
           <span className="uppercase pl-3">Share</span>
-          <span className="uppercase text-right">Mar–{MONTHS[LAST]}</span>
+          <span className="uppercase text-right">Mar–{MONTHS[LAST]} trend</span>
         </div>
-        {ai.engines.map((e) => <EngineRow key={e.key} e={e} />)}
+        {activeEngines.map((e) => <EngineRow key={e.key} e={e} />)}
       </div>
 
       {/* Top landing pages from AI — combined across engines, with the per-engine
           split shown as chips (the prompt itself is never passed by AI engines). */}
-      {ai.pages?.length > 0 && (
+      {mo.pages?.length > 0 && (
         <div className="rounded-lg overflow-hidden mt-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top pages from AI</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it</span>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it · {monthLabel}</span>
           </div>
           <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
             <span className="uppercase">Page</span>
@@ -3080,7 +3088,7 @@ function AiSearch({ client, aiData }) {
             <span className="uppercase text-right">Sess.</span>
             <span className="uppercase text-right">Conv.</span>
           </div>
-          {ai.pages.map((p) => (
+          {mo.pages.map((p) => (
             <div key={p.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", borderTop: `1px solid ${C.line}` }}>
               <span style={{ color: C.accent, fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }} className="truncate pr-3" title={p.page}>{p.page}</span>
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pr-3">
@@ -3100,7 +3108,7 @@ function AiSearch({ client, aiData }) {
       )}
 
       {/* Bing — surfaced separately (search surface, not pure chat AI) */}
-      {ai.bing && (
+      {mo.bing && (
         <div className="rounded-lg overflow-hidden mt-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <span style={{ color: C.muted, fontSize: 12 }}>Shown separately — Bing is a search surface (and Copilot’s engine), not counted in the AI totals above.</span>
@@ -3110,10 +3118,10 @@ function AiSearch({ client, aiData }) {
               <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: ENGINE_COLOR.bing }} />
               <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate">Bing</span>
             </span>
-            <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.sessions)}</span>
-            <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.conversions)}</span>
+            <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(mo.bing.sessions)}</span>
+            <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(mo.bing.conversions)}</span>
             <span className="pl-3" />
-            <span className="flex justify-end"><Sparkline series={ai.bing.series} w={96} h={26} /></span>
+            <span className="flex justify-end">{ai.bing && <Sparkline series={ai.bing.series} w={96} h={26} />}</span>
           </div>
         </div>
       )}
@@ -3241,7 +3249,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "seo" && seoSub === "conversions" && <OrganicConversions key={`${client.name}-${month}`} client={client} month={month} />}
 
-      {service === "seo" && seoSub === "ai" && <AiSearch client={client} aiData={aiData} />}
+      {service === "seo" && seoSub === "ai" && <AiSearch key={`${client.name}-${month}`} client={client} aiData={aiData} month={month} />}
 
       {service === "seo" && seoSub === "explorer" && <KeywordExplorer client={client} />}
 
