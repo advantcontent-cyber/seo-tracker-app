@@ -173,6 +173,22 @@ const CLIENTS = [
       { k: "romantic getaway khao yai", p: 15, d: 4, v: 1100 },
     ],
   },
+  // SEM-only — no GSC property, no organic keyword set. `keywords: []` keeps
+  // the Detail view's query-row fallback (used only if SEO ever renders) safe.
+  {
+    name: "Azerai Ke Ga Bay",
+    domain: "azerai.com/azerai-ke-ga-bay",
+    market: "Vietnam · EN/VN",
+    status: "healthy",
+    keywords: [],
+  },
+  {
+    name: "Azerai La Residence, Hue",
+    domain: "azerai.com/azerai-la-residence-hue",
+    market: "Vietnam · EN/VN",
+    status: "healthy",
+    keywords: [],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -225,6 +241,8 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // detail tabs render. Default is SEO-only.
 const SERVICES = {
   "IC Khao Yai": ["seo", "sem"],
+  "Azerai Ke Ga Bay": ["sem"],
+  "Azerai La Residence, Hue": ["sem"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
@@ -1040,7 +1058,12 @@ const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
 // Parse a market code from a campaign name. Handles both Google ("[Advant]
 // HK_High intent…") and Meta ("US_Conv_Clickbook_JUN", "SG+HK+TW_Conv…").
 const campaignMarket = (name) => {
-  const cleaned = (name || "").replace(/^\[Advant\]\s*/, "").trim();
+  const cleaned = (name || "")
+    .replace(/^\[Advant\]\s*/, "")
+    // Azerai campaigns are named "AZKGB_VN_..." / "AZLRH / EN / ..." — strip
+    // the property-code prefix so the market code below it is what's matched.
+    .replace(/^AZ(?:KGB|LRH)[\s_/]+/, "")
+    .trim();
   const m = /^([A-Z]{2}(?:\+[A-Z]{2})*)/.exec(cleaned);
   return m ? m[1] : "Other";
 };
@@ -3484,7 +3507,7 @@ export default function App() {
               aiData={aiData}
             />
           ) : (
-            <Portfolio clients={visibleClients} onSelect={setSelected} month={month} gscData={gscData} />
+            <Portfolio clients={visibleClients.filter((c) => hasService(c.name, "seo"))} onSelect={setSelected} month={month} gscData={gscData} />
           )}
         </main>
       </div>

@@ -7,6 +7,8 @@ const ALL_CLIENTS = [
   "Shinta Mani Wild",
   "Sora Sukhumvit",
   "IC Khao Yai",
+  "Azerai Ke Ga Bay",
+  "Azerai La Residence, Hue",
 ];
 
 export async function GET() {
