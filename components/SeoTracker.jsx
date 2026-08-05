@@ -1410,6 +1410,123 @@ function MetaTab({ client, month, semData }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Google sub-tab — Google Ads-only KPI set (Impressions, Clicks,      */
+/*  CTR, Amount Spent, Click Book). Sits alongside Summary and Meta      */
+/*  under the SEM service tab.                                          */
+/* ------------------------------------------------------------------ */
+function GoogleTab({ client, month, semData }) {
+  const sem = semData?.[client.name];
+  const accent = C.accent; // matches the Google Ads accent used in Summary
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/month." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const moNum = MO_NUM_MAP[MONTHS[month]];
+  const cur  = sem.monthly?.[moNum]?.google || null;
+  const prev = month > 0 ? (sem.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]]?.google || null) : null;
+  const campaigns = (sem.campaigns?.[moNum] || []).filter((c) => c.platform === "google");
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+
+  const kpis = cur ? [
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%` },
+    { label: "Amount Spent", value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Click Book",  value: "—", note: "Placeholder — custom-conversion mapping pending" },
+  ] : [];
+
+  const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.google?.spend ?? 0 }));
+
+  const byMarket = (() => {
+    const agg = {};
+    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
+    return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  })();
+  const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Spend trend + spend by market */}
+      <div className="grid lg:grid-cols-3 gap-5 mt-5">
+        <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="googleSpend" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
+      </div>
+
+      {/* Top campaigns */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Google Ads</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
+        </div>
+        <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+          <span className="uppercase">Campaign</span>
+          <span className="uppercase text-right">Spend</span>
+          <span className="uppercase text-right">Clicks</span>
+          <span className="uppercase text-right">CTR</span>
+        </div>
+        {topCampaigns.length === 0 ? (
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
+        ) : topCampaigns.map((c, i) => (
+          <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—"}</span>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book is a placeholder until the team confirms the custom-conversion mapping (kept consistent with the Meta tab rather than reusing this account's tracked "Conversions" figure).
+      </p>
+    </div>
+  );
+}
+
 /* Google "G" mark — inline SVG so it stays self-contained (no external asset). */
 function GoogleG({ size = 15 }) {
   return (
@@ -3281,7 +3398,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
   const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
-  const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (Google+Meta) | "meta" (Meta-only KPIs)
+  const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (combined Google+Meta) | "meta" | "google" (single-platform KPI sets)
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
@@ -3386,7 +3503,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         </div>
       ) : service === "sem" ? (
         <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["summary", "Summary"], ["meta", "Meta"]].map(([id, label]) => (
+          {[["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setSemSub(id)}
@@ -3408,6 +3525,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "sem" && semSub === "summary" && <SemTab client={client} month={month} semData={semData} />}
       {service === "sem" && semSub === "meta" && <MetaTab client={client} month={month} semData={semData} />}
+      {service === "sem" && semSub === "google" && <GoogleTab client={client} month={month} semData={semData} />}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
