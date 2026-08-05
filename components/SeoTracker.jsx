@@ -1098,11 +1098,11 @@ function BarBreakdown({ title, rows, fmtVal }) {
 // Combined Google + Meta figures for one month, per the client-provided
 // scorecard spec (formerly a Looker Studio dashboard):
 //   Amount Spent = SUM(Amount Spent USD) + SUM(Cost)             → meta.spend + google.spend
-//   Click Book   = SUM(All conversions) + SUM(Website Searches)  → google.conversions + meta "Website Searches"
-// "Website Searches" is a named Meta custom-conversion event that isn't wired
-// up yet (same open item as the Meta/Google tabs' Click Book) — it contributes
-// 0 here until the team confirms its Windsor field, so Click Book (and CPA,
-// and the Click Book trend below) are Google-only for now, not the full figure.
+//   Click Book   = SUM(All conversions) + SUM(Website Searches)  → google.allConversions + meta.clickBook
+// Both sides confirmed against Windsor's field reference for IC Khao Yai:
+// "All conversions" is Google Ads' all_conversions metric (broader than the
+// plain `conversions` field), and "Website Searches" is the Meta Pixel
+// "Search" event (same field backing the Meta tab's own Click Book KPI).
 function monthCombined(sem, mo) {
   const m = sem.monthly?.[mo];
   if (!m) return null;
@@ -1110,7 +1110,7 @@ function monthCombined(sem, mo) {
     spend: m.spend ?? 0,
     clicks: m.clicks ?? 0,
     impressions: m.impressions ?? 0,
-    clickBook: m.google?.conversions ?? 0, // + Meta "Website Searches" once mapped
+    clickBook: (m.google?.allConversions ?? 0) + (m.meta?.clickBook ?? 0),
   };
 }
 
@@ -1142,7 +1142,7 @@ function SummaryTab({ client, month, semData }) {
 
   const kpis = cur ? [
     { label: "Amount Spent",  value: fmtMoney(cur.spend),  delta: dPct("spend") },
-    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook"), note: "Google conversions only — Meta \"Website Searches\" mapping pending" },
+    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
     { label: "CPA",           value: cur.clickBook ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
@@ -1250,7 +1250,7 @@ function MetaTab({ client, month, semData }) {
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%` },
     { label: "Amount Spent", value: fmtMoney(cur.spend),  delta: dPct("spend") },
-    { label: "Click Book",  value: "—", note: "Placeholder — custom-conversion mapping pending" },
+    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
     { label: "Frequency",   value: freq.toFixed(2) },
   ] : [];
 
@@ -1332,7 +1332,7 @@ function MetaTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Reach and Frequency are account-level figures. Click Book is a placeholder until the team confirms the custom-conversion mapping.
+        Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).
       </p>
     </div>
   );
@@ -1368,7 +1368,7 @@ function GoogleTab({ client, month, semData }) {
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%` },
     { label: "Amount Spent", value: fmtMoney(cur.spend),  delta: dPct("spend") },
-    { label: "Click Book",  value: "—", note: "Placeholder — custom-conversion mapping pending" },
+    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
   ] : [];
 
   const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.google?.spend ?? 0 }));
@@ -1449,7 +1449,7 @@ function GoogleTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book is a placeholder until the team confirms the custom-conversion mapping (kept consistent with the Meta tab rather than reusing this account's tracked "Conversions" figure).
+        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.
       </p>
     </div>
   );
