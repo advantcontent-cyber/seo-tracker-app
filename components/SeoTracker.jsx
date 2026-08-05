@@ -1108,6 +1108,7 @@ function monthCombined(sem, mo) {
   if (!m) return null;
   return {
     spend: m.spend ?? 0,
+    spendPending: !!m.spendPending, // either platform billed in a non-USD currency this month
     clicks: m.clicks ?? 0,
     impressions: m.impressions ?? 0,
     clickBook: (m.google?.allConversions ?? 0) + (m.meta?.clickBook ?? 0),
@@ -1131,22 +1132,24 @@ function SummaryTab({ client, month, semData }) {
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
 
   // Derived ratios — computed from the combined totals above (not summed/averaged
-  // as their own field) so each stays internally consistent.
+  // as their own field) so each stays internally consistent. Any ratio built
+  // from spend is unavailable while spendPending (a non-USD account this
+  // month) rather than silently understated.
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
-  const cpa     = cur && cur.clickBook ? cur.spend / cur.clickBook : 0;
-  const prevCpa = prev && prev.clickBook ? prev.spend / prev.clickBook : null;
-  const cpm     = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : 0;
-  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
-  const pctDelta = (v, p) => (p ? Math.round(((v - p) / p) * 100) : null);
+  const cpa     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
+  const prevCpa = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
+  const cpm     = cur && !cur.spendPending && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && !prev.spendPending && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
 
   const kpis = cur ? [
-    { label: "Amount Spent",  value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account this month)" : undefined },
     { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
-    { label: "CPA",           value: cur.clickBook ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
+    { label: "CPA",           value: cpa != null ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",           value: fmtMoney(cpm),        delta: pctDelta(cpm, prevCpm) },
+    { label: "CPM",           value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks") },
   ] : [];
 
@@ -1249,19 +1252,23 @@ function MetaTab({ client, month, semData }) {
     { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%` },
-    { label: "Amount Spent", value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
     { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
     { label: "Frequency",   value: freq.toFixed(2) },
   ] : [];
 
-  const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.meta?.spend ?? 0 }));
+  const trend = MONTHS.map((mo) => { const m = sem.monthly?.[MO_NUM_MAP[mo]]?.meta; return { month: mo, spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
 
+  // c.spend is null for campaigns billed in a non-USD currency (pending FX
+  // conversion) — excluded from the market/top-campaigns spend numbers below
+  // (treated as 0 for the market total, sunk to the bottom of the ranking)
+  // rather than shown as a misleading "$0".
   const byMarket = (() => {
     const agg = {};
-    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
+    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + (c.spend ?? 0); });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
+  const topCampaigns = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1)).slice(0, 6);
 
   return (
     <div>
@@ -1298,8 +1305,8 @@ function MetaTab({ client, month, semData }) {
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
-                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#metaSpend)" />
+                <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#metaSpend)" connectNulls={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1324,7 +1331,7 @@ function MetaTab({ client, month, semData }) {
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
             <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
             <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—"}</span>
           </div>
@@ -1332,7 +1339,7 @@ function MetaTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).
+        Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
@@ -1367,18 +1374,22 @@ function GoogleTab({ client, month, semData }) {
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%` },
-    { label: "Amount Spent", value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
     { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
   ] : [];
 
-  const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.google?.spend ?? 0 }));
+  const trend = MONTHS.map((mo) => { const m = sem.monthly?.[MO_NUM_MAP[mo]]?.google; return { month: mo, spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
 
+  // c.spend is null for campaigns billed in a non-USD currency (pending FX
+  // conversion) — excluded from the market/top-campaigns spend numbers below
+  // (treated as 0 for the market total, sunk to the bottom of the ranking)
+  // rather than shown as a misleading "$0".
   const byMarket = (() => {
     const agg = {};
-    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
+    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + (c.spend ?? 0); });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
+  const topCampaigns = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1)).slice(0, 6);
 
   return (
     <div>
@@ -1415,8 +1426,8 @@ function GoogleTab({ client, month, semData }) {
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
-                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" />
+                <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" connectNulls={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1441,7 +1452,7 @@ function GoogleTab({ client, month, semData }) {
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
             <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
             <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—"}</span>
           </div>
@@ -1449,7 +1460,7 @@ function GoogleTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.
+        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
