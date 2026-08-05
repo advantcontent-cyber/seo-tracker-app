@@ -1052,7 +1052,8 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
 }
 
 /* ------------------------------------------------------------------ */
-/*  SEM (paid search) tab — Google Ads via Windsor                      */
+/*  SEM (paid search/social) — shared helpers, then the Summary,        */
+/*  Meta, and Google sub-tabs (Google Ads + Meta via Windsor)           */
 /* ------------------------------------------------------------------ */
 const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
 
@@ -1068,7 +1069,6 @@ const campaignMarket = (name) => {
   const m = /^([A-Z]{2}(?:\+[A-Z]{2})*)/.exec(cleaned);
   return m ? m[1] : "Other";
 };
-const PLATFORM_LABEL = { google: "Google Ads", meta: "Meta" };
 
 // Horizontal bar breakdown (like the reference "Traffic by Website").
 function BarBreakdown({ title, rows, fmtVal }) {
@@ -1095,31 +1095,26 @@ function BarBreakdown({ title, rows, fmtVal }) {
   );
 }
 
-// Paid-media narrative for the month — summarises combined Google + Meta
-// spend, MoM, efficiency, and platform split.
-function semRead(sem, month) {
-  const cur = sem?.monthly?.[MO_NUM_MAP[MONTHS[month]]];
-  if (!cur || !cur.spend) return null;
-  const prev = month > 0 ? sem?.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]] : null;
-  const mom = prev && prev.spend ? Math.round(((cur.spend - prev.spend) / prev.spend) * 100) : null;
-  const cpc = cur.clicks ? cur.spend / cur.clicks : 0;
-  const metaShare = cur.spend ? Math.round((cur.meta.spend / cur.spend) * 100) : 0;
-  const bigger = cur.meta.spend >= cur.google.spend ? "Meta" : "Google Ads";
-  const biggerShare = Math.max(metaShare, 100 - metaShare);
-
-  const lead = mom == null
-    ? `Paid media spent ${fmtMoney(cur.spend)} across Google Ads and Meta in ${MONTH_FULL[MONTHS[month]]} — the baseline for the window`
-    : `Paid media spent ${fmtMoney(cur.spend)} across Google Ads and Meta in ${MONTH_FULL[MONTHS[month]]}, ${mom >= 0 ? "up" : "down"} ${Math.abs(mom)}% month-over-month`;
-  const mid = `driving ${fmt(cur.clicks)} clicks at a $${cpc.toFixed(2)} blended CPC`;
-  const split = `${bigger} carried the majority of spend (${biggerShare}%)`;
-  const conv = cur.google.conversions
-    ? `, with Google Ads logging ${fmt(cur.google.conversions)} tracked conversions at $${(cur.google.spend / cur.google.conversions).toFixed(2)} each`
-    : "";
-  return `${lead} — ${mid}. ${split}${conv}.`;
+// Combined Google + Meta figures for one month, per the client-provided
+// scorecard spec (formerly a Looker Studio dashboard):
+//   Amount Spent = SUM(Amount Spent USD) + SUM(Cost)             → meta.spend + google.spend
+//   Click Book   = SUM(All conversions) + SUM(Website Searches)  → google.conversions + meta "Website Searches"
+// "Website Searches" is a named Meta custom-conversion event that isn't wired
+// up yet (same open item as the Meta/Google tabs' Click Book) — it contributes
+// 0 here until the team confirms its Windsor field, so Click Book (and CPA,
+// and the Click Book trend below) are Google-only for now, not the full figure.
+function monthCombined(sem, mo) {
+  const m = sem.monthly?.[mo];
+  if (!m) return null;
+  return {
+    spend: m.spend ?? 0,
+    clicks: m.clicks ?? 0,
+    impressions: m.impressions ?? 0,
+    clickBook: m.google?.conversions ?? 0, // + Meta "Website Searches" once mapped
+  };
 }
 
-function SemTab({ client, month, semData }) {
-  const [platformSel, setPlatformSel] = useState(null);
+function SummaryTab({ client, month, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
@@ -1130,157 +1125,90 @@ function SemTab({ client, month, semData }) {
     );
   }
 
-  // Platforms that actually have spend; toggle between them.
-  const available = ["google", "meta"].filter((p) => MONTHS.some((mo) => (sem.monthly?.[mo]?.[p]?.spend ?? 0) > 0));
-  const platform = platformSel && available.includes(platformSel) ? platformSel : (available[0] || "google");
-  const isGoogle = platform === "google";
-  const accent = isGoogle ? C.accent : "#1877F2";
-
   const moNum = MO_NUM_MAP[MONTHS[month]];
-  const cur  = sem.monthly?.[moNum]?.[platform] || null;
-  const prev = month > 0 ? (sem.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]]?.[platform] || null) : null;
-  const campaigns = (sem.campaigns?.[moNum] || []).filter((c) => c.platform === platform);
-
+  const cur  = monthCombined(sem, moNum);
+  const prev = month > 0 ? monthCombined(sem, MO_NUM_MAP[MONTHS[month - 1]]) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
-  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
-  const cpc  = cur && cur.clicks ? cur.spend / cur.clicks : 0;
-  const cpa  = cur && cur.conversions ? cur.spend / cur.conversions : 0;
+
+  // Derived ratios — computed from the combined totals above (not summed/averaged
+  // as their own field) so each stays internally consistent.
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpa     = cur && cur.clickBook ? cur.spend / cur.clickBook : 0;
+  const prevCpa = prev && prev.clickBook ? prev.spend / prev.clickBook : null;
+  const cpm     = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : 0;
+  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  const pctDelta = (v, p) => (p ? Math.round(((v - p) / p) * 100) : null);
 
   const kpis = cur ? [
-    { label: "Spend",       value: fmtMoney(cur.spend),  delta: dPct("spend") },
-    { label: "Clicks",      value: fmt(cur.clicks),      delta: dPct("clicks") },
-    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    ...(isGoogle ? [{ label: "Conversions", value: fmt(cur.conversions), delta: dPct("conversions") }] : []),
+    { label: "Amount Spent",  value: fmtMoney(cur.spend),  delta: dPct("spend") },
+    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook"), note: "Google conversions only — Meta \"Website Searches\" mapping pending" },
+    { label: "CPA",           value: cur.clickBook ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
+    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",           value: fmtMoney(cpm),        delta: pctDelta(cpm, prevCpm) },
+    { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks") },
   ] : [];
 
-  const trend = MONTHS.map((mo) => ({ month: mo, spend: sem.monthly?.[MO_NUM_MAP[mo]]?.[platform]?.spend ?? 0 }));
-
-  const byMarket = (() => {
-    const agg = {};
-    campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + c.spend; });
-    return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
-  })();
-  const topCampaigns = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
-  const read = semRead(sem, month);
+  const clickBookTrend = MONTHS.map((mo) => ({ month: mo, clickBook: monthCombined(sem, MO_NUM_MAP[mo])?.clickBook ?? 0 }));
+  const clicksTrend    = MONTHS.map((mo) => ({ month: mo, clicks: sem.monthly?.[MO_NUM_MAP[mo]]?.clicks ?? 0 }));
 
   return (
     <div>
-      {/* Paid read — combined Google + Meta narrative for the month */}
-      {read && (
-        <div className="rounded-lg p-5 mb-6" style={{ background: C.accent, color: "#fff" }}>
-          <div className="flex items-center gap-2 mb-2">
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", opacity: 0.7 }} className="uppercase font-semibold">
-              Paid read · {MONTH_FULL[MONTHS[month]]} {YEAR}
-            </span>
-          </div>
-          <p style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 17.5, lineHeight: 1.55 }}>
-            {read}
-          </p>
-          <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 10 }}>
-            Generated from the month's Google Ads + Meta figures — a starting read, not a substitute for campaign-level review. Meta conversions aren't tracked, so conversion figures are Google-only.
-          </p>
-        </div>
-      )}
-
-      {/* Platform toggle */}
-      <div className="inline-flex rounded-lg p-0.5 mb-5" style={{ background: C.bg, border: `1px solid ${C.line}` }}>
-        {available.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPlatformSel(p)}
-            style={{
-              padding: "6px 16px", borderRadius: 6, fontSize: 13,
-              fontWeight: platform === p ? 600 : 500,
-              background: platform === p ? "#fff" : "transparent",
-              color: platform === p ? C.ink : C.muted,
-              border: platform === p ? `1px solid ${C.line}` : "1px solid transparent",
-            }}
-          >
-            {PLATFORM_LABEL[p]}
-          </button>
-        ))}
-      </div>
-
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
             <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
             <div className="flex items-baseline gap-2 mt-1.5">
               <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
               {k.delta != null && <Delta value={k.delta} suffix="%" />}
             </div>
+            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
           </div>
         ))}
       </div>
 
-      {/* Secondary metrics */}
-      {cur && (
-        <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4 px-1" style={{ color: C.muted, fontSize: 13 }}>
-          <span>CTR <b style={{ color: C.ink }}>{ctr.toFixed(1)}%</b></span>
-          <span>Avg. CPC <b style={{ color: C.ink }}>${cpc.toFixed(2)}</b></span>
-          {isGoogle && <span>Cost / conversion <b style={{ color: C.ink }}>${cpa.toFixed(2)}</b></span>}
-        </div>
-      )}
-
-      {/* Spend trend + spend by market */}
-      <div className="grid lg:grid-cols-3 gap-5 mt-5">
-        <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      {/* Monthly trend bar charts */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Spend · {PLATFORM_LABEL[platform]}</h3>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book Per Month</h3>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
           </div>
-          <div style={{ height: 240 }} className="px-2 py-3">
+          <div style={{ height: 220 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-                <defs>
-                  <linearGradient id={`semSpend-${platform}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={clickBookTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
-                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill={`url(#semSpend-${platform})`} />
-              </AreaChart>
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+                <Bar dataKey="clickBook" name="Click Book" fill={C.accent} radius={[2, 2, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
-      </div>
-
-      {/* Top campaigns */}
-      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · {PLATFORM_LABEL[platform]}</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
-        </div>
-        <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
-          <span className="uppercase">Campaign</span>
-          <span className="uppercase text-right">Spend</span>
-          <span className="uppercase text-right">Clicks</span>
-          <span className="uppercase text-right">{isGoogle ? "Conv." : "CTR"}</span>
-        </div>
-        {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
-        ) : topCampaigns.map((c, i) => (
-          <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmtMoney(c.spend)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">
-              {isGoogle ? fmt(c.conversions) : (c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—")}
-            </span>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Clicks Per Month</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
           </div>
-        ))}
+          <div style={{ height: 220 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={clicksTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+                <Bar dataKey="clicks" name="Clicks" fill="#1877F2" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        {isGoogle
-          ? `Google Ads (via Windsor), ${MONTH_FULL[MONTHS[month]]} ${YEAR}. Conversion value isn't tracked in this account, so ROAS is omitted.`
-          : `Meta Ads (via Windsor), ${MONTH_FULL[MONTHS[month]]} ${YEAR}. This connector doesn't expose conversions, so conversions/ROAS are omitted.`}
+        Combined Google Ads + Meta (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Per-platform breakdowns live under the Meta and Google tabs.
       </p>
     </div>
   );
@@ -3523,7 +3451,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div className="mt-6" />
       )}
 
-      {service === "sem" && semSub === "summary" && <SemTab client={client} month={month} semData={semData} />}
+      {service === "sem" && semSub === "summary" && <SummaryTab client={client} month={month} semData={semData} />}
       {service === "sem" && semSub === "meta" && <MetaTab client={client} month={month} semData={semData} />}
       {service === "sem" && semSub === "google" && <GoogleTab client={client} month={month} semData={semData} />}
 
