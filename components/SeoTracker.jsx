@@ -17,7 +17,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1095,7 +1095,29 @@ function BarBreakdown({ title, rows, fmtVal }) {
   );
 }
 
-// Combined Google + Meta figures for one month, per the client-provided
+// Day-level date helpers for the SEM tabs' day picker (Summary/Meta/Google).
+// Everything else in this file still filters by month — only lib/sem.js
+// (Google Ads + Meta, via Windsor) is fetched at daily granularity, so only
+// these three tabs slice by individual day.
+const addDays = (dateStr, delta) => {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+};
+const dateRange = (from, to) => {
+  const out = [];
+  if (!from || !to) return out;
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
+  return out;
+};
+const DAY_MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtDayShort = (dateStr) => { const [, m, d] = dateStr.split("-").map(Number); return `${DAY_MONTH_SHORT[m - 1]} ${d}`; };
+const fmtDayLong  = (dateStr) => { const [y, m, d] = dateStr.split("-").map(Number); return `${DAY_MONTH_SHORT[m - 1]} ${d}, ${y}`; };
+// Thins X-axis tick labels for a ~150-point daily series down to ~8 visible
+// ticks — Recharts still plots every point, this only skips labels.
+const dayTickInterval = (n) => Math.max(0, Math.ceil(n / 8) - 1);
+
+// Combined Google + Meta figures for one day, per the client-provided
 // scorecard spec (formerly a Looker Studio dashboard):
 //   Amount Spent = SUM(Amount Spent USD) + SUM(Cost)             → meta.spend + google.spend
 //   Click Book   = SUM(All conversions) + SUM(Website Searches)  → google.allConversions + meta.clickBook
@@ -1103,38 +1125,38 @@ function BarBreakdown({ title, rows, fmtVal }) {
 // "All conversions" is Google Ads' all_conversions metric (broader than the
 // plain `conversions` field), and "Website Searches" is the Meta Pixel
 // "Search" event (same field backing the Meta tab's own Click Book KPI).
-function monthCombined(sem, mo) {
-  const m = sem.monthly?.[mo];
-  if (!m) return null;
+function dayCombined(sem, date) {
+  const d = date && sem.daily?.[date];
+  if (!d) return null;
   return {
-    spend: m.spend ?? 0,
-    spendPending: !!m.spendPending, // either platform billed in a non-USD currency this month
-    clicks: m.clicks ?? 0,
-    impressions: m.impressions ?? 0,
-    clickBook: (m.google?.allConversions ?? 0) + (m.meta?.clickBook ?? 0),
+    spend: d.spend ?? 0,
+    spendPending: !!d.spendPending, // either platform billed in a non-USD currency this day
+    clicks: d.clicks ?? 0,
+    impressions: d.impressions ?? 0,
+    clickBook: (d.google?.allConversions ?? 0) + (d.meta?.clickBook ?? 0),
   };
 }
 
-function SummaryTab({ client, month, semData }) {
+function SummaryTab({ client, day, range, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/month." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const moNum = MO_NUM_MAP[MONTHS[month]];
-  const cur  = monthCombined(sem, moNum);
-  const prev = month > 0 ? monthCombined(sem, MO_NUM_MAP[MONTHS[month - 1]]) : null;
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = dayCombined(sem, day);
+  const prev = dayCombined(sem, prevDay);
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
 
   // Derived ratios — computed from the combined totals above (not summed/averaged
   // as their own field) so each stays internally consistent. Any ratio built
   // from spend is unavailable while spendPending (a non-USD account this
-  // month) rather than silently understated.
+  // day) rather than silently understated.
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   const cpa     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
@@ -1144,7 +1166,7 @@ function SummaryTab({ client, month, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
 
   const kpis = cur ? [
-    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account this month)" : undefined },
+    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account that day)" : undefined },
     { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
     { label: "CPA",           value: cpa != null ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
@@ -1153,8 +1175,11 @@ function SummaryTab({ client, month, semData }) {
     { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks") },
   ] : [];
 
-  const clickBookTrend = MONTHS.map((mo) => ({ month: mo, clickBook: monthCombined(sem, MO_NUM_MAP[mo])?.clickBook ?? 0 }));
-  const clicksTrend    = MONTHS.map((mo) => ({ month: mo, clicks: sem.monthly?.[MO_NUM_MAP[mo]]?.clicks ?? 0 }));
+  const days = dateRange(range?.from, range?.to);
+  const clickBookTrend = days.map((d) => ({ day: fmtDayShort(d), clickBook: dayCombined(sem, d)?.clickBook ?? 0 }));
+  const clicksTrend    = days.map((d) => ({ day: fmtDayShort(d), clicks: sem.daily?.[d]?.clicks ?? 0 }));
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
   return (
     <div>
@@ -1172,46 +1197,48 @@ function SummaryTab({ client, month, semData }) {
         ))}
       </div>
 
-      {/* Monthly trend bar charts */}
+      {/* Daily trend charts */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book Per Month</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Book Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={clickBookTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <LineChart data={clickBookTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke={C.line} vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
-                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
-                <Bar dataKey="clickBook" name="Click Book" fill={C.accent} radius={[2, 2, 0, 0]} />
-              </BarChart>
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="clickBook" name="Click Book" stroke={C.accent} strokeWidth={2} dot={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={clickBookTrend.find((d) => d.day === fmtDayShort(day))?.clickBook} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />}
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Clicks Per Month</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={clicksTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <LineChart data={clicksTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid stroke={C.line} vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
-                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
-                <Bar dataKey="clicks" name="Clicks" fill="#1877F2" radius={[2, 2, 0, 0]} />
-              </BarChart>
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="clicks" name="Clicks" stroke="#1877F2" strokeWidth={2} dot={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={clicksTrend.find((d) => d.day === fmtDayShort(day))?.clicks} r={4.5} fill="#1877F2" stroke="#fff" strokeWidth={2} />}
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {day ? fmtDayLong(day) : ""}. Per-platform breakdowns live under the Meta and Google tabs.
       </p>
     </div>
   );
@@ -1223,41 +1250,51 @@ function SummaryTab({ client, month, semData }) {
 /*  sub-tab (the combined Google+Meta view above, formerly "the SEM     */
 /*  tab") under the SEM service tab.                                    */
 /* ------------------------------------------------------------------ */
-function MetaTab({ client, month, semData }) {
+function MetaTab({ client, day, range, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/month." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const moNum = MO_NUM_MAP[MONTHS[month]];
-  const cur  = sem.monthly?.[moNum]?.meta || null;
-  const prev = month > 0 ? (sem.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]]?.meta || null) : null;
-  const campaigns = (sem.campaigns?.[moNum] || []).filter((c) => c.platform === "meta");
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = (day && sem.daily?.[day]?.meta) || null;
+  const prev = (prevDay && sem.daily?.[prevDay]?.meta) || null;
+  const campaigns = (sem.campaigns?.[day] || []).filter((c) => c.platform === "meta");
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
-  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  // Cost per Click Book (spend / clickBook) unavailable while spendPending
+  // (a non-USD account this month) rather than silently understated.
+  const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
+  const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
   // Frequency is derived (impressions / reach) rather than pulled as its own
   // field — that keeps it correct regardless of how many account rows fed in,
   // instead of trying to average an already-averaged figure.
   const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
 
   const kpis = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
-    { label: "CTR",         value: `${ctr.toFixed(1)}%` },
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
+    { label: "Cost per Click Book", value: cpcb != null ? fmtMoney(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb) },
     { label: "Frequency",   value: freq.toFixed(2) },
   ] : [];
 
-  const trend = MONTHS.map((mo) => { const m = sem.monthly?.[MO_NUM_MAP[mo]]?.meta; return { month: mo, spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
   // c.spend is null for campaigns billed in a non-USD currency (pending FX
   // conversion) — excluded from the market/top-campaigns spend numbers below
@@ -1291,7 +1328,7 @@ function MetaTab({ client, month, semData }) {
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 240 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
@@ -1303,10 +1340,11 @@ function MetaTab({ client, month, semData }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={C.line} vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#metaSpend)" connectNulls={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1318,7 +1356,7 @@ function MetaTab({ client, month, semData }) {
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Meta</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {day ? fmtDayLong(day) : ""}</span>
         </div>
         <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Campaign</span>
@@ -1327,7 +1365,7 @@ function MetaTab({ client, month, semData }) {
           <span className="uppercase text-right">CTR</span>
         </div>
         {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
@@ -1339,7 +1377,7 @@ function MetaTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
+        Meta Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
@@ -1350,35 +1388,45 @@ function MetaTab({ client, month, semData }) {
 /*  CTR, Amount Spent, Click Book). Sits alongside Summary and Meta      */
 /*  under the SEM service tab.                                          */
 /* ------------------------------------------------------------------ */
-function GoogleTab({ client, month, semData }) {
+function GoogleTab({ client, day, range, semData }) {
   const sem = semData?.[client.name];
   const accent = C.accent; // matches the Google Ads accent used in Summary
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/month." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const moNum = MO_NUM_MAP[MONTHS[month]];
-  const cur  = sem.monthly?.[moNum]?.google || null;
-  const prev = month > 0 ? (sem.monthly?.[MO_NUM_MAP[MONTHS[month - 1]]]?.google || null) : null;
-  const campaigns = (sem.campaigns?.[moNum] || []).filter((c) => c.platform === "google");
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = (day && sem.daily?.[day]?.google) || null;
+  const prev = (prevDay && sem.daily?.[prevDay]?.google) || null;
+  const campaigns = (sem.campaigns?.[day] || []).filter((c) => c.platform === "google");
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
-  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  // Cost per Click Book (spend / clickBook) unavailable while spendPending
+  // (a non-USD account this month) rather than silently understated.
+  const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
+  const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
 
   const kpis = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
-    { label: "CTR",         value: `${ctr.toFixed(1)}%` },
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
+    { label: "Cost per Click Book", value: cpcb != null ? fmtMoney(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb) },
   ] : [];
 
-  const trend = MONTHS.map((mo) => { const m = sem.monthly?.[MO_NUM_MAP[mo]]?.google; return { month: mo, spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const m = sem.daily?.[d]?.google; return { day: fmtDayShort(d), spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
   // c.spend is null for campaigns billed in a non-USD currency (pending FX
   // conversion) — excluded from the market/top-campaigns spend numbers below
@@ -1412,7 +1460,7 @@ function GoogleTab({ client, month, semData }) {
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>{MONTHS[0]}–{MONTHS[MONTHS.length - 1]} {YEAR}</span>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 240 }} className="px-2 py-3">
             <ResponsiveContainer width="100%" height="100%">
@@ -1424,10 +1472,11 @@ function GoogleTab({ client, month, semData }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={C.line} vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" connectNulls={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1439,7 +1488,7 @@ function GoogleTab({ client, month, semData }) {
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Google Ads</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {MONTH_FULL[MONTHS[month]]} {YEAR}</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {day ? fmtDayLong(day) : ""}</span>
         </div>
         <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Campaign</span>
@@ -1448,7 +1497,7 @@ function GoogleTab({ client, month, semData }) {
           <span className="uppercase text-right">CTR</span>
         </div>
         {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this month.</div>
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
@@ -1460,7 +1509,7 @@ function GoogleTab({ client, month, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {MONTH_FULL[MONTHS[month]]} {YEAR}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
+        Google Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
@@ -3333,11 +3382,26 @@ function AiSearch({ client, aiData, month }) {
   );
 }
 
-function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, aiData }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, semRange, aiData }) {
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
   const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
   const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (combined Google+Meta) | "meta" | "google" (single-platform KPI sets)
+
+  // Day picker for the SEM tabs (Summary/Meta/Google) — these three are the
+  // only tabs backed by daily-granularity data (lib/sem.js); everything else
+  // still filters by the month dropdown above. Defaults to the most recent
+  // day once the range loads.
+  const [semDay, setSemDay] = useState(null);
+  useEffect(() => {
+    if (semRange?.to && !semDay) setSemDay(semRange.to);
+  }, [semRange, semDay]);
+  const activeSemDay = semDay || semRange?.to || null;
+  const shiftSemDay = (delta) => {
+    if (!activeSemDay || !semRange) return;
+    const next = addDays(activeSemDay, delta);
+    if (next >= semRange.from && next <= semRange.to) setSemDay(next);
+  };
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
@@ -3441,30 +3505,65 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           ))}
         </div>
       ) : service === "sem" ? (
-        <div className="flex items-center gap-1.5 mt-4 mb-6">
-          {[["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]].map(([id, label]) => (
+        <div className="flex items-center justify-between gap-3 mt-4 mb-6 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            {[["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSemSub(id)}
+                className="px-3 py-1.5 rounded-full transition-colors"
+                style={{
+                  fontSize: 13,
+                  fontWeight: semSub === id ? 600 : 500,
+                  color: semSub === id ? C.accent : C.muted,
+                  background: semSub === id ? "rgba(0,119,200,0.10)" : "transparent",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Day picker — Google/Meta ad spend is fetched daily, so this lets
+              Summary/Meta/Google drill into any single day instead of only a
+              broader (monthly) range. */}
+          <div className="flex items-center gap-1">
             <button
-              key={id}
-              onClick={() => setSemSub(id)}
-              className="px-3 py-1.5 rounded-full transition-colors"
-              style={{
-                fontSize: 13,
-                fontWeight: semSub === id ? 600 : 500,
-                color: semSub === id ? C.accent : C.muted,
-                background: semSub === id ? "rgba(0,119,200,0.10)" : "transparent",
-              }}
+              onClick={() => shiftSemDay(-1)}
+              disabled={!activeSemDay || !semRange || activeSemDay <= semRange.from}
+              className="rounded-lg transition-colors"
+              style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.muted, padding: 6, opacity: !activeSemDay || !semRange || activeSemDay <= semRange.from ? 0.4 : 1, cursor: !activeSemDay || !semRange || activeSemDay <= semRange.from ? "default" : "pointer" }}
+              aria-label="Previous day"
             >
-              {label}
+              <ChevronLeft size={14} />
             </button>
-          ))}
+            <input
+              type="date"
+              value={activeSemDay || ""}
+              min={semRange?.from}
+              max={semRange?.to}
+              disabled={!semRange}
+              onChange={(e) => e.target.value && setSemDay(e.target.value)}
+              className="rounded-lg cursor-pointer"
+              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+            />
+            <button
+              onClick={() => shiftSemDay(1)}
+              disabled={!activeSemDay || !semRange || activeSemDay >= semRange.to}
+              className="rounded-lg transition-colors"
+              style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.muted, padding: 6, opacity: !activeSemDay || !semRange || activeSemDay >= semRange.to ? 0.4 : 1, cursor: !activeSemDay || !semRange || activeSemDay >= semRange.to ? "default" : "pointer" }}
+              aria-label="Next day"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       ) : (
         <div className="mt-6" />
       )}
 
-      {service === "sem" && semSub === "summary" && <SummaryTab client={client} month={month} semData={semData} />}
-      {service === "sem" && semSub === "meta" && <MetaTab client={client} month={month} semData={semData} />}
-      {service === "sem" && semSub === "google" && <GoogleTab client={client} month={month} semData={semData} />}
+      {service === "sem" && semSub === "summary" && <SummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
+      {service === "sem" && semSub === "meta" && <MetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
+      {service === "sem" && semSub === "google" && <GoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
@@ -3558,6 +3657,7 @@ export default function App() {
   const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
   const [planKeywords, setPlanKeywords] = useState(null); // SEMrush volume+KD for blog-plan keywords
   const [semData, setSemData] = useState(null); // live Google Ads (paid) metrics per client
+  const [semRange, setSemRange] = useState(null); // { from, to } — available day range for the SEM day picker
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
   const [aiData, setAiData] = useState(null); // live AI-engine referral traffic per client (GA4)
 
@@ -3609,11 +3709,12 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Fetch live paid-search (Google Ads) metrics once on mount.
+  // Fetch live paid-search (Google Ads + Meta) metrics once on mount — daily
+  // granularity, so dateFrom/dateTo bound the SEM tabs' day picker.
   useEffect(() => {
     fetch("/api/sem")
       .then((r) => r.json())
-      .then((json) => { if (json.ok) setSemData(json.data); })
+      .then((json) => { if (json.ok) { setSemData(json.data); setSemRange({ from: json.dateFrom, to: json.dateTo }); } })
       .catch(() => {});
   }, []);
 
@@ -3706,6 +3807,7 @@ export default function App() {
               keywordIdeas={keywordIdeas}
               planKeywords={planKeywords}
               semData={semData}
+              semRange={semRange}
               aiData={aiData}
             />
           ) : (
