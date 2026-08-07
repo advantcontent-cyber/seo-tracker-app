@@ -1298,11 +1298,11 @@ function SoraMetaTab({ client, day, range, semData }) {
   const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
 
   const kpis = cur ? [
+    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
     { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases") },
     { label: "Add To Cart", value: fmt(cur.addToCart),   delta: dPct("addToCart") },
     { label: "Frequency",   value: freq.toFixed(2) },
@@ -1384,10 +1384,10 @@ function SoraGoogleTab({ client, day, range, semData }) {
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
 
   const kpis = cur ? [
+    { label: "Amount Spent",     value: fmtTHB(cur.spend),    delta: dPct("spend") },
     { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Clicks",           value: fmt(cur.clicks),      delta: dPct("clicks") },
     { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Amount Spent",     value: fmtTHB(cur.spend),    delta: dPct("spend") },
     { label: "Website Purchase", value: fmt(cur.allConversions), delta: dPct("allConversions") },
     { label: "Revenue",          value: fmtTHB(cur.allConversionsValue), delta: dPct("allConversionsValue") },
   ] : [];
