@@ -67,9 +67,24 @@ const TASK = {
   done: { label: "Done", color: C.healthy, rank: 2 },
 };
 
-const MONTHS = ["Mar", "Apr", "May", "Jun", "Jul"];
-const MONTH_FULL = { Mar: "March", Apr: "April", May: "May", Jun: "June", Jul: "July" };
+// Canonical month lookups — a single source every month-number/month-label
+// reference in this file reads from, so the reporting window auto-extends
+// as time passes instead of needing a hardcoded end month bumped by hand
+// (this file used to have ~8 separate hand-copied `{ Mar: 3, ... }` objects
+// that all silently stopped at Jul; see lib/sem.js's matching dateTo fix).
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_FULL = { Jan: "January", Feb: "February", Mar: "March", Apr: "April", May: "May", Jun: "June", Jul: "July", Aug: "August", Sep: "September", Oct: "October", Nov: "November", Dec: "December" };
+const MO_NUM = Object.fromEntries(MONTH_ABBR.map((m, i) => [m, i + 1])); // "Mar" → 3, etc. — all 12 months, not just the reporting window
 const YEAR = 2026;
+// Reporting window: March YEAR through the current month (clamped to
+// December if today has moved into a later year, or to March if somehow
+// run before the window opens) — recomputed on every load, so it always
+// reflects "now" rather than a fixed month someone forgot to update.
+const REPORT_START_MONTH = 3; // March
+const _today = new Date();
+const _curMonthNum = _today.getFullYear() > YEAR ? 12 : _today.getFullYear() < YEAR ? REPORT_START_MONTH : _today.getMonth() + 1;
+const REPORT_END_MONTH = Math.max(REPORT_START_MONTH, Math.min(12, _curMonthNum));
+const MONTHS = MONTH_ABBR.slice(REPORT_START_MONTH - 1, REPORT_END_MONTH);
 
 /* ------------------------------------------------------------------ */
 /*  Mock data — real client roster, plausible figures per market.      */
@@ -470,8 +485,6 @@ function StatusDot({ status, size = 8 }) {
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
 function Portfolio({ clients, onSelect, month, gscData }) {
-  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
-
   // Returns real GSC figures for the given client+month when connected,
   // falls back to the mock gsc() for unconnected properties.
   const liveCur = (c, m) => {
@@ -1060,7 +1073,7 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
 /*  SEM (paid search/social) — shared helpers, then the Summary,        */
 /*  Meta, and Google sub-tabs (Google Ads + Meta via Windsor)           */
 /* ------------------------------------------------------------------ */
-const MO_NUM_MAP = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
+const MO_NUM_MAP = MO_NUM; // alias — see the canonical MO_NUM near MONTHS above
 
 // Parse a market code from a campaign name. Handles both Google ("[Advant]
 // HK_High intent…") and Meta ("US_Conv_Clickbook_JUN", "SG+HK+TW_Conv…").
@@ -2000,7 +2013,6 @@ function QueryPanel({ title, description, rows }) {
 /*  Live GSC (via /api/organic-report): daily web series + search-type   */
 /*  split; summary/funnel/branded tables reuse gscData-derived data.     */
 /* ------------------------------------------------------------------ */
-const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtReportDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${MONTH_ABBR[m - 1]} ${d}, ${y}`; };
 const fmtPct = (v) => `${(v * 100).toFixed(2)}%`;
 // Search-type slice colours (app palette).
@@ -2061,7 +2073,7 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -2312,7 +2324,7 @@ function OrganicTraffic({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -2517,7 +2529,7 @@ function OrganicConversions({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -2769,7 +2781,7 @@ function SummaryMetric({ icon: Icon, label, desc, value, color, source, delta, s
 /*  content-opportunity, and action-plan logic feeds both the Overview  */
 /*  sub-tab and the Summary sub-tab (which will absorb Overview later). */
 /* ------------------------------------------------------------------ */
-const MO_NUM_BY_LABEL = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
+const MO_NUM_BY_LABEL = MO_NUM; // alias — see the canonical MO_NUM near MONTHS above
 
 // liveGscFor() returns real Windsor data for this client/month when connected,
 // falling back to the mock gsc() function for unconnected properties.
@@ -3076,7 +3088,7 @@ function OrganicSummary({ client, month, gscData, actionData, blogDrafts, aiData
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState(null);
   const [reportView, setReportView] = useState(null);
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
     let live = true;
@@ -3663,7 +3675,7 @@ function AiKpi({ label, value, sub }) {
 
 function AiSearch({ client, aiData, month }) {
   const ai = aiData?.[client.name] || null;
-  const moNum = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 }[MONTHS[month]];
+  const moNum = MO_NUM[MONTHS[month]];
   const monthLabel = MONTH_FULL[MONTHS[month]];
 
   if (aiData == null)
@@ -3853,7 +3865,6 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
-  const MO_NUM = { Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7 };
   const queriesFor = (m) => {
     if (m < 0) return null;
     return gscData?.[client.name]?.[MO_NUM[MONTHS[m]]]?.topQueries ?? null;
