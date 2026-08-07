@@ -235,6 +235,9 @@ const ACTION_PLANS = {
 /* ------------------------------------------------------------------ */
 const fmt = (n) => n.toLocaleString("en-US");
 const fmtMoney = (n) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
+// THB — for clients whose report spec calls for the account's native billing
+// currency rather than a USD conversion (see NATIVE_CURRENCY_CLIENTS in lib/sem.js).
+const fmtTHB = (n) => `฿${Math.round(n ?? 0).toLocaleString("en-US")}`;
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Which services each client subscribes to. Drives sidebar badges + which
@@ -244,6 +247,7 @@ const SERVICES = {
   "Nomad Greenland": ["seo", "sem"],
   "Azerai Ke Ga Bay": ["sem"],
   "Azerai La Residence, Hue": ["sem"],
+  "Sora Sukhumvit": ["seo", "sem"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
@@ -1135,6 +1139,310 @@ function dayCombined(sem, date) {
     impressions: d.impressions ?? 0,
     clickBook: (d.google?.allConversions ?? 0) + (d.meta?.clickBook ?? 0),
   };
+}
+
+// ------------------------------------------------------------------
+// Sora Sukhumvit — a custom SEM report, distinct from the Click Book
+// template above. Sora's is an e-commerce-shaped spec (Purchase, Add To
+// Cart, Revenue, ROAS) billed and displayed in native THB rather than
+// USD (see NATIVE_CURRENCY_CLIENTS in lib/sem.js). Per the client's
+// scorecard doc:
+//   Amount Spent = meta.spend + google.spend
+//   Purchase     = google.allConversions + meta.purchases
+//   Add To Cart  = google.allConversions + meta.addToCart  (same Google
+//                  field as Purchase — confirmed with the client; Google's
+//                  tracking doesn't split the two)
+//   Revenue      = meta.purchaseValue + google.allConversionsValue
+//   ROAS         = Revenue / Amount Spent
+// Confirmed against Windsor's field reference for Sora Hotel Sukhumvit
+// (Meta) / Sora Resort & Suites Sukhumvit (Google Ads).
+function soraDayCombined(sem, date) {
+  const d = date && sem.daily?.[date];
+  if (!d) return null;
+  return {
+    spend: d.spend ?? 0,
+    currency: d.currency || "THB",
+    clicks: d.clicks ?? 0,
+    impressions: d.impressions ?? 0,
+    purchase: (d.google?.allConversions ?? 0) + (d.meta?.purchases ?? 0),
+    addToCart: (d.google?.allConversions ?? 0) + (d.meta?.addToCart ?? 0),
+    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.allConversionsValue ?? 0),
+  };
+}
+
+function SoraSummaryTab({ client, day, range, semData }) {
+  const sem = semData?.[client.name];
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = soraDayCombined(sem, day);
+  const prev = soraDayCombined(sem, prevDay);
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpm     = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  const roas     = cur && cur.spend ? cur.revenue / cur.spend : null;
+  const prevRoas = prev && prev.spend ? prev.revenue / prev.spend : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",     value: fmtTHB(cur.spend),   delta: dPct("spend") },
+    { label: "Purchase",         value: fmt(cur.purchase),   delta: dPct("purchase") },
+    { label: "Revenue",          value: fmtTHB(cur.revenue), delta: dPct("revenue") },
+    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+    { label: "Add To Cart",      value: fmt(cur.addToCart),  delta: dPct("addToCart") },
+    { label: "Total Impression", value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "Total Avg CPM",    value: cpm != null ? fmtTHB(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Total Clicks",     value: fmt(cur.clicks),     delta: dPct("clicks") },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const purchaseTrend = days.map((d) => ({ day: fmtDayShort(d), purchase: soraDayCombined(sem, d)?.purchase ?? 0 }));
+  const revenueTrend  = days.map((d) => ({ day: fmtDayShort(d), revenue: soraDayCombined(sem, d)?.revenue ?? 0 }));
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Daily trend charts */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+          </div>
+          <div style={{ height: 220 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={purchaseTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={C.accent} strokeWidth={2} dot={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={purchaseTrend.find((d) => d.day === fmtDayShort(day))?.purchase} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+          </div>
+          <div style={{ height: 220 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revenueTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#1877F2" strokeWidth={2} dot={false} />
+                {day && <ReferenceDot x={fmtDayShort(day)} y={revenueTrend.find((d) => d.day === fmtDayShort(day))?.revenue} r={4.5} fill="#1877F2" stroke="#fff" strokeWidth={2} />}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Combined Google Ads + Meta (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs.
+      </p>
+    </div>
+  );
+}
+
+function SoraMetaTab({ client, day, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = (day && sem.daily?.[day]?.meta) || null;
+  const prev = (prevDay && sem.daily?.[prevDay]?.meta) || null;
+  const currency = (day && sem.daily?.[day]?.currency) || "THB";
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
+
+  const kpis = cur ? [
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
+    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
+    { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases") },
+    { label: "Add To Cart", value: fmt(cur.addToCart),   delta: dPct("addToCart") },
+    { label: "Frequency",   value: freq.toFixed(2) },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spend ?? 0 }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Spend trend */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="soraMetaSpend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+              <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraMetaSpend)" />
+              {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts (Impression by Country, Purchase by Country) from the client's spec still need Windsor's country dimension confirmed for this account before they can be added.
+      </p>
+    </div>
+  );
+}
+
+function SoraGoogleTab({ client, day, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = C.accent;
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const prevDay = day ? addDays(day, -1) : null;
+  const cur  = (day && sem.daily?.[day]?.google) || null;
+  const prev = (prevDay && sem.daily?.[prevDay]?.google) || null;
+  const currency = (day && sem.daily?.[day]?.currency) || "THB";
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+
+  const kpis = cur ? [
+    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Clicks",           value: fmt(cur.clicks),      delta: dPct("clicks") },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "Amount Spent",     value: fmtTHB(cur.spend),    delta: dPct("spend") },
+    { label: "Website Purchase", value: fmt(cur.allConversions), delta: dPct("allConversions") },
+    { label: "Revenue",          value: fmtTHB(cur.allConversionsValue), delta: dPct("allConversionsValue") },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const g = sem.daily?.[d]?.google; return { day: fmtDayShort(d), spend: g?.spend ?? 0 }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Spend trend */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="soraGoogleSpend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+              <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraGoogleSpend)" />
+              {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Google Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Add To Cart both read from Google's generic "All conversions" field (per the client — Google's tracking doesn't split the two). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+      </p>
+    </div>
+  );
 }
 
 function SummaryTab({ client, day, range, semData }) {
@@ -3611,9 +3919,18 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div className="mt-6" />
       )}
 
-      {service === "sem" && semSub === "summary" && <SummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
-      {service === "sem" && semSub === "meta" && <MetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
-      {service === "sem" && semSub === "google" && <GoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />}
+      {/* Sora Sukhumvit has its own custom SEM report (Purchase/Add To Cart/
+          Revenue/ROAS, native THB) — a different spec from the Click Book
+          template every other SEM client uses. See soraDayCombined above. */}
+      {service === "sem" && semSub === "summary" && (client.name === "Sora Sukhumvit"
+        ? <SoraSummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />
+        : <SummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
+      {service === "sem" && semSub === "meta" && (client.name === "Sora Sukhumvit"
+        ? <SoraMetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />
+        : <MetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
+      {service === "sem" && semSub === "google" && (client.name === "Sora Sukhumvit"
+        ? <SoraGoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />
+        : <GoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 

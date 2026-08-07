@@ -10,12 +10,6 @@ export async function middleware(request) {
     return response;
   }
 
-  // TEMPORARY — bypass for the one-off Sora field-discovery endpoint. Remove
-  // alongside app/api/debug-sora-fields/route.js once confirmed.
-  if (request.nextUrl.pathname.startsWith("/api/debug-sora-fields")) {
-    return response;
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
