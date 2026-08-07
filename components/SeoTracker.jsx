@@ -1376,6 +1376,8 @@ function MetaTab({ client, day, range, semData }) {
         ))}
       </div>
 
+      <CampaignPerformanceTable campaigns={campaigns} day={day} />
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
@@ -1508,9 +1510,57 @@ function GoogleTab({ client, day, range, semData }) {
         ))}
       </div>
 
+      <CampaignPerformanceTable campaigns={campaigns} day={day} />
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Google Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
+    </div>
+  );
+}
+
+// Full campaign-level breakdown for the selected day — Campaign, Amount
+// Spent, Impressions, Reach, CTR, CPC — per the client's Looker Studio
+// scorecard spec. Sits under the existing "Top campaigns" shortlist on both
+// the Meta and Google tabs. Reach is Meta-only (Google Ads doesn't expose it
+// via this connector — same as the account-level KPI), shown as "—" there.
+function CampaignPerformanceTable({ campaigns, day }) {
+  const rows = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1));
+  return (
+    <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>by amount spent · {day ? fmtDayLong(day) : ""}</span>
+      </div>
+      <div style={{ maxHeight: 420, overflowY: "auto" }}>
+        <div
+          className="grid items-center px-5 py-2"
+          style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: "#fff" }}
+        >
+          <span className="uppercase">Campaign</span>
+          <span className="uppercase text-right">Amount Spent</span>
+          <span className="uppercase text-right">Impressions</span>
+          <span className="uppercase text-right">Reach</span>
+          <span className="uppercase text-right">CTR</span>
+          <span className="uppercase text-right">CPC</span>
+        </div>
+        {rows.length === 0 ? (
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
+        ) : rows.map((c, i) => {
+          const ctr = c.impressions ? (c.clicks / c.impressions) * 100 : null;
+          const cpc = c.clicks && c.spend != null ? c.spend / c.clicks : null;
+          return (
+            <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
+              <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.impressions)}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.reach ? fmt(c.reach) : "—"}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{ctr != null ? `${ctr.toFixed(2)}%` : "—"}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{cpc != null ? fmtRevenue(cpc) : "—"}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
