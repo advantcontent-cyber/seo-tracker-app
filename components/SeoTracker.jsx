@@ -1256,6 +1256,90 @@ function soraDayCombined(sem, date) {
   };
 }
 
+// Shared by SummaryTab and SoraSummaryTab — 4 analyst-notes boxes (Good
+// Points / Things to Improve / What We've Done / Next Steps), AI-drafted
+// via /api/generate-sem-notes from whatever `facts` the caller passes
+// (each report type has different metrics — Click Book vs Purchase/Revenue/
+// ROAS — so this component stays metric-agnostic and just forwards facts
+// to the LLM). Freely editable afterward; NOT persisted anywhere — same
+// ephemeral pattern as the existing "Generate Report" feature. The `key`
+// passed by callers (client name + period) forces a remount on client/date
+// change so stale notes from a different period can't linger silently.
+const NOTE_BOXES = [
+  { key: "goodPoints", label: "Good Points", dot: "#57A86E" },
+  { key: "thingsToImprove", label: "Things to Improve", dot: "#C8A000" },
+  { key: "whatWeDone", label: "What We Have Done", dot: "#1877F2" },
+  { key: "nextSteps", label: "Next Steps", dot: "#0077C8" },
+];
+function AnalystNotes({ client, period, facts }) {
+  const [notes, setNotes] = useState({ goodPoints: "", thingsToImprove: "", whatWeDone: "", nextSteps: "" });
+  const [loading, setLoading] = useState(false);
+  const [genError, setGenError] = useState(null);
+
+  const generate = async () => {
+    setLoading(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/generate-sem-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client: client.name, period, facts }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Generation failed");
+      const toText = (arr) => (arr || []).map((b) => `• ${b}`).join("\n");
+      setNotes({
+        goodPoints: toText(json.notes.goodPoints),
+        thingsToImprove: toText(json.notes.thingsToImprove),
+        whatWeDone: toText(json.notes.whatWeDone),
+        nextSteps: toText(json.notes.nextSteps),
+      });
+    } catch (e) {
+      setGenError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Analyst Notes</h3>
+        <button
+          onClick={generate}
+          disabled={loading || !facts}
+          className="rounded-lg transition-colors"
+          style={{ border: `1px solid ${C.line}`, background: loading ? "#f5f5f5" : "#fff", color: C.accent, fontSize: 12.5, fontWeight: 600, padding: "6px 12px", cursor: loading || !facts ? "default" : "pointer", opacity: !facts ? 0.5 : 1 }}
+        >
+          {loading ? "Generating…" : "Generate with AI"}
+        </button>
+      </div>
+      {genError && <div style={{ color: C.risk, fontSize: 12.5 }} className="mb-2">{genError}</div>}
+      <div className="grid md:grid-cols-2 gap-4">
+        {NOTE_BOXES.map((b) => (
+          <div key={b.key} className="rounded-lg p-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+            <div className="flex items-center gap-2 mb-2">
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: b.dot }} />
+              <h4 style={{ color: C.ink, fontSize: 13 }} className="font-semibold">{b.label}</h4>
+            </div>
+            <textarea
+              value={notes[b.key]}
+              onChange={(e) => setNotes((n) => ({ ...n, [b.key]: e.target.value }))}
+              placeholder='Click "Generate with AI" to draft, or write your own notes here.'
+              rows={5}
+              className="w-full resize-none rounded-md"
+              style={{ border: `1px solid ${C.line}`, fontSize: 13, color: C.ink, padding: 8, fontFamily: "Inter, system-ui, sans-serif", lineHeight: 1.5 }}
+            />
+          </div>
+        ))}
+      </div>
+      <p style={{ color: C.faint, fontSize: 11 }} className="mt-2">
+        AI-drafted from this period's data — "What We Have Done" is inferred from metric patterns, not actual account access, so review before sharing. Freely editable, but not saved yet — notes reset if you navigate away or change the date range.
+      </p>
+    </div>
+  );
+}
+
 function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
@@ -1279,6 +1363,20 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
   const roas     = cur && cur.spend ? cur.revenue / cur.spend : null;
   const prevRoas = prev && prev.spend ? prev.revenue / prev.spend : null;
+
+  // Per-platform breakout for the analyst-notes AI draft — the combined
+  // `cur`/`prev` above don't distinguish Meta from Google, and every note
+  // is required to name a specific platform.
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const curMeta = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const curGoogle = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const notesFacts = cur ? {
+    currency: cur.currency,
+    combined: { spend: cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, roas, ctr },
+    meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
+    google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, allConversions: curGoogle.allConversions, allConversionsValue: curGoogle.allConversionsValue } : null,
+  } : null;
 
   const kpis = cur ? [
     { label: "Amount Spent",     value: fmtTHB(cur.spend),   delta: dPct("spend") },
@@ -1352,6 +1450,8 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
           </div>
         </div>
       </div>
+
+      <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs.
@@ -1561,6 +1661,19 @@ function SummaryTab({ client, selectedRange, range, semData }) {
   const prevCpm = prev && !prev.spendPending && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
 
+  // Per-platform breakout for the analyst-notes AI draft — the combined
+  // `cur`/`prev` above don't distinguish Meta from Google, and every note
+  // is required to name a specific platform.
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const curMeta = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const curGoogle = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const notesFacts = cur ? {
+    combined: { spend: cur.spendPending ? null : cur.spend, clicks: cur.clicks, impressions: cur.impressions, clickBook: cur.clickBook, cpa, cpm, ctr },
+    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, clickBook: curGoogle.clickBook, allConversions: curGoogle.allConversions } : null,
+  } : null;
+
   const kpis = cur ? [
     { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account this range)" : undefined },
     { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
@@ -1632,6 +1745,8 @@ function SummaryTab({ client, selectedRange, range, semData }) {
           </div>
         </div>
       </div>
+
+      <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs.
