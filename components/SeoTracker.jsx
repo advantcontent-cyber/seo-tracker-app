@@ -9,6 +9,7 @@ import {
   Tooltip,
   CartesianGrid,
   ReferenceDot,
+  ReferenceArea,
   PieChart as RePieChart,
   Pie,
   Cell,
@@ -17,7 +18,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1099,10 +1100,10 @@ function BarBreakdown({ title, rows, fmtVal }) {
   );
 }
 
-// Day-level date helpers for the SEM tabs' day picker (Summary/Meta/Google).
-// Everything else in this file still filters by month — only lib/sem.js
-// (Google Ads + Meta, via Windsor) is fetched at daily granularity, so only
-// these three tabs slice by individual day.
+// Day-level date helpers for the SEM tabs' date-range picker (Summary/Meta/
+// Google, plus Sora's variants below). Everything else in this file still
+// filters by month — only lib/sem.js (Google Ads + Meta, via Windsor) is
+// fetched at daily granularity, so only these tabs slice by date range.
 const addDays = (dateStr, delta) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + delta);
@@ -1120,6 +1121,68 @@ const fmtDayLong  = (dateStr) => { const [y, m, d] = dateStr.split("-").map(Numb
 // Thins X-axis tick labels for a ~150-point daily series down to ~8 visible
 // ticks — Recharts still plots every point, this only skips labels.
 const dayTickInterval = (n) => Math.max(0, Math.ceil(n / 8) - 1);
+
+// Number of days in an inclusive [from, to] range.
+const rangeLen = (from, to) => dateRange(from, to).length;
+// The immediately-preceding period of equal length, for the SEM range
+// picker's delta comparisons (e.g. selecting Jul 8–14 compares against Jul
+// 1–7) — same "prior period" convention as Search Console's date picker.
+const prevWindow = (from, to) => {
+  const len = rangeLen(from, to);
+  const prevTo = addDays(from, -1);
+  return { from: addDays(prevTo, -(len - 1)), to: prevTo };
+};
+
+// Sums numeric fields across a list of per-day snapshot objects (any of
+// dayCombined's / soraDayCombined's / the raw sem.daily[d].meta|google
+// shapes — they're all flat { field: number } objects). Booleans (e.g.
+// spendPending) OR together rather than summing; the first non-numeric,
+// non-boolean value seen for a key (e.g. currency) wins. Missing/undefined
+// inputs are skipped. Used to turn any single-day picker into a range picker
+// without a bespoke aggregator per tab.
+function sumDays(dayObjects) {
+  const out = {};
+  for (const obj of dayObjects) {
+    if (!obj) continue;
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === "number") out[k] = (out[k] ?? 0) + v;
+      else if (typeof v === "boolean") out[k] = !!out[k] || v;
+      else if (out[k] === undefined) out[k] = v;
+    }
+  }
+  return out;
+}
+// Applies `picker(sem, date)` to every day in [from, to] and sums the
+// results via sumDays. Returns null if the range is empty or every day came
+// back empty (so callers can fall back to their existing "no data" state).
+function aggregateRange(sem, from, to, picker) {
+  if (!from || !to) return null;
+  const objs = dateRange(from, to).map((d) => picker(sem, d)).filter(Boolean);
+  return objs.length ? sumDays(objs) : null;
+}
+// Merges a client's campaigns across every day in [from, to] for one
+// platform, keyed by campaign name — spend/clicks/impressions/etc. summed
+// per campaign, same null-means-pending-FX convention as a single day (any
+// pending day in range marks the whole range's spend pending, rather than
+// silently under-summing).
+function campaignsInRange(sem, from, to, platform) {
+  const agg = {};
+  for (const d of dateRange(from, to)) {
+    for (const c of (sem.campaigns?.[d] || [])) {
+      if (c.platform !== platform) continue;
+      const row = agg[c.name] ??= { name: c.name, platform, spend: 0, clicks: 0, impressions: 0, conversions: 0, allConversions: 0, clickBook: 0, reach: 0, spendPending: false };
+      if (c.spend == null) row.spendPending = true;
+      else row.spend += c.spend;
+      row.clicks += c.clicks ?? 0;
+      row.impressions += c.impressions ?? 0;
+      row.conversions += c.conversions ?? 0;
+      row.allConversions += c.allConversions ?? 0;
+      row.clickBook += c.clickBook ?? 0;
+      row.reach += c.reach ?? 0;
+    }
+  }
+  return Object.values(agg).map((c) => ({ ...c, spend: c.spendPending ? null : c.spend }));
+}
 
 // Combined Google + Meta figures for one day, per the client-provided
 // scorecard spec (formerly a Looker Studio dashboard):
@@ -1156,6 +1219,16 @@ function dayCombined(sem, date) {
 //   ROAS         = Revenue / Amount Spent
 // Confirmed against Windsor's field reference for Sora Hotel Sukhumvit
 // (Meta) / Sora Resort & Suites Sukhumvit (Google Ads).
+// Shaded band marking the selected date range on a daily trend chart —
+// replaces a single ReferenceDot now that the SEM picker selects a range
+// rather than one day (a ReferenceArea can't render off a 1-day range's
+// single x value, so this collapses to a thin sliver rather than a dot,
+// which is fine — it still marks the spot).
+function SelectionBand({ selectedRange, color }) {
+  if (!selectedRange?.from || !selectedRange?.to) return null;
+  return <ReferenceArea x1={fmtDayShort(selectedRange.from)} x2={fmtDayShort(selectedRange.to)} fill={color} fillOpacity={0.12} stroke={color} strokeOpacity={0.3} />;
+}
+
 function soraDayCombined(sem, date) {
   const d = date && sem.daily?.[date];
   if (!d) return null;
@@ -1170,20 +1243,20 @@ function soraDayCombined(sem, date) {
   };
 }
 
-function SoraSummaryTab({ client, day, range, semData }) {
+function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = soraDayCombined(sem, day);
-  const prev = soraDayCombined(sem, prevDay);
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, soraDayCombined) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, soraDayCombined) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
 
@@ -1242,7 +1315,7 @@ function SoraSummaryTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Line type="monotone" dataKey="purchase" name="Purchase" stroke={C.accent} strokeWidth={2} dot={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={purchaseTrend.find((d) => d.day === fmtDayShort(day))?.purchase} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color={C.accent} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1260,7 +1333,7 @@ function SoraSummaryTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#1877F2" strokeWidth={2} dot={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={revenueTrend.find((d) => d.day === fmtDayShort(day))?.revenue} r={4.5} fill="#1877F2" stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1268,28 +1341,29 @@ function SoraSummaryTab({ client, day, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs.
       </p>
     </div>
   );
 }
 
-function SoraMetaTab({ client, day, range, semData }) {
+function SoraMetaTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = (day && sem.daily?.[day]?.meta) || null;
-  const prev = (prevDay && sem.daily?.[prevDay]?.meta) || null;
-  const currency = (day && sem.daily?.[day]?.currency) || "THB";
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+  const currency = (selectedRange && sem.daily?.[selectedRange.to]?.currency) || "THB";
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
@@ -1348,35 +1422,36 @@ function SoraMetaTab({ client, day, range, semData }) {
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
               <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
               <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraMetaSpend)" />
-              {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+              <SelectionBand selectedRange={selectedRange} color={accent} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts (Impression by Country, Purchase by Country) from the client's spec still need Windsor's country dimension confirmed for this account before they can be added.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts (Impression by Country, Purchase by Country) from the client's spec still need Windsor's country dimension confirmed for this account before they can be added.
       </p>
     </div>
   );
 }
 
-function SoraGoogleTab({ client, day, range, semData }) {
+function SoraGoogleTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = (day && sem.daily?.[day]?.google) || null;
-  const prev = (prevDay && sem.daily?.[prevDay]?.google) || null;
-  const currency = (day && sem.daily?.[day]?.currency) || "THB";
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
+  const currency = (selectedRange && sem.daily?.[selectedRange.to]?.currency) || "THB";
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
@@ -1432,39 +1507,39 @@ function SoraGoogleTab({ client, day, range, semData }) {
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
               <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
               <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraGoogleSpend)" />
-              {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+              <SelectionBand selectedRange={selectedRange} color={accent} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Add To Cart both read from Google's generic "All conversions" field (per the client — Google's tracking doesn't split the two). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Add To Cart both read from Google's generic "All conversions" field (per the client — Google's tracking doesn't split the two). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
       </p>
     </div>
   );
 }
 
-function SummaryTab({ client, day, range, semData }) {
+function SummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = dayCombined(sem, day);
-  const prev = dayCombined(sem, prevDay);
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, dayCombined) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, dayCombined) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
 
   // Derived ratios — computed from the combined totals above (not summed/averaged
   // as their own field) so each stays internally consistent. Any ratio built
-  // from spend is unavailable while spendPending (a non-USD account this
-  // day) rather than silently understated.
+  // from spend is unavailable while spendPending (a non-USD account over this
+  // range) rather than silently understated.
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   const cpa     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
@@ -1474,7 +1549,7 @@ function SummaryTab({ client, day, range, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
 
   const kpis = cur ? [
-    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account that day)" : undefined },
+    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account this range)" : undefined },
     { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
     { label: "CPA",           value: cpa != null ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
@@ -1520,7 +1595,7 @@ function SummaryTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Line type="monotone" dataKey="clickBook" name="Click Book" stroke={C.accent} strokeWidth={2} dot={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={clickBookTrend.find((d) => d.day === fmtDayShort(day))?.clickBook} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color={C.accent} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1538,7 +1613,7 @@ function SummaryTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Line type="monotone" dataKey="clicks" name="Clicks" stroke="#1877F2" strokeWidth={2} dot={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={clicksTrend.find((d) => d.day === fmtDayShort(day))?.clicks} r={4.5} fill="#1877F2" stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1546,7 +1621,7 @@ function SummaryTab({ client, day, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {day ? fmtDayLong(day) : ""}. Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs.
       </p>
     </div>
   );
@@ -1558,29 +1633,30 @@ function SummaryTab({ client, day, range, semData }) {
 /*  sub-tab (the combined Google+Meta view above, formerly "the SEM     */
 /*  tab") under the SEM service tab.                                    */
 /* ------------------------------------------------------------------ */
-function MetaTab({ client, day, range, semData }) {
+function MetaTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = (day && sem.daily?.[day]?.meta) || null;
-  const prev = (prevDay && sem.daily?.[prevDay]?.meta) || null;
-  const campaigns = (sem.campaigns?.[day] || []).filter((c) => c.platform === "meta");
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+  const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   // Cost per Click Book (spend / clickBook) unavailable while spendPending
-  // (a non-USD account this month) rather than silently understated.
+  // (a non-USD account this range) rather than silently understated.
   const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
   const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
   // Frequency is derived (impressions / reach) rather than pulled as its own
@@ -1652,7 +1728,7 @@ function MetaTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#metaSpend)" connectNulls={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color={accent} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1664,7 +1740,7 @@ function MetaTab({ client, day, range, semData }) {
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Meta</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {day ? fmtDayLong(day) : ""}</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}</span>
         </div>
         <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Campaign</span>
@@ -1673,7 +1749,7 @@ function MetaTab({ client, day, range, semData }) {
           <span className="uppercase text-right">CTR</span>
         </div>
         {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns in this range.</div>
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
@@ -1684,10 +1760,10 @@ function MetaTab({ client, day, range, semData }) {
         ))}
       </div>
 
-      <CampaignPerformanceTable campaigns={campaigns} day={day} />
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
@@ -1698,29 +1774,30 @@ function MetaTab({ client, day, range, semData }) {
 /*  CTR, Amount Spent, Click Book). Sits alongside Summary and Meta      */
 /*  under the SEM service tab.                                          */
 /* ------------------------------------------------------------------ */
-function GoogleTab({ client, day, range, semData }) {
+function GoogleTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = C.accent; // matches the Google Ads accent used in Summary
 
   if (!sem) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/day." : "Loading paid-ads data…"}
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
     );
   }
 
-  const prevDay = day ? addDays(day, -1) : null;
-  const cur  = (day && sem.daily?.[day]?.google) || null;
-  const prev = (prevDay && sem.daily?.[prevDay]?.google) || null;
-  const campaigns = (sem.campaigns?.[day] || []).filter((c) => c.platform === "google");
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
+  const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   // Cost per Click Book (spend / clickBook) unavailable while spendPending
-  // (a non-USD account this month) rather than silently understated.
+  // (a non-USD account this range) rather than silently understated.
   const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
   const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
 
@@ -1786,7 +1863,7 @@ function GoogleTab({ client, day, range, semData }) {
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtMoney(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
                 <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" connectNulls={false} />
-                {day && <ReferenceDot x={fmtDayShort(day)} y={trend.find((t) => t.day === fmtDayShort(day))?.spend} r={4.5} fill={accent} stroke="#fff" strokeWidth={2} />}
+                <SelectionBand selectedRange={selectedRange} color={accent} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1798,7 +1875,7 @@ function GoogleTab({ client, day, range, semData }) {
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Google Ads</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {day ? fmtDayLong(day) : ""}</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}</span>
         </div>
         <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Campaign</span>
@@ -1807,7 +1884,7 @@ function GoogleTab({ client, day, range, semData }) {
           <span className="uppercase text-right">CTR</span>
         </div>
         {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns in this range.</div>
         ) : topCampaigns.map((c, i) => (
           <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
@@ -1818,27 +1895,28 @@ function GoogleTab({ client, day, range, semData }) {
         ))}
       </div>
 
-      <CampaignPerformanceTable campaigns={campaigns} day={day} />
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {day ? fmtDayLong(day) : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures.{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
 }
 
-// Full campaign-level breakdown for the selected day — Campaign, Amount
-// Spent, Impressions, Reach, CTR, CPC — per the client's Looker Studio
-// scorecard spec. Sits under the existing "Top campaigns" shortlist on both
-// the Meta and Google tabs. Reach is Meta-only (Google Ads doesn't expose it
-// via this connector — same as the account-level KPI), shown as "—" there.
-function CampaignPerformanceTable({ campaigns, day }) {
+// Full campaign-level breakdown for the selected date range — Campaign,
+// Amount Spent, Impressions, Reach, CTR, CPC — per the client's Looker
+// Studio scorecard spec. Sits under the existing "Top campaigns" shortlist
+// on both the Meta and Google tabs. Reach is Meta-only (Google Ads doesn't
+// expose it via this connector — same as the account-level KPI), shown as
+// "—" there.
+function CampaignPerformanceTable({ campaigns, rangeLabel }) {
   const rows = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1));
   return (
     <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
-        <span style={{ color: C.faint, fontSize: 12.5 }}>by amount spent · {day ? fmtDayLong(day) : ""}</span>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>by amount spent · {rangeLabel}</span>
       </div>
       <div style={{ maxHeight: 420, overflowY: "auto" }}>
         <div
@@ -1853,7 +1931,7 @@ function CampaignPerformanceTable({ campaigns, day }) {
           <span className="uppercase text-right">CPC</span>
         </div>
         {rows.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns this day.</div>
+          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns in this range.</div>
         ) : rows.map((c, i) => {
           const ctr = c.impressions ? (c.clicks / c.impressions) * 100 : null;
           const cpc = c.clicks && c.spend != null ? c.spend / c.clicks : null;
@@ -3746,19 +3824,30 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
   const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (combined Google+Meta) | "meta" | "google" (single-platform KPI sets)
 
-  // Day picker for the SEM tabs (Summary/Meta/Google) — these three are the
+  // Date-range picker for the SEM tabs (Summary/Meta/Google) — these are the
   // only tabs backed by daily-granularity data (lib/sem.js); everything else
-  // still filters by the month dropdown above. Defaults to the most recent
-  // day once the range loads.
-  const [semDay, setSemDay] = useState(null);
+  // still filters by the month dropdown above. Defaults to the last 7 days
+  // of the available range once it loads (like Search Console's picker).
+  const [semRangeSel, setSemRangeSel] = useState(null); // { from, to }
   useEffect(() => {
-    if (semRange?.to && !semDay) setSemDay(semRange.to);
-  }, [semRange, semDay]);
-  const activeSemDay = semDay || semRange?.to || null;
-  const shiftSemDay = (delta) => {
-    if (!activeSemDay || !semRange) return;
-    const next = addDays(activeSemDay, delta);
-    if (next >= semRange.from && next <= semRange.to) setSemDay(next);
+    if (semRange?.to && !semRangeSel) {
+      const to = semRange.to;
+      const wantFrom = addDays(to, -6);
+      setSemRangeSel({ from: wantFrom < semRange.from ? semRange.from : wantFrom, to });
+    }
+  }, [semRange, semRangeSel]);
+  const activeSemRange = semRangeSel || (semRange?.to ? { from: semRange.to, to: semRange.to } : null);
+  // Changing one end clamps it to the available bounds, and pushes the
+  // other end along if it would otherwise cross it (from can't be after to).
+  const setSemFrom = (v) => {
+    if (!v || !semRange) return;
+    const from = v < semRange.from ? semRange.from : v > semRange.to ? semRange.to : v;
+    setSemRangeSel((r) => { const to = r?.to ?? semRange.to; return { from, to: from > to ? from : to }; });
+  };
+  const setSemTo = (v) => {
+    if (!v || !semRange) return;
+    const to = v < semRange.from ? semRange.from : v > semRange.to ? semRange.to : v;
+    setSemRangeSel((r) => { const from = r?.from ?? semRange.from; return { from: to < from ? to : from, to }; });
   };
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
@@ -3881,38 +3970,35 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               </button>
             ))}
           </div>
-          {/* Day picker — Google/Meta ad spend is fetched daily, so this lets
-              Summary/Meta/Google drill into any single day instead of only a
-              broader (monthly) range. */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => shiftSemDay(-1)}
-              disabled={!activeSemDay || !semRange || activeSemDay <= semRange.from}
-              className="rounded-lg transition-colors"
-              style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.muted, padding: 6, opacity: !activeSemDay || !semRange || activeSemDay <= semRange.from ? 0.4 : 1, cursor: !activeSemDay || !semRange || activeSemDay <= semRange.from ? "default" : "pointer" }}
-              aria-label="Previous day"
-            >
-              <ChevronLeft size={14} />
-            </button>
+          {/* Date-range picker — Google/Meta ad spend is fetched daily, so
+              this lets Summary/Meta/Google filter to any from–to range
+              (like Search Console's date picker) instead of only a broader
+              monthly view. KPI deltas compare against the immediately
+              preceding period of equal length. */}
+          <div className="flex items-center gap-1.5">
             <input
               type="date"
-              value={activeSemDay || ""}
+              value={activeSemRange?.from || ""}
               min={semRange?.from}
               max={semRange?.to}
               disabled={!semRange}
-              onChange={(e) => e.target.value && setSemDay(e.target.value)}
+              onChange={(e) => setSemFrom(e.target.value)}
               className="rounded-lg cursor-pointer"
               style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+              aria-label="Range start"
             />
-            <button
-              onClick={() => shiftSemDay(1)}
-              disabled={!activeSemDay || !semRange || activeSemDay >= semRange.to}
-              className="rounded-lg transition-colors"
-              style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.muted, padding: 6, opacity: !activeSemDay || !semRange || activeSemDay >= semRange.to ? 0.4 : 1, cursor: !activeSemDay || !semRange || activeSemDay >= semRange.to ? "default" : "pointer" }}
-              aria-label="Next day"
-            >
-              <ChevronRight size={14} />
-            </button>
+            <span style={{ color: C.faint, fontSize: 13 }}>–</span>
+            <input
+              type="date"
+              value={activeSemRange?.to || ""}
+              min={semRange?.from}
+              max={semRange?.to}
+              disabled={!semRange}
+              onChange={(e) => setSemTo(e.target.value)}
+              className="rounded-lg cursor-pointer"
+              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+              aria-label="Range end"
+            />
           </div>
         </div>
       ) : (
@@ -3923,14 +4009,14 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           Revenue/ROAS, native THB) — a different spec from the Click Book
           template every other SEM client uses. See soraDayCombined above. */}
       {service === "sem" && semSub === "summary" && (client.name === "Sora Sukhumvit"
-        ? <SoraSummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />
-        : <SummaryTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
+        ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
       {service === "sem" && semSub === "meta" && (client.name === "Sora Sukhumvit"
-        ? <SoraMetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />
-        : <MetaTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
+        ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
       {service === "sem" && semSub === "google" && (client.name === "Sora Sukhumvit"
-        ? <SoraGoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />
-        : <GoogleTab client={client} day={activeSemDay} range={semRange} semData={semData} />)}
+        ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
@@ -4024,7 +4110,7 @@ export default function App() {
   const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
   const [planKeywords, setPlanKeywords] = useState(null); // SEMrush volume+KD for blog-plan keywords
   const [semData, setSemData] = useState(null); // live Google Ads (paid) metrics per client
-  const [semRange, setSemRange] = useState(null); // { from, to } — available day range for the SEM day picker
+  const [semRange, setSemRange] = useState(null); // { from, to } — full available range bounding the SEM date-range picker
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
   const [aiData, setAiData] = useState(null); // live AI-engine referral traffic per client (GA4)
 
@@ -4077,7 +4163,7 @@ export default function App() {
   }, []);
 
   // Fetch live paid-search (Google Ads + Meta) metrics once on mount — daily
-  // granularity, so dateFrom/dateTo bound the SEM tabs' day picker.
+  // granularity, so dateFrom/dateTo bound the SEM tabs' date-range picker.
   useEffect(() => {
     fetch("/api/sem")
       .then((r) => r.json())
