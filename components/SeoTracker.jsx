@@ -1817,7 +1817,6 @@ function MetaTab({ client, selectedRange, range, semData }) {
     campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + (c.spend ?? 0); });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  const topCampaigns = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1)).slice(0, 6);
 
   return (
     <div>
@@ -1862,30 +1861,6 @@ function MetaTab({ client, selectedRange, range, semData }) {
           </div>
         </div>
         <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
-      </div>
-
-      {/* Top campaigns */}
-      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Meta</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}</span>
-        </div>
-        <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
-          <span className="uppercase">Campaign</span>
-          <span className="uppercase text-right">Spend</span>
-          <span className="uppercase text-right">Clicks</span>
-          <span className="uppercase text-right">CTR</span>
-        </div>
-        {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns in this range.</div>
-        ) : topCampaigns.map((c, i) => (
-          <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—"}</span>
-          </div>
-        ))}
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
@@ -1952,7 +1927,6 @@ function GoogleTab({ client, selectedRange, range, semData }) {
     campaigns.forEach((c) => { const k = campaignMarket(c.name); agg[k] = (agg[k] || 0) + (c.spend ?? 0); });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  const topCampaigns = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1)).slice(0, 6);
 
   return (
     <div>
@@ -1999,30 +1973,6 @@ function GoogleTab({ client, selectedRange, range, semData }) {
         <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtMoney} />
       </div>
 
-      {/* Top campaigns */}
-      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top campaigns · Google Ads</h3>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>by spend · {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}</span>
-        </div>
-        <div className="grid items-center px-5 py-2" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
-          <span className="uppercase">Campaign</span>
-          <span className="uppercase text-right">Spend</span>
-          <span className="uppercase text-right">Clicks</span>
-          <span className="uppercase text-right">CTR</span>
-        </div>
-        {topCampaigns.length === 0 ? (
-          <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns in this range.</div>
-        ) : topCampaigns.map((c, i) => (
-          <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.6fr 0.8fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.clicks)}</span>
-            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.impressions ? ((c.clicks / c.impressions) * 100).toFixed(1) + "%" : "—"}</span>
-          </div>
-        ))}
-      </div>
-
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -2034,10 +1984,9 @@ function GoogleTab({ client, selectedRange, range, semData }) {
 
 // Full campaign-level breakdown for the selected date range — Campaign,
 // Amount Spent, Impressions, Reach, CTR, CPC — per the client's Looker
-// Studio scorecard spec. Sits under the existing "Top campaigns" shortlist
-// on both the Meta and Google tabs. Reach is Meta-only (Google Ads doesn't
-// expose it via this connector — same as the account-level KPI), shown as
-// "—" there.
+// Studio scorecard spec. Sits on both the Meta and Google tabs. Reach is
+// Meta-only (Google Ads doesn't expose it via this connector — same as the
+// account-level KPI), shown as "—" there.
 function CampaignPerformanceTable({ campaigns, rangeLabel }) {
   const rows = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1));
   return (
