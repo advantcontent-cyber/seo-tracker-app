@@ -1665,12 +1665,25 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
 }
 
 // Six Senses Fort Barwara — Meta-only custom SEM report, per the client's
-// spec doc (SSFB.docx). Tab 1 "Overall": scorecards + 3 monthly bar charts.
-// Tab 2 "Campaign Performance": Ad Spend split India vs. International by
-// ad-set name (see SsfbCampaignTab / marketSpendInRange / classifySsfbMarket
-// in lib/sem.js). Resolved with the client (Aug 2026): the real ad-set
-// names are the source of truth over the spec doc's own (backwards-reading)
-// filter description — Interest_India_*/Interest_IN_* is India,
+// spec doc (SSFB.docx). Uses the same Summary / Meta / Google sub-tab
+// naming every other client gets (not a bespoke set of tab ids) so the
+// nav stays consistent even though the content underneath is custom:
+//   Summary — scorecards + 3 monthly bar charts (SsfbSummaryTab).
+//   Meta    — same content as Summary, plus Ad Spend split India vs.
+//             International by ad-set name folded in below it (per the
+//             client, Aug 2026: that split is Meta-specific, not a
+//             combined-platform figure, so it belongs on Meta not
+//             Summary) — see SsfbMetaTab / marketSpendInRange /
+//             classifySsfbMarket in lib/sem.js.
+//   Google  — this account has no Google Ads connection at all (confirmed
+//             live against Windsor, Aug 2026 — no "Fort Barwara"/"Six
+//             Senses" account in the google_ads connector across
+//             2024–2026), so this tab is a static "not connected" card
+//             (SsfbGoogleTab) rather than a real report.
+//
+// Market-split resolution (Aug 2026): the real ad-set names are the
+// source of truth over the spec doc's own (backwards-reading) filter
+// description — Interest_India_*/Interest_IN_* is India,
 // Interest_International_* is International — and since the client's real
 // interest is the India/International spend split specifically, anything
 // matching neither (e.g. Interest_USUKGCC_*, Interest_US MASS_* — which
@@ -1705,7 +1718,7 @@ function SsfbNoDataCard({ label }) {
   );
 }
 
-function SsfbOverallTab({ client, selectedRange, range, semData }) {
+function SsfbSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1806,21 +1819,15 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
   );
 }
 
-// Tab 2 — Campaign Performance: Ad Spend by market (India vs.
-// International), attributed by ad-set name via marketSpendInRange / see
-// classifySsfbMarket in lib/sem.js for the bucketing rule and the resolution
-// history above SsfbOverallTab.
-function SsfbCampaignTab({ client, selectedRange, semData }) {
+// Meta tab: same KPI content as Summary (this account is Meta-only, so
+// there's no separate "combined" figure to show), plus Ad Spend by market
+// (India vs. International) folded in below — attributed by ad-set name via
+// marketSpendInRange / see classifySsfbMarket in lib/sem.js for the
+// bucketing rule, and the block comment above SsfbSummaryTab for the
+// resolution history.
+function SsfbMetaTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
-
-  if (!sem) {
-    return (
-      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
-      </div>
-    );
-  }
 
   const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
   const cur  = selectedRange ? marketSpendInRange(sem, selectedRange.from, selectedRange.to) : null;
@@ -1836,26 +1843,45 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-4">
-        {cards.map((c) => (
-          <div key={c.key} className="rounded-lg px-5 py-4" style={{ background: `${accent}12`, border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{c.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {cur?.[c.key] != null ? fmtINR(cur[c.key]) : "—"}
-              </span>
-              {dPct(c.key) != null && <Delta value={dPct(c.key)} suffix="%" />}
-            </div>
-            {cur?.[c.key] != null && share(cur[c.key]) != null && (
-              <div className="mt-1" style={{ color: C.faint, fontSize: 12 }}>{share(cur[c.key])}% of total spend</div>
-            )}
-          </div>
-        ))}
-      </div>
+      <SsfbSummaryTab client={client} selectedRange={selectedRange} range={range} semData={semData} />
 
-      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
-      </p>
+      {sem && (
+        <div className="mt-6">
+          <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Campaign Performance — Ad Spend by Market</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {cards.map((c) => (
+              <div key={c.key} className="rounded-lg px-5 py-4" style={{ background: `${accent}12`, border: `1px solid ${C.line}` }}>
+                <div style={{ color: C.muted, fontSize: 12.5 }}>{c.label}</div>
+                <div className="flex items-baseline gap-2 mt-1.5">
+                  <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {cur?.[c.key] != null ? fmtINR(cur[c.key]) : "—"}
+                  </span>
+                  {dPct(c.key) != null && <Delta value={dPct(c.key)} suffix="%" />}
+                </div>
+                {cur?.[c.key] != null && share(cur[c.key]) != null && (
+                  <div className="mt-1" style={{ color: C.faint, fontSize: 12 }}>{share(cur[c.key])}% of total spend</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+            Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Google tab: this account has no Google Ads connection at all (confirmed
+// live against Windsor, Aug 2026 — see the block comment above
+// SsfbSummaryTab) — an explicit "not connected" card rather than a report
+// with every figure at a misleading $0.
+function SsfbGoogleTab() {
+  return (
+    <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+      No Google Ads account is connected for Six Senses Fort Barwara — this client runs Meta only (confirmed live against Windsor, Aug 2026).
     </div>
   );
 }
@@ -4125,13 +4151,11 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
   const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
-  const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (combined Google+Meta) | "meta" | "google" (single-platform KPI sets) — or "overall" | "campaigns" for Six Senses Fort Barwara's differently-shaped report, see below
-  // Six Senses Fort Barwara's SEM sub-tabs use different ids (Overall /
-  // Campaign Performance, not Summary/Meta/Google — it's Meta-only, so a
-  // "Google" tab would always be empty). Reset on client change so switching
-  // to/from it never leaves a stale, non-matching semSub selected.
+  const [semSub, setSemSub] = useState("summary"); // sub-tab within SEM: "summary" (combined Google+Meta) | "meta" | "google" (single-platform KPI sets) — every client uses these same three ids, even Six Senses Fort Barwara's custom report (see SsfbSummaryTab/SsfbMetaTab/SsfbGoogleTab below).
+  // Reset to Summary on client change so switching between clients never
+  // leaves a stale sub-tab selected.
   useEffect(() => {
-    setSemSub(client.name === "Six Senses Fort Barwara" ? "overall" : "summary");
+    setSemSub("summary");
   }, [client.name]);
 
   // Date-range picker for the SEM tabs (Summary/Meta/Google) — these are the
@@ -4263,10 +4287,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       ) : service === "sem" ? (
         <div className="flex items-center justify-between gap-3 mt-4 mb-6 flex-wrap">
           <div className="flex items-center gap-1.5">
-            {(client.name === "Six Senses Fort Barwara"
-              ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
-              : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
-            ).map(([id, label]) => (
+            {[["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]].map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setSemSub(id)}
@@ -4317,29 +4338,27 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div className="mt-6" />
       )}
 
-      {/* Six Senses Fort Barwara — Meta-only custom SEM report (Overall +
-          Campaign Performance), a different shape from both the Click Book
-          template and Sora's Purchase/ROAS template. See SsfbOverallTab /
-          SsfbCampaignTab below. */}
-      {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      {/* Six Senses Fort Barwara and Sora Sukhumvit each have their own custom
+          SEM report content under the same Summary/Meta/Google tab ids every
+          other client uses — SSFB is Meta-only (scorecards + market split,
+          see SsfbSummaryTab/SsfbMetaTab/SsfbGoogleTab above), Sora is
+          Purchase/Add To Cart/Revenue/ROAS in native THB (see
+          soraDayCombined above). */}
+      {service === "sem" && semSub === "summary" && (
+        client.name === "Six Senses Fort Barwara" ? <SsfbSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
-      {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
+      {service === "sem" && semSub === "meta" && (
+        client.name === "Six Senses Fort Barwara" ? <SsfbMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
-
-      {/* Sora Sukhumvit has its own custom SEM report (Purchase/Add To Cart/
-          Revenue/ROAS, native THB) — a different spec from the Click Book
-          template every other SEM client uses. See soraDayCombined above. */}
-      {service === "sem" && semSub === "summary" && (client.name === "Sora Sukhumvit"
-        ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
-      {service === "sem" && semSub === "meta" && (client.name === "Sora Sukhumvit"
-        ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
-      {service === "sem" && semSub === "google" && (client.name === "Sora Sukhumvit"
-        ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
+      {service === "sem" && semSub === "google" && (
+        client.name === "Six Senses Fort Barwara" ? <SsfbGoogleTab />
+        : client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      )}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
