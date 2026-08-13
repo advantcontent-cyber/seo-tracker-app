@@ -12,6 +12,7 @@ const ALL_CLIENTS = [
   "Azerai La Residence, Hue",
   "Six Senses Fort Barwara",
   "Song Saa Private Island",
+  "Six Senses Shaharut",
 ];
 
 export async function GET() {
