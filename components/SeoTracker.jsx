@@ -1681,13 +1681,17 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
 // don't actually have any spend within this dashboard's active date range)
 // folds into International rather than getting its own bucket.
 //
-// IG Profile Visits and Profile Followers are two of the doc's scorecards
-// with NO backing data — live field discovery (Aug 2026) found both
-// candidate field families accepted by Windsor but always null, and neither
-// action type appears at all in the account's raw Meta actions array across
-// multiple sampled days that otherwise list 20+ real action types. Resolved
-// with the client: kept as "No data reported" below rather than dropped or
-// a fabricated 0 — see lib/sem.js.
+// IG Profile Visits and Profile Followers are two of the doc's scorecards.
+// The original field discovery pass (Aug 2026) tested Meta's `actions_*`
+// fields on the `facebook` (ads) connector and found nothing for either —
+// correctly, as it turned out: both metrics actually live on a separate
+// Windsor connector, `instagram` (native Instagram Insights data), under a
+// different account-name scheme (see clientForIgAccount in lib/sem.js).
+// Re-checked directly against that connector (Aug 2026): Profile Followers
+// has real data (`follower_count` — daily net new followers, shown as a
+// KPI card below), but Profile Visits (`profile_views`) still comes back 0
+// with no history — genuinely no data for this account, kept as
+// "No data reported" below rather than dropped or a fabricated 0.
 function monthlyBuckets(sem, from, to, picker) {
   const map = new Map();
   for (const d of dateRange(from, to)) {
@@ -1747,6 +1751,13 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
     { label: "CPM",                 value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Cost Per LPV",        value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
     { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtINR(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    // Daily NET NEW followers gained, summed over the range — not a running
+    // total (Windsor/Instagram don't expose a real historical trend for the
+    // running total, only a "today" snapshot — see clientForIgAccount in
+    // lib/sem.js). Instagram's API only covers the last 30 days excluding
+    // today, so a selected range older than that will read 0 here — that's
+    // "not available", not "no growth" — see the footnote below.
+    { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -1789,7 +1800,6 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
           </div>
         ))}
         <SsfbNoDataCard label="IG Profile Visits" />
-        <SsfbNoDataCard label="Profile Followers" />
       </div>
 
       {/* Monthly bar charts */}
@@ -1804,7 +1814,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR — this account's native billing currency, not converted to USD. IG Profile Visits and Profile Followers are in the client's spec but have no data under any Meta action type tested for this account as of the last field check — confirm with the client whether that's expected (campaigns not currently optimizing for those events) before treating them as a reporting gap.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR — this account's native billing currency, not converted to USD. Profile Followers is daily net new followers gained (not a running total — Instagram's API only exposes a "today" snapshot for the lifetime total, not a queryable history) from Windsor's separate <code>instagram</code> connector, and is itself limited by Instagram to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits (<code>profile_views</code> on that same connector) has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
       </p>
     </div>
   );
