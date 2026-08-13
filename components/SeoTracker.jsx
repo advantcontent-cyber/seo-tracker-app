@@ -266,6 +266,10 @@ const fmtTHB = (n) => `฿${Math.round(n ?? 0).toLocaleString("en-US")}`;
 // INR — Six Senses Fort Barwara's native billing currency (same
 // NATIVE_CURRENCY_CLIENTS reasoning as fmtTHB above).
 const fmtINR = (n) => `₹${Math.round(n ?? 0).toLocaleString("en-IN")}`;
+// Same, but keeps 2 decimals — for small per-unit figures like CPC where
+// rounding to a whole rupee (fmtINR above) would read as "₹0" for anything
+// under a rupee.
+const fmtINR2 = (n) => `₹${(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Which services each client subscribes to. Drives sidebar badges + which
@@ -1809,7 +1813,10 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
 // Tab 2 — Campaign Performance: Ad Spend by market (India vs.
 // International), attributed by ad-set name via marketSpendInRange / see
 // classifySsfbMarket in lib/sem.js for the bucketing rule and the resolution
-// history above SsfbOverallTab.
+// history above SsfbOverallTab — plus the full per-campaign breakdown table
+// (Campaign, Amount Spent, Impressions, Reach, CTR, CPC) from the client's
+// spec, reusing the same CampaignPerformanceTable built for the generic
+// Meta/Google tabs (with INR formatters instead of its USD defaults).
 function SsfbCampaignTab({ client, selectedRange, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
@@ -1834,6 +1841,9 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
     { label: "Ad Spend — International", key: "international" },
   ];
 
+  const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
+  const rangeLabel = selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : "";
+
   return (
     <div>
       <div className="grid grid-cols-2 gap-4">
@@ -1853,8 +1863,10 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
         ))}
       </div>
 
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtINR} fmtCpc={fmtINR2} />
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
+        Meta Ads (via Windsor), {rangeLabel}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
       </p>
     </div>
   );
@@ -2211,10 +2223,12 @@ function GoogleTab({ client, selectedRange, range, semData }) {
 
 // Full campaign-level breakdown for the selected date range — Campaign,
 // Amount Spent, Impressions, Reach, CTR, CPC — per the client's Looker
-// Studio scorecard spec. Sits on both the Meta and Google tabs. Reach is
-// Meta-only (Google Ads doesn't expose it via this connector — same as the
-// account-level KPI), shown as "—" there.
-function CampaignPerformanceTable({ campaigns, rangeLabel }) {
+// Studio scorecard spec. Sits on both the Meta and Google tabs (and Six
+// Senses Fort Barwara's Campaign Performance tab, see SsfbCampaignTab,
+// which passes INR formatters via fmtSpend/fmtCpc instead of the USD
+// defaults). Reach is Meta-only (Google Ads doesn't expose it via this
+// connector — same as the account-level KPI), shown as "—" there.
+function CampaignPerformanceTable({ campaigns, rangeLabel, fmtSpend = fmtMoney, fmtCpc = fmtRevenue }) {
   const rows = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1));
   return (
     <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -2242,11 +2256,11 @@ function CampaignPerformanceTable({ campaigns, rangeLabel }) {
           return (
             <div key={c.name} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 0.8fr 0.8fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
               <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={c.name}>{c.name.replace(/^\[Advant\]\s*/, "")}</span>
-              <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtMoney(c.spend)}</span>
+              <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{c.spend == null ? "—" : fmtSpend(c.spend)}</span>
               <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(c.impressions)}</span>
               <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{c.reach ? fmt(c.reach) : "—"}</span>
               <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{ctr != null ? `${ctr.toFixed(2)}%` : "—"}</span>
-              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{cpc != null ? fmtRevenue(cpc) : "—"}</span>
+              <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{cpc != null ? fmtCpc(cpc) : "—"}</span>
             </div>
           );
         })}
