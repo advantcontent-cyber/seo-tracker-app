@@ -1298,14 +1298,28 @@ function dayCombined(sem, date) {
 // USD (see NATIVE_CURRENCY_CLIENTS in lib/sem.js). Per the client's
 // scorecard doc:
 //   Amount Spent = meta.spend + google.spend
-//   Purchase     = google.allConversions + meta.purchases
-//   Add To Cart  = google.allConversions + meta.addToCart  (same Google
-//                  field as Purchase — confirmed with the client; Google's
-//                  tracking doesn't split the two)
-//   Revenue      = meta.purchaseValue + google.allConversionsValue
+//   Purchase     = google.purchase + meta.purchases
+//   Add To Cart  = google.addToCart + meta.addToCart
+//   Revenue      = meta.purchaseValue + google.purchaseValue
 //   ROAS         = Revenue / Amount Spent
 // Confirmed against Windsor's field reference for Sora Hotel Sukhumvit
 // (Meta) / Sora Resort & Suites Sukhumvit (Google Ads).
+//
+// FIXED Aug 2026 (caught by the client — the doc's literal formula said
+// "SUM(All conversions)" for Purchase, which the client meant as Google's
+// one real "purchase" action, not Google's ENTIRE all_conversions bucket):
+// google.allConversions/allConversionsValue sum EVERY conversion action
+// configured on the account (confirmed live: view_item_list, add_to_cart,
+// begin_checkout, AND purchase, all summed together) — Purchase/Add To
+// Cart/Revenue previously used that same blanket bucket for both metrics
+// (a real bug: Purchase showed ~202 instead of the real 1 for Aug 2026;
+// Revenue was ~65x overcounted). Now isolated per-action via
+// GOOGLE_CONVERSION_ACTION_MATCH in lib/sem.js — google.purchase/
+// purchaseValue/addToCart/addToCartValue are each that ONE named action,
+// not the whole bucket. (The old "same Google field for both — Google's
+// tracking doesn't split the two" reasoning was itself the bug: Google's
+// account DOES split them, into named actions, it's Windsor's
+// all_conversions field that doesn't.)
 // Shaded band marking the selected date range on a daily trend chart —
 // replaces a single ReferenceDot now that the SEM picker selects a range
 // rather than one day (a ReferenceArea can't render off a 1-day range's
@@ -1324,9 +1338,9 @@ function soraDayCombined(sem, date) {
     currency: d.currency || "THB",
     clicks: d.clicks ?? 0,
     impressions: d.impressions ?? 0,
-    purchase: (d.google?.allConversions ?? 0) + (d.meta?.purchases ?? 0),
-    addToCart: (d.google?.allConversions ?? 0) + (d.meta?.addToCart ?? 0),
-    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.allConversionsValue ?? 0),
+    purchase: (d.google?.purchase ?? 0) + (d.meta?.purchases ?? 0),
+    addToCart: (d.google?.addToCart ?? 0) + (d.meta?.addToCart ?? 0),
+    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.purchaseValue ?? 0),
   };
 }
 
@@ -1340,10 +1354,18 @@ function soraDayCombined(sem, date) {
 // clients never have a failed-conversion case, but Azerai's cross-currency
 // conversion genuinely can (a day with no FX rate available), and showing
 // a real $0/₫0 in that case would be a silently wrong figure, not a "no
-// spend that day" one. Add To Cart intentionally double-counts Google's
-// all_conversions inside both Purchase and Add To Cart (confirmed with the
-// client, Aug 2026, matching the same reasoning already applied to Sora's
-// identical pattern above: Google's tracking doesn't split the two).
+// spend that day" one.
+//
+// FIXED Aug 2026, same bug/fix as soraDayCombined above: Purchase/Add To
+// Cart/Revenue now use google.purchase/purchaseValue/addToCart/
+// addToCartValue (isolated to ONE named conversion action each — see
+// GOOGLE_CONVERSION_ACTION_MATCH in lib/sem.js) instead of Google's
+// blanket all_conversions/all_conversions_value bucket, which also sums
+// in Begin Checkout, ClickAddRoomCheckout, hotline-call actions, etc.
+// Azerai's account additionally has a second, likely-duplicate purchase-
+// tracking action ("azerai - GA4 (web) purchase") alongside its native
+// "Purchase" action — per the client (Aug 2026), only the native action
+// is used, to avoid double-counting the same underlying purchases.
 function azeraiDayCombined(sem, date) {
   const d = date && sem.daily?.[date];
   if (!d) return null;
@@ -1352,9 +1374,9 @@ function azeraiDayCombined(sem, date) {
     spendPending: !!d.spendPending,
     clicks: d.clicks ?? 0,
     impressions: d.impressions ?? 0,
-    purchase: (d.meta?.purchases ?? 0) + (d.google?.allConversions ?? 0),
-    addToCart: (d.meta?.addToCart ?? 0) + (d.google?.allConversions ?? 0),
-    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.allConversionsValue ?? 0),
+    purchase: (d.meta?.purchases ?? 0) + (d.google?.purchase ?? 0),
+    addToCart: (d.meta?.addToCart ?? 0) + (d.google?.addToCart ?? 0),
+    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.purchaseValue ?? 0),
   };
 }
 
@@ -1477,7 +1499,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
     currency: cur.currency,
     combined: { spend: cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, roas, ctr },
     meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
-    google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, allConversions: curGoogle.allConversions, allConversionsValue: curGoogle.allConversionsValue } : null,
+    google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue } : null,
   } : null;
 
   const kpis = cur ? [
@@ -1678,8 +1700,8 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
     { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Clicks",           value: fmt(cur.clicks),      delta: dPct("clicks") },
     { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Website Purchase", value: fmt(cur.allConversions), delta: dPct("allConversions") },
-    { label: "Revenue",          value: fmtTHB(cur.allConversionsValue), delta: dPct("allConversionsValue") },
+    { label: "Website Purchase", value: fmt(cur.purchase), delta: dPct("purchase") },
+    { label: "Revenue",          value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -1729,7 +1751,7 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Add To Cart both read from Google's generic "All conversions" field (per the client — Google's tracking doesn't split the two). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Revenue read from this account's specific, isolated "purchase" conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/add_to_cart/begin_checkout and would overcount both figures (fixed Aug 2026, caught by the client). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
       </p>
     </div>
   );
@@ -1777,7 +1799,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
     currency: "VND",
     combined: { spend: cur.spendPending ? null : cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, ctr },
     meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
-    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, allConversions: curGoogle.allConversions, allConversionsValue: curGoogle.allConversionsValue } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue } : null,
   } : null;
 
   const kpis = cur ? [
@@ -1856,7 +1878,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Add To Cart intentionally includes Google's "All conversions" a second time (Google's tracking doesn't split Purchase from Add To Cart, same reasoning already applied to Sora's report). Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Purchase/Add To Cart/Revenue read from this account's specific "Purchase"/"ClickAddRoomCheckout" conversion actions — not Google's broader "All conversions" bucket, which also sums in Begin Checkout, hotline calls, etc. and would overcount both figures (fixed Aug 2026, caught by the client). Per-platform breakdowns live under the Meta and Google tabs.
       </p>
     </div>
   );
@@ -1974,13 +1996,13 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
-  const roas     = cur && !cur.spendPending && cur.spend ? cur.allConversionsValue / cur.spend : null;
-  const prevRoas = prev && !prev.spendPending && prev.spend ? prev.allConversionsValue / prev.spend : null;
+  const roas     = cur && !cur.spendPending && cur.spend ? cur.purchaseValue / cur.spend : null;
+  const prevRoas = prev && !prev.spendPending && prev.spend ? prev.purchaseValue / prev.spend : null;
 
   const kpis = cur ? [
     { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (USD → VND this range)" : undefined },
-    { label: "Website Purchases", value: fmt(cur.allConversions), delta: dPct("allConversions") },
-    { label: "Revenue",          value: fmtVND(cur.allConversionsValue), delta: dPct("allConversionsValue") },
+    { label: "Website Purchases", value: fmt(cur.purchase), delta: dPct("purchase") },
+    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
     { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
     { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Click",            value: fmt(cur.clicks),      delta: dPct("clicks") },
@@ -2033,7 +2055,7 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Website Purchases/Revenue/ROAS read from this account's native "Purchase" conversion action specifically — not Google's broader "All conversions" bucket (which also sums in Begin Checkout, ClickAddRoomCheckout, hotline calls, etc.), and not the account's second, likely-duplicate "azerai - GA4 (web) purchase" action (fixed Aug 2026, caught by the client). Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
       </p>
     </div>
   );
