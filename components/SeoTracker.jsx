@@ -2102,6 +2102,44 @@ function SongSaaOverallTab({ client, selectedRange, range, semData }) {
     { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks") },
   ] : [];
 
+  // Two monthly bar charts from the client's live Looker Studio report
+  // (not in the briefing doc's text — confirmed against a screenshot, Aug
+  // 2026). "Messaging Conversation Started" is filtered to ClicktoWhatsapp
+  // campaigns (same scope as the Whatsapp Messages KPI above); "Clicks" is
+  // account-wide across every Meta campaign, NOT filtered — confirmed by
+  // matching magnitude against real data (a WhatsApp-only monthly total
+  // would be roughly 10x too small to match the chart's ~10k-20k/month
+  // bars). monthlyBuckets uses `range` (the full available date range),
+  // not `selectedRange` (the date-picker's filtered window) — same
+  // "always show the full trend regardless of the KPI cards' date filter"
+  // convention already used by SsfbOverallTab's identical charts.
+  const waMessagesTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) =>
+    (s.campaigns?.[d] || []).filter((c) => c.platform === "meta" && whatsappCampaigns(c.name)).reduce((a, c) => a + (c.messagingConversations ?? 0), 0)
+  );
+  const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.clicks);
+  const tickInterval = dayTickInterval(dateRange(range?.from, range?.to).length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  const BarBlock = ({ title, data }) => (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+      </div>
+      <div style={{ height: 220 }} className="px-2 py-3">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+            <CartesianGrid stroke={C.line} vertical={false} />
+            <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+            <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2116,8 +2154,14 @@ function SongSaaOverallTab({ client, selectedRange, range, semData }) {
         ))}
       </div>
 
+      {/* Monthly bar charts */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBlock title="Messaging Conversation Started Per Month" data={waMessagesTrend} />
+        <BarBlock title="Clicks Per Month" data={clicksTrend} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp); every other figure here is account-wide across all Meta campaigns. This account's Google Ads spend is intentionally not included anywhere in this report (per the client, Aug 2026) — the doc's spec is Meta-only.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp), same scope as the Messaging Conversation Started chart below; every other figure here (including the Clicks chart) is account-wide across all Meta campaigns. This account's Google Ads spend is intentionally not included anywhere in this report (per the client, Aug 2026) — the doc's spec is Meta-only.
       </p>
     </div>
   );
