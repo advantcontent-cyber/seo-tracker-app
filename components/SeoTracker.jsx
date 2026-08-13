@@ -224,6 +224,17 @@ const CLIENTS = [
     status: "healthy",
     keywords: [],
   },
+  // SEM-only, Meta only (no Google Ads on this account) — same shape as
+  // Six Senses Fort Barwara but USD-native and no Campaign Performance tab
+  // (no India/International split in this client's spec). See lib/sem.js
+  // ACCOUNT_MATCH / IG_ACCOUNT_MATCH and SsshOverallTab in this file.
+  {
+    name: "Six Senses Shaharut",
+    domain: "sixsenses.com/shaharut",
+    market: "Israel · EN",
+    status: "healthy",
+    keywords: [],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -296,6 +307,7 @@ const SERVICES = {
   "Sora Sukhumvit": ["seo", "sem"],
   "Six Senses Fort Barwara": ["sem"],
   "Song Saa Private Island": ["sem"],
+  "Six Senses Shaharut": ["sem"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
@@ -2309,6 +2321,120 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {rangeLabel}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
+      </p>
+    </div>
+  );
+}
+
+// Six Senses Shaharut (SSSH) — same shape as SSFB's Overall tab above
+// (scorecards + 3 monthly bar charts), same resolution history (IG
+// Profile Followers real via Windsor's separate `instagram` connector,
+// handle "sixsenses.shaharut" — see clientForIgAccount in lib/sem.js; IG
+// Profile Visits confirmed genuinely no data), but priced in USD (this
+// account's native currency, confirmed live) rather than INR, and with NO
+// Campaign Performance tab — the client's spec doc for this client has
+// only one tab, no India/International market split. A near-duplicate of
+// SsfbOverallTab rather than a shared/parameterized component, matching
+// this file's existing convention of one component per client even where
+// the shape overlaps heavily (see Sora vs. Azerai).
+function SsshOverallTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpm = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  const costPerLpv = cur && cur.landingPageViews ? cur.spend / cur.landingPageViews : null;
+  const prevCostPerLpv = prev && prev.landingPageViews ? prev.spend / prev.landingPageViews : null;
+  const costPerLinkClick = cur && cur.linkClicks ? cur.spend / cur.linkClicks : null;
+  const prevCostPerLinkClick = prev && prev.linkClicks ? prev.spend / prev.linkClicks : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",        value: fmtMoney(cur.spend),        delta: dPct("spend") },
+    { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
+    { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
+    { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
+    { label: "Reach",               value: fmt(cur.reach),             delta: dPct("reach") },
+    { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",                 value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtMoney(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    // See clientForIgAccount in lib/sem.js — same daily-net-new-followers /
+    // 30-day-window caveat as SSFB's identical card.
+    { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const lpvTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.landingPageViews);
+  const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.linkClicks);
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  const BarBlock = ({ title, data }) => (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+      </div>
+      <div style={{ height: 220 }} className="px-2 py-3">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+            <CartesianGrid stroke={C.line} vertical={false} />
+            <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+            <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+        <SsfbNoDataCard label="IG Profile Visits" />
+      </div>
+
+      {/* Monthly bar charts */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} />
+        <BarBlock title="Total Click Per Month" data={clicksTrend} />
+      </div>
+      <div className="mt-5">
+        <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+          <span style={{ color: C.ink, fontWeight: 600 }}>Total IG Visit Per Month</span> — no data reported for this account (see note below). Chart will populate once IG Profile Visits has real data to show.
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
       </p>
     </div>
   );
@@ -4587,7 +4713,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // "Google" tab would always be empty). Reset on client change so switching
   // to/from it never leaves a stale, non-matching semSub selected.
   useEffect(() => {
-    setSemSub(client.name === "Six Senses Fort Barwara" ? "overall" : "summary");
+    setSemSub((client.name === "Six Senses Fort Barwara" || client.name === "Six Senses Shaharut") ? "overall" : "summary");
   }, [client.name]); // Song Saa's single tab also uses the "summary" id — see the nav pills below.
 
   // Date-range picker for the SEM tabs (Summary/Meta/Google) — these are the
@@ -4721,6 +4847,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           <div className="flex items-center gap-1.5">
             {(client.name === "Six Senses Fort Barwara"
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
+              : client.name === "Six Senses Shaharut"
+              ? [["overall", "Overall"]]
               : client.name === "Song Saa Private Island"
               ? [["summary", "Overall"]]
               : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
@@ -4778,12 +4906,16 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {/* Six Senses Fort Barwara — Meta-only custom SEM report (Overall +
           Campaign Performance), a different shape from both the Click Book
           template and Sora's Purchase/ROAS template. See SsfbOverallTab /
-          SsfbCampaignTab below. */}
+          SsfbCampaignTab below. Six Senses Shaharut shares the same Overall
+          shape (see SsshOverallTab) but has no Campaign Performance tab. */}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
         <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
         <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
+      )}
+      {service === "sem" && semSub === "overall" && client.name === "Six Senses Shaharut" && (
+        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
 
       {/* Sora Sukhumvit and Azerai (both properties) each have their own
