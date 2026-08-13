@@ -214,6 +214,16 @@ const CLIENTS = [
     status: "healthy",
     keywords: [],
   },
+  // SEM-only. Meta-only by client choice, not account limitation (a real
+  // Google Ads account exists for this client too) — see lib/sem.js
+  // ACCOUNT_MATCH and SongSaaOverallTab in this file.
+  {
+    name: "Song Saa Private Island",
+    domain: "songsaaprivateisland.com",
+    market: "Cambodia · EN",
+    status: "healthy",
+    keywords: [],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -285,6 +295,7 @@ const SERVICES = {
   "Azerai La Residence, Hue": ["sem"],
   "Sora Sukhumvit": ["seo", "sem"],
   "Six Senses Fort Barwara": ["sem"],
+  "Song Saa Private Island": ["sem"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
@@ -1204,7 +1215,7 @@ function campaignsInRange(sem, from, to, platform) {
   for (const d of dateRange(from, to)) {
     for (const c of (sem.campaigns?.[d] || [])) {
       if (c.platform !== platform) continue;
-      const row = agg[c.name] ??= { name: c.name, platform, spend: 0, clicks: 0, impressions: 0, conversions: 0, allConversions: 0, clickBook: 0, reach: 0, spendPending: false };
+      const row = agg[c.name] ??= { name: c.name, platform, spend: 0, clicks: 0, impressions: 0, conversions: 0, allConversions: 0, clickBook: 0, reach: 0, messagingConversations: 0, spendPending: false };
       if (c.spend == null) row.spendPending = true;
       else row.spend += c.spend;
       row.clicks += c.clicks ?? 0;
@@ -1213,6 +1224,7 @@ function campaignsInRange(sem, from, to, platform) {
       row.allConversions += c.allConversions ?? 0;
       row.clickBook += c.clickBook ?? 0;
       row.reach += c.reach ?? 0;
+      row.messagingConversations += c.messagingConversations ?? 0;
     }
   }
   return Object.values(agg).map((c) => ({ ...c, spend: c.spendPending ? null : c.spend }));
@@ -1999,6 +2011,90 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
+      </p>
+    </div>
+  );
+}
+
+// Song Saa Private Island — a single-tab Meta-only SEM report, per the
+// client's spec doc. Deliberately Meta-only even though this account also
+// has a real, active Google Ads account (~$1,952 spend over Mar-Aug 2026)
+// — per the client (Aug 2026), the doc's single "Overall" tab is Meta-
+// flavored (Telegram Link Click / Whatsapp Messages have no Google
+// equivalent) and Google is left out entirely rather than folded into
+// Amount Spent/Impression/CTR/CPM/Clicks. "Telegram Link Click" is the
+// doc's literal scorecard name despite actually being about WhatsApp —
+// both it and Whatsapp Messages are filtered to this account's
+// "ClicktoWhatsapp"-named campaigns specifically (confirmed live: clicks
+// and actions_onsite_conversion_messaging_conversation_started_7d are both
+// real, non-zero fields there), while Amount Spent/Impression/CTR/CPM/
+// Clicks stay account-wide (every Meta campaign, not just the WhatsApp
+// ones) — same "total spend, filtered sub-metric" split already used by
+// SSFB's Cost Per LPV/Cost Per Link Click. Cost Per Whatsapp Message
+// follows that same precedent: total account spend, not just the
+// WhatsApp campaigns' own spend.
+function SongSaaOverallTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpm     = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+
+  const whatsappCampaigns = (name) => (name || "").toLowerCase().includes("clicktowhatsapp");
+  const wa = (from, to) => {
+    if (!from || !to) return null;
+    const rows = campaignsInRange(sem, from, to, "meta").filter((c) => whatsappCampaigns(c.name));
+    return rows.reduce((a, c) => ({ clicks: a.clicks + (c.clicks ?? 0), messages: a.messages + (c.messagingConversations ?? 0) }), { clicks: 0, messages: 0 });
+  };
+  const curWa = selectedRange ? wa(selectedRange.from, selectedRange.to) : null;
+  const prevWa = prevWin ? wa(prevWin.from, prevWin.to) : null;
+  const waDPct = (key) => (prevWa && prevWa[key] ? Math.round(((curWa[key] - prevWa[key]) / prevWa[key]) * 100) : null);
+  const costPerMessage = cur && curWa?.messages ? cur.spend / curWa.messages : null;
+  const prevCostPerMessage = prev && prevWa?.messages ? prev.spend / prevWa.messages : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",             value: fmtMoney(cur.spend), delta: dPct("spend") },
+    { label: "Telegram Link Click",      value: fmt(curWa?.clicks ?? 0), delta: waDPct("clicks") },
+    { label: "Whatsapp Messages",        value: fmt(curWa?.messages ?? 0), delta: waDPct("messages") },
+    { label: "Cost Per Whatsapp Message", value: costPerMessage != null ? fmtMoney(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
+    { label: "Impression",               value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "CTR",                      value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",                      value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks") },
+  ] : [];
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp); every other figure here is account-wide across all Meta campaigns. This account's Google Ads spend is intentionally not included anywhere in this report (per the client, Aug 2026) — the doc's spec is Meta-only.
       </p>
     </div>
   );
@@ -4492,7 +4588,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   // to/from it never leaves a stale, non-matching semSub selected.
   useEffect(() => {
     setSemSub(client.name === "Six Senses Fort Barwara" ? "overall" : "summary");
-  }, [client.name]);
+  }, [client.name]); // Song Saa's single tab also uses the "summary" id — see the nav pills below.
 
   // Date-range picker for the SEM tabs (Summary/Meta/Google) — these are the
   // only tabs backed by daily-granularity data (lib/sem.js); everything else
@@ -4625,6 +4721,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           <div className="flex items-center gap-1.5">
             {(client.name === "Six Senses Fort Barwara"
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
+              : client.name === "Song Saa Private Island"
+              ? [["summary", "Overall"]]
               : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
             ).map(([id, label]) => (
               <button
@@ -4695,6 +4793,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "sem" && semSub === "summary" && (
         client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (

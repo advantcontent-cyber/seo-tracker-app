@@ -11,6 +11,7 @@ const ALL_CLIENTS = [
   "Azerai Ke Ga Bay",
   "Azerai La Residence, Hue",
   "Six Senses Fort Barwara",
+  "Song Saa Private Island",
 ];
 
 export async function GET() {
