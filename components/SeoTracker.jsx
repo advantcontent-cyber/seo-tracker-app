@@ -235,6 +235,16 @@ const CLIENTS = [
     status: "healthy",
     keywords: [],
   },
+  // SEM-only, Meta only, native VND. Single tab, no charts (the client's
+  // spec doc lists none) — see lib/sem.js ACCOUNT_MATCH/NATIVE_CURRENCY_
+  // CLIENTS and LeCercleOverallTab in this file.
+  {
+    name: "Le Cercle",
+    domain: "lecerclehue.com",
+    market: "Vietnam · EN/VN",
+    status: "healthy",
+    keywords: [],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -308,6 +318,7 @@ const SERVICES = {
   "Six Senses Fort Barwara": ["sem"],
   "Song Saa Private Island": ["sem"],
   "Six Senses Shaharut": ["sem"],
+  "Le Cercle": ["sem"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "SEM" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
@@ -2435,6 +2446,83 @@ function SsshOverallTab({ client, selectedRange, range, semData }) {
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
+      </p>
+    </div>
+  );
+}
+
+// Le Cercle — a single-tab Meta-only SEM report in native VND. Simpler
+// shape than SSFB/SSSH: no Profile Followers, no Landing Page Views/Cost
+// Per LPV, and no charts at all (the client's spec doc lists none) — but
+// adds Messages Conversation / Cost per Messages Conversation, ACCOUNT-
+// WIDE across every Meta campaign (unlike Song Saa's identical-looking
+// metric, which the client explicitly scoped to just its "ClicktoWhatsapp"
+// campaigns — this doc has no such filter for Le Cercle, so every campaign
+// counts). Derived from the SAME campaign-level messagingConversations
+// field Song Saa's report uses (see lib/sem.js) — just summed across every
+// campaign instead of filtering by name, so no new fetch was needed.
+function LeCercleOverallTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpm = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+
+  const messagesInRange = (from, to) => {
+    if (!from || !to) return null;
+    return campaignsInRange(sem, from, to, "meta").reduce((a, c) => a + (c.messagingConversations ?? 0), 0);
+  };
+  const curMessages = selectedRange ? messagesInRange(selectedRange.from, selectedRange.to) : null;
+  const prevMessages = prevWin ? messagesInRange(prevWin.from, prevWin.to) : null;
+  const messagesDPct = (prevMessages) ? Math.round(((curMessages - prevMessages) / prevMessages) * 100) : null;
+  const costPerMessage = cur && curMessages ? cur.spend / curMessages : null;
+  const prevCostPerMessage = prev && prevMessages ? prev.spend / prevMessages : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",              value: fmtVND(cur.spend),   delta: dPct("spend") },
+    { label: "Link Clicks",               value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
+    { label: "Messages Conversation",     value: fmt(curMessages ?? 0), delta: messagesDPct },
+    { label: "Cost per Messages Conversation", value: costPerMessage != null ? fmtVND(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
+    { label: "Impressions",               value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Reach",                     value: fmt(cur.reach),       delta: dPct("reach") },
+    { label: "CTR",                       value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",                       value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+  ] : [];
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+        <SsfbNoDataCard label="IG Profile Visits" />
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Messages Conversation counts every Meta campaign (no campaign-name filter in this client's spec, unlike Song Saa's identically-named metric). IG Profile Visits has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
       </p>
     </div>
   );
@@ -4849,7 +4937,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
               : client.name === "Six Senses Shaharut"
               ? [["overall", "Overall"]]
-              : client.name === "Song Saa Private Island"
+              : (client.name === "Song Saa Private Island" || client.name === "Le Cercle")
               ? [["summary", "Overall"]]
               : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
             ).map(([id, label]) => (
@@ -4926,6 +5014,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (
