@@ -270,6 +270,10 @@ const fmtINR = (n) => `₹${Math.round(n ?? 0).toLocaleString("en-IN")}`;
 // rounding to a whole rupee (fmtINR above) would read as "₹0" for anything
 // under a rupee.
 const fmtINR2 = (n) => `₹${(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// VND — Azerai's report currency (see MIXED_CURRENCY_TARGET in lib/sem.js).
+// No decimals: VND has no subunit in practical use (its smallest
+// denomination in circulation is 200 ₫), so a fractional ₫ would just be noise.
+const fmtVND = (n) => `₫${Math.round(n ?? 0).toLocaleString("en-US")}`;
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Which services each client subscribes to. Drives sidebar badges + which
@@ -1291,6 +1295,34 @@ function soraDayCombined(sem, date) {
   };
 }
 
+// Azerai (Ke Ga Bay + La Residence, Hue) — same Purchase/Add To Cart/
+// Revenue shape as Sora above, per the client's spec doc, but Meta and
+// Google bill in DIFFERENT native currencies (Meta VND, Google USD) rather
+// than sharing one — see MIXED_CURRENCY_TARGET in lib/sem.js, which
+// converts Google's leg to VND via live daily FX rates before it ever
+// reaches `d.google`/`d.spend` here, so everything below is already VND.
+// Unlike soraDayCombined, spendPending IS tracked — Sora's native-currency
+// clients never have a failed-conversion case, but Azerai's cross-currency
+// conversion genuinely can (a day with no FX rate available), and showing
+// a real $0/₫0 in that case would be a silently wrong figure, not a "no
+// spend that day" one. Add To Cart intentionally double-counts Google's
+// all_conversions inside both Purchase and Add To Cart (confirmed with the
+// client, Aug 2026, matching the same reasoning already applied to Sora's
+// identical pattern above: Google's tracking doesn't split the two).
+function azeraiDayCombined(sem, date) {
+  const d = date && sem.daily?.[date];
+  if (!d) return null;
+  return {
+    spend: d.spend ?? 0,
+    spendPending: !!d.spendPending,
+    clicks: d.clicks ?? 0,
+    impressions: d.impressions ?? 0,
+    purchase: (d.meta?.purchases ?? 0) + (d.google?.allConversions ?? 0),
+    addToCart: (d.meta?.addToCart ?? 0) + (d.google?.allConversions ?? 0),
+    revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.allConversionsValue ?? 0),
+  };
+}
+
 // Shared by SummaryTab and SoraSummaryTab — 4 analyst-notes boxes (Good
 // Points / Things to Improve / What We've Done / Next Steps), AI-drafted
 // via /api/generate-sem-notes from whatever `facts` the caller passes
@@ -1663,6 +1695,310 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Add To Cart both read from Google's generic "All conversions" field (per the client — Google's tracking doesn't split the two). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+      </p>
+    </div>
+  );
+}
+
+// Azerai (Ke Ga Bay + La Residence, Hue) — same Purchase/Add To Cart/
+// Revenue shape as Sora above (see azeraiDayCombined for the formulas and
+// mixed-currency handling), but with real per-platform differences from
+// Sora's tab shape, per the client's spec doc:
+//   Overall — no ROAS (Sora's Overall has one, Azerai's doesn't).
+//   Meta/Google — EACH has its own ROAS (= that platform's Purchases
+//     Conversion Value / that platform's Amount Spent), which Sora's
+//     Meta/Google tabs don't show at all (only Sora's combined Overall
+//     does). Both tabs also list Reach/Frequency — Meta's are real, but
+//     Google's aren't (Google Ads has no Reach metric at all via Windsor,
+//     so Frequency = impressions/reach isn't computable either) — per the
+//     client (Aug 2026), dropped from the Google tab rather than faked.
+function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, azeraiDayCombined) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, azeraiDayCombined) : null;
+  const dPct = (key) => (cur && !cur.spendPending && prev && prev[key]) ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null;
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+
+  const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const cpm     = cur && !cur.spendPending && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
+  const prevCpm = prev && !prev.spendPending && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const curMeta = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const curGoogle = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const notesFacts = cur ? {
+    currency: "VND",
+    combined: { spend: cur.spendPending ? null : cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, ctr },
+    meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, allConversions: curGoogle.allConversions, allConversionsValue: curGoogle.allConversionsValue } : null,
+  } : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (Google's USD leg this range)" : undefined },
+    { label: "Purchases",        value: fmt(cur.purchase),   delta: dPct("purchase") },
+    { label: "Revenue",          value: fmtVND(cur.revenue), delta: dPct("revenue") },
+    { label: "Add To Cart",      value: fmt(cur.addToCart),  delta: dPct("addToCart") },
+    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Total Avg. CTR",   value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",              value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Total Click",      value: fmt(cur.clicks),     delta: dPct("clicks") },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const purchaseTrend = days.map((d) => ({ day: fmtDayShort(d), purchase: azeraiDayCombined(sem, d)?.purchase ?? 0 }));
+  const revenueTrend  = days.map((d) => ({ day: fmtDayShort(d), revenue: azeraiDayCombined(sem, d)?.revenue ?? 0 }));
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Daily trend charts */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+          </div>
+          <div style={{ height: 220 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={purchaseTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={C.accent} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={C.accent} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h3>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+          </div>
+          <div style={{ height: 220 }} className="px-2 py-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revenueTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#1877F2" strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Add To Cart intentionally includes Google's "All conversions" a second time (Google's tracking doesn't split Purchase from Add To Cart, same reasoning already applied to Sora's report). Per-platform breakdowns live under the Meta and Google tabs.
+      </p>
+    </div>
+  );
+}
+
+function AzeraiMetaTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const metaOf = (sem, d) => sem.daily?.[d]?.meta;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+  const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
+
+  const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const roas     = cur && cur.spend ? cur.purchaseValue / cur.spend : null;
+  const prevRoas = prev && prev.spend ? prev.purchaseValue / prev.spend : null;
+  const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",     value: fmtVND(cur.spend),        delta: dPct("spend") },
+    { label: "Website Purchases", value: fmt(cur.purchases),      delta: dPct("purchases") },
+    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
+    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+    { label: "Impression",       value: fmt(cur.impressions),     delta: dPct("impressions") },
+    { label: "Reach",            value: fmt(cur.reach),           delta: dPct("reach") },
+    { label: "Click",            value: fmt(cur.clicks),          delta: dPct("clicks") },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`,     delta: pctDelta(ctr, prevCtr) },
+    { label: "Frequency",        value: freq.toFixed(2) },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spend ?? 0 }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="azeraiMetaSpend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={58} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+              <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#azeraiMetaSpend)" />
+              <SelectionBand selectedRange={selectedRange} color={accent} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtVND} fmtCpc={fmtVND} />
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Revenue and ROAS use Meta's own Pixel Purchase value, not the combined Overall-tab figure.
+      </p>
+    </div>
+  );
+}
+
+function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
+  const sem = semData?.[client.name];
+  const accent = C.accent;
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
+      </div>
+    );
+  }
+
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
+
+  const dPct = (key) => (cur && !cur.spendPending && prev && prev[key]) ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null;
+  const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
+  const ctr  = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
+  const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const roas     = cur && !cur.spendPending && cur.spend ? cur.allConversionsValue / cur.spend : null;
+  const prevRoas = prev && !prev.spendPending && prev.spend ? prev.allConversionsValue / prev.spend : null;
+
+  const kpis = cur ? [
+    { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (USD → VND this range)" : undefined },
+    { label: "Website Purchases", value: fmt(cur.allConversions), delta: dPct("allConversions") },
+    { label: "Revenue",          value: fmtVND(cur.allConversionsValue), delta: dPct("allConversionsValue") },
+    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Click",            value: fmt(cur.clicks),      delta: dPct("clicks") },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+  ] : [];
+
+  const days = dateRange(range?.from, range?.to);
+  const trend = days.map((d) => { const g = sem.daily?.[d]?.google; return { day: fmtDayShort(d), spend: g?.spendPending ? null : (g?.spend ?? 0) }; });
+  const tickInterval = dayTickInterval(days.length);
+  const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+            </div>
+            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="azeraiGoogleSpend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={58} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
+              <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtVND(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#azeraiGoogleSpend)" connectNulls={false} />
+              <SelectionBand selectedRange={selectedRange} color={accent} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
       </p>
     </div>
   );
@@ -4352,18 +4688,25 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
       )}
 
-      {/* Sora Sukhumvit has its own custom SEM report (Purchase/Add To Cart/
-          Revenue/ROAS, native THB) — a different spec from the Click Book
-          template every other SEM client uses. See soraDayCombined above. */}
-      {service === "sem" && semSub === "summary" && (client.name === "Sora Sukhumvit"
-        ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
-      {service === "sem" && semSub === "meta" && (client.name === "Sora Sukhumvit"
-        ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
-      {service === "sem" && semSub === "google" && (client.name === "Sora Sukhumvit"
-        ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />)}
+      {/* Sora Sukhumvit and Azerai (both properties) each have their own
+          custom SEM report (Purchase/Add To Cart/Revenue/ROAS shape) — a
+          different spec from the Click Book template every other SEM
+          client uses. See soraDayCombined / azeraiDayCombined above. */}
+      {service === "sem" && semSub === "summary" && (
+        client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      )}
+      {service === "sem" && semSub === "meta" && (
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      )}
+      {service === "sem" && semSub === "google" && (
+        client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      )}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
