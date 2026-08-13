@@ -10,6 +10,12 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMP — bypass auth for the SSFB ad-set field discovery endpoint. Delete
+  // alongside app/api/debug-ssfb-adset once the field name is confirmed.
+  if (request.nextUrl.pathname.startsWith("/api/debug-ssfb-adset")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
