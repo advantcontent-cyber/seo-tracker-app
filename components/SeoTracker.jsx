@@ -1210,6 +1210,24 @@ function campaignsInRange(sem, from, to, platform) {
   return Object.values(agg).map((c) => ({ ...c, spend: c.spendPending ? null : c.spend }));
 }
 
+// Six Senses Fort Barwara's Campaign Performance tab — Ad Spend by market
+// (India vs. International), summed from sem.adsets[date] (see
+// classifySsfbMarket in lib/sem.js for how each ad set is bucketed).
+function marketSpendInRange(sem, from, to) {
+  const totals = { india: 0, international: 0 };
+  const pending = { india: false, international: false };
+  for (const d of dateRange(from, to)) {
+    for (const a of (sem.adsets?.[d] || [])) {
+      if (a.spend == null) pending[a.market] = true;
+      else totals[a.market] += a.spend;
+    }
+  }
+  return {
+    india: pending.india ? null : totals.india,
+    international: pending.international ? null : totals.international,
+  };
+}
+
 // Combined Google + Meta figures for one day, per the client-provided
 // scorecard spec (formerly a Looker Studio dashboard):
 //   Amount Spent = SUM(Amount Spent USD) + SUM(Cost)             → meta.spend + google.spend
@@ -1649,18 +1667,23 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
 // Six Senses Fort Barwara — Meta-only custom SEM report, per the client's
 // spec doc (SSFB.docx). Tab 1 "Overall": scorecards + 3 monthly bar charts.
 // Tab 2 "Campaign Performance": Ad Spend split India vs. International by
-// ad-set name — left as an explicit placeholder (see SsfbCampaignTab below)
-// pending client confirmation of the market-split logic; the spec doc's own
-// filter directions read backwards against the account's real ad set names
-// (Interest_India_*/Interest_IN_* vs Interest_International_*), and a few ad
-// sets (Interest_USUKGCC_*, Interest_US MASS_*) don't fit either bucket.
+// ad-set name (see SsfbCampaignTab / marketSpendInRange / classifySsfbMarket
+// in lib/sem.js). Resolved with the client (Aug 2026): the real ad-set
+// names are the source of truth over the spec doc's own (backwards-reading)
+// filter description — Interest_India_*/Interest_IN_* is India,
+// Interest_International_* is International — and since the client's real
+// interest is the India/International spend split specifically, anything
+// matching neither (e.g. Interest_USUKGCC_*, Interest_US MASS_* — which
+// don't actually have any spend within this dashboard's active date range)
+// folds into International rather than getting its own bucket.
 //
 // IG Profile Visits and Profile Followers are two of the doc's scorecards
 // with NO backing data — live field discovery (Aug 2026) found both
 // candidate field families accepted by Windsor but always null, and neither
 // action type appears at all in the account's raw Meta actions array across
-// multiple sampled days that otherwise list 20+ real action types. Shown
-// below as "No data reported" rather than a fabricated 0 — see lib/sem.js.
+// multiple sampled days that otherwise list 20+ real action types. Resolved
+// with the client: kept as "No data reported" below rather than dropped or
+// a fabricated 0 — see lib/sem.js.
 function monthlyBuckets(sem, from, to, picker) {
   const map = new Map();
   for (const d of dateRange(from, to)) {
@@ -1783,37 +1806,56 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
   );
 }
 
-// Tab 2 — Campaign Performance. Deliberately a placeholder, not a computed
-// figure: the client's spec doc filters ad sets by market ("Ad Set Contains
-// 'India'" / "...'International'") but has the two directions backwards
-// against this account's real ad set names (confirmed via live field
-// discovery — e.g. Interest_India_22-64, Interest_IN_22-64 vs.
-// Interest_International_22-64), and several ad sets (Interest_USUKGCC_22-54,
-// Interest_US MASS_22-54) don't fit either bucket at all. Wiring up real
-// numbers before that's resolved risks shipping a client-facing figure that's
-// confidently wrong. Once confirmed: fetch adset_name at the adset level in
-// lib/sem.js (not fetched today — only account/campaign level are), filter by
-// the agreed substrings, and replace this with real aggregated spend.
-function SsfbCampaignTab() {
-  return (
-    <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff" }}>
-      <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-2">Campaign Performance — pending market-split confirmation</h3>
-      <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.6 }}>
-        The client&apos;s spec splits Ad Spend by Market (India vs. International, filtered by ad set name), but the doc&apos;s
-        filter directions read backwards against this account&apos;s real ad set names, and a few ad sets
-        (<code>Interest_USUKGCC_22-54</code>, <code>Interest_US MASS_22-54</code>) don&apos;t match either market. Rather than
-        guess, this tab is left as a placeholder until that&apos;s confirmed.
-      </p>
-      <div className="grid grid-cols-2 gap-4 mt-5">
-        <div className="rounded-lg px-5 py-4" style={{ background: "#fff", border: `1px dashed ${C.line}` }}>
-          <div style={{ color: C.muted, fontSize: 12.5 }}>Ad Spend — India</div>
-          <div className="mt-1.5" style={{ color: C.faint, fontSize: 20, fontWeight: 700 }}>—</div>
-        </div>
-        <div className="rounded-lg px-5 py-4" style={{ background: "#fff", border: `1px dashed ${C.line}` }}>
-          <div style={{ color: C.muted, fontSize: 12.5 }}>Ad Spend — International</div>
-          <div className="mt-1.5" style={{ color: C.faint, fontSize: 20, fontWeight: 700 }}>—</div>
-        </div>
+// Tab 2 — Campaign Performance: Ad Spend by market (India vs.
+// International), attributed by ad-set name via marketSpendInRange / see
+// classifySsfbMarket in lib/sem.js for the bucketing rule and the resolution
+// history above SsfbOverallTab.
+function SsfbCampaignTab({ client, selectedRange, semData }) {
+  const sem = semData?.[client.name];
+  const accent = "#1877F2";
+
+  if (!sem) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        {semData ? "No paid-ads data for this property/date range." : "Loading paid-ads data…"}
       </div>
+    );
+  }
+
+  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const cur  = selectedRange ? marketSpendInRange(sem, selectedRange.from, selectedRange.to) : null;
+  const prev = prevWin ? marketSpendInRange(sem, prevWin.from, prevWin.to) : null;
+  const dPct = (key) => (cur?.[key] != null && prev?.[key]) ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null;
+  const total = cur && cur.india != null && cur.international != null ? cur.india + cur.international : null;
+  const share = (v) => (total ? Math.round((v / total) * 100) : null);
+
+  const cards = [
+    { label: "Ad Spend — India", key: "india" },
+    { label: "Ad Spend — International", key: "international" },
+  ];
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-4">
+        {cards.map((c) => (
+          <div key={c.key} className="rounded-lg px-5 py-4" style={{ background: `${accent}12`, border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{c.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {cur?.[c.key] != null ? fmtINR(cur[c.key]) : "—"}
+              </span>
+              {dPct(c.key) != null && <Delta value={dPct(c.key)} suffix="%" />}
+            </div>
+            {cur?.[c.key] != null && share(cur[c.key]) != null && (
+              <div className="mt-1" style={{ color: C.faint, fontSize: 12 }}>{share(cur[c.key])}% of total spend</div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
+      </p>
     </div>
   );
 }
@@ -4283,7 +4325,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbCampaignTab client={client} />
+        <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
       )}
 
       {/* Sora Sukhumvit has its own custom SEM report (Purchase/Add To Cart/
