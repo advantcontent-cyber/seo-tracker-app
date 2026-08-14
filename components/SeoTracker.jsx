@@ -1504,7 +1504,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
     currency: cur.currency,
     combined: { spend: cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, roas, ctr },
     meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
-    google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue } : null,
+    google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue, addToCart: curGoogle.addToCart } : null,
   } : null;
 
   const kpis = cur ? [
@@ -1712,6 +1712,12 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
     { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Website Purchase", value: fmt(cur.purchase), delta: dPct("purchase") },
     { label: "Revenue",          value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue") },
+    // Was missing entirely — caught by the client, Aug 2026. The isolated
+    // google.addToCart figure (see GOOGLE_CONVERSION_ACTION_MATCH in
+    // lib/sem.js) was already being fetched/summed correctly (it backs
+    // Add To Cart on the combined Summary tab), just never surfaced as
+    // its own card here.
+    { label: "Add To Cart",      value: fmt(cur.addToCart), delta: dPct("addToCart") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -1761,7 +1767,7 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase and Revenue read from this account's specific, isolated "purchase" conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/add_to_cart/begin_checkout and would overcount both figures (fixed Aug 2026, caught by the client). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase/Revenue and Add To Cart each read from their own specific, isolated conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/begin_checkout and would overcount all three figures (fixed Aug 2026, caught by the client). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
       </p>
     </div>
   );
