@@ -1589,7 +1589,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function SoraMetaTab({ client, selectedRange, range, semData }) {
+function SoraMetaTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1611,12 +1611,17 @@ function SoraMetaTab({ client, selectedRange, range, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
-  const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
+  const freq = cur && reach ? cur.impressions / reach : 0;
 
   const kpis = cur ? [
     { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
+    { label: "Reach",       value: fmt(reach),        delta: reachDPct },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases") },
@@ -1889,7 +1894,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function AzeraiMetaTab({ client, selectedRange, range, semData }) {
+function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1913,7 +1918,12 @@ function AzeraiMetaTab({ client, selectedRange, range, semData }) {
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   const roas     = cur && cur.spend ? cur.purchaseValue / cur.spend : null;
   const prevRoas = prev && prev.spend ? prev.purchaseValue / prev.spend : null;
-  const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
+  const freq = cur && reach ? cur.impressions / reach : 0;
 
   const kpis = cur ? [
     { label: "Amount Spent",     value: fmtVND(cur.spend),        delta: dPct("spend") },
@@ -1921,7 +1931,7 @@ function AzeraiMetaTab({ client, selectedRange, range, semData }) {
     { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
     { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
     { label: "Impression",       value: fmt(cur.impressions),     delta: dPct("impressions") },
-    { label: "Reach",            value: fmt(cur.reach),           delta: dPct("reach") },
+    { label: "Reach",            value: fmt(reach),           delta: reachDPct },
     { label: "Click",            value: fmt(cur.clicks),          delta: dPct("clicks") },
     { label: "CTR",              value: `${ctr.toFixed(1)}%`,     delta: pctDelta(ctr, prevCtr) },
     { label: "Frequency",        value: freq.toFixed(2) },
@@ -2239,7 +2249,7 @@ function SsfbNoDataCard({ label }) {
   );
 }
 
-function SsfbOverallTab({ client, selectedRange, range, semData }) {
+function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2266,13 +2276,18 @@ function SsfbOverallTab({ client, selectedRange, range, semData }) {
   const prevCostPerLpv = prev && prev.landingPageViews ? prev.spend / prev.landingPageViews : null;
   const costPerLinkClick = cur && cur.linkClicks ? cur.spend / cur.linkClicks : null;
   const prevCostPerLinkClick = prev && prev.linkClicks ? prev.spend / prev.linkClicks : null;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
   const kpis = cur ? [
     { label: "Amount Spent",        value: fmtINR(cur.spend),          delta: dPct("spend") },
     { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
     { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
     { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
-    { label: "Reach",               value: fmt(cur.reach),             delta: dPct("reach") },
+    { label: "Reach",               value: fmt(reach),             delta: reachDPct },
     { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                 value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Cost Per LPV",        value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
@@ -2419,7 +2434,7 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
 // SsfbOverallTab rather than a shared/parameterized component, matching
 // this file's existing convention of one component per client even where
 // the shape overlaps heavily (see Sora vs. Azerai).
-function SsshOverallTab({ client, selectedRange, range, semData }) {
+function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2446,13 +2461,18 @@ function SsshOverallTab({ client, selectedRange, range, semData }) {
   const prevCostPerLpv = prev && prev.landingPageViews ? prev.spend / prev.landingPageViews : null;
   const costPerLinkClick = cur && cur.linkClicks ? cur.spend / cur.linkClicks : null;
   const prevCostPerLinkClick = prev && prev.linkClicks ? prev.spend / prev.linkClicks : null;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
   const kpis = cur ? [
     { label: "Amount Spent",        value: fmtMoney(cur.spend),        delta: dPct("spend") },
     { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
     { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
     { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
-    { label: "Reach",               value: fmt(cur.reach),             delta: dPct("reach") },
+    { label: "Reach",               value: fmt(reach),             delta: reachDPct },
     { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                 value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Cost Per LPV",        value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
@@ -2532,7 +2552,7 @@ function SsshOverallTab({ client, selectedRange, range, semData }) {
 // counts). Derived from the SAME campaign-level messagingConversations
 // field Song Saa's report uses (see lib/sem.js) — just summed across every
 // campaign instead of filtering by name, so no new fetch was needed.
-function LeCercleOverallTab({ client, selectedRange, range, semData }) {
+function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2555,6 +2575,11 @@ function LeCercleOverallTab({ client, selectedRange, range, semData }) {
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   const cpm = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
   const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
   const messagesInRange = (from, to) => {
     if (!from || !to) return null;
@@ -2572,7 +2597,7 @@ function LeCercleOverallTab({ client, selectedRange, range, semData }) {
     { label: "Messages Conversation",     value: fmt(curMessages ?? 0), delta: messagesDPct },
     { label: "Cost per Messages Conversation", value: costPerMessage != null ? fmtVND(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
     { label: "Impressions",               value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",                     value: fmt(cur.reach),       delta: dPct("reach") },
+    { label: "Reach",                     value: fmt(reach),       delta: reachDPct },
     { label: "CTR",                       value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                       value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
   ] : [];
@@ -2727,7 +2752,7 @@ function SummaryTab({ client, selectedRange, range, semData }) {
 /*  sub-tab (the combined Google+Meta view above, formerly "the SEM     */
 /*  tab") under the SEM service tab.                                    */
 /* ------------------------------------------------------------------ */
-function MetaTab({ client, selectedRange, range, semData }) {
+function MetaTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
@@ -2753,15 +2778,21 @@ function MetaTab({ client, selectedRange, range, semData }) {
   // (a non-USD account this range) rather than silently understated.
   const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
   const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
-  // Frequency is derived (impressions / reach) rather than pulled as its own
-  // field — that keeps it correct regardless of how many account rows fed in,
-  // instead of trying to average an already-averaged figure.
-  const freq = cur && cur.reach ? cur.impressions / cur.reach : 0;
+  // True (deduplicated) reach for this exact range, via the liveReach prop
+  // (see fetchMetaReach in lib/sem.js) — falls back to semData's summed
+  // daily reach (a real overcount, see that comment) while the live fetch
+  // is in flight or fails. Frequency is derived from THIS reach, not
+  // pulled as its own field, so it stays consistent with whatever reach
+  // figure is actually shown.
+  const reach = liveReach?.current?.[client.name] ?? cur?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
+  const freq = cur && reach ? cur.impressions / reach : 0;
 
   const kpis = cur ? [
     { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined },
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",       value: fmt(cur.reach),        delta: dPct("reach") },
+    { label: "Reach",       value: fmt(reach),        delta: reachDPct },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
@@ -2832,7 +2863,7 @@ function MetaTab({ client, selectedRange, range, semData }) {
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach and Frequency are account-level figures. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
       </p>
     </div>
   );
@@ -4901,6 +4932,36 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     setSemRangeSel((r) => { const from = r?.from ?? semRange.from; return { from: to < from ? to : from, to }; });
   };
 
+  // True (deduplicated) Meta Reach for the exact selected range + its
+  // previous-period comparison — see fetchMetaReach in lib/sem.js for why
+  // this can't be derived from semData's daily rows. Fetched fresh
+  // whenever the date-range picker changes; every tab that shows Reach/
+  // Frequency (MetaTab, SoraMetaTab, AzeraiMetaTab, SsfbOverallTab,
+  // SsshOverallTab, LeCercleOverallTab) reads from this via the
+  // liveReach prop, falling back to the (overcounting) summed value from
+  // semData while a fetch is in flight or if it fails — better to show a
+  // slightly-wrong number for a moment than a blank card.
+  const [liveReach, setLiveReach] = useState(null); // { current: {client: reach}, previous: {client: reach} } | null
+  useEffect(() => {
+    if (!activeSemRange) return;
+    const prevWin = prevWindow(activeSemRange.from, activeSemRange.to);
+    const rangesParam = [
+      `${activeSemRange.from}:${activeSemRange.to}`,
+      prevWin ? `${prevWin.from}:${prevWin.to}` : null,
+    ].filter(Boolean).join(",");
+    let cancelled = false;
+    fetch(`/api/sem-reach?ranges=${encodeURIComponent(rangesParam)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json.ok) return;
+        const [cur, prev] = json.ranges;
+        setLiveReach({ current: cur?.reach ?? {}, previous: prev?.reach ?? {} });
+      })
+      .catch(() => {}); // fall back to semData's summed reach — see comment above
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSemRange?.from, activeSemRange?.to]);
+
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
@@ -5068,13 +5129,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           SsfbCampaignTab below. Six Senses Shaharut shares the same Overall
           shape (see SsshOverallTab) but has no Campaign Performance tab. */}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
         <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
       )}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Shaharut" && (
-        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
 
       {/* Sora Sukhumvit and Azerai (both properties) each have their own
@@ -5085,13 +5146,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "google" && (
         client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
