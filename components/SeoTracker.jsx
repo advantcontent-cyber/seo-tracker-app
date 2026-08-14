@@ -296,6 +296,10 @@ const ACTION_PLANS = {
 // AzeraiGoogleTab (see the daily.google overwrite bug fixed in lib/sem.js).
 const fmt = (n) => (n ?? 0).toLocaleString("en-US");
 const fmtMoney = (n) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
+// Same, but keeps 2 decimals — for Six Senses Shaharut's Amount Spent,
+// matching the client's own Looker Studio report (Aug 2026), which shows
+// spend to the cent rather than rounded to a whole dollar.
+const fmtMoney2 = (n) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 // THB — for clients whose report spec calls for the account's native billing
 // currency rather than a USD conversion (see NATIVE_CURRENCY_CLIENTS in lib/sem.js).
 const fmtTHB = (n) => `฿${Math.round(n ?? 0).toLocaleString("en-US")}`;
@@ -304,7 +308,9 @@ const fmtTHB = (n) => `฿${Math.round(n ?? 0).toLocaleString("en-US")}`;
 const fmtINR = (n) => `₹${Math.round(n ?? 0).toLocaleString("en-IN")}`;
 // Same, but keeps 2 decimals — for small per-unit figures like CPC where
 // rounding to a whole rupee (fmtINR above) would read as "₹0" for anything
-// under a rupee.
+// under a rupee, and for Six Senses Fort Barwara's Amount Spent, matching
+// the client's own Looker Studio report (Aug 2026), which shows spend to
+// the paisa rather than rounded to a whole rupee.
 const fmtINR2 = (n) => `₹${(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 // VND — Azerai's report currency (see MIXED_CURRENCY_TARGET in lib/sem.js).
 // No decimals: VND has no subunit in practical use (its smallest
@@ -2301,7 +2307,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
   const kpis = cur ? [
-    { label: "Amount Spent",        value: fmtINR(cur.spend),          delta: dPct("spend") },
+    { label: "Amount Spent",        value: fmtINR2(cur.spend),         delta: dPct("spend") },
     // Real field is instagram_profile_visits on the facebook (ads)
     // connector — NOT profile_views on the separate instagram (organic)
     // connector, which is where the original build looked and found
@@ -2489,7 +2495,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
   const kpis = cur ? [
-    { label: "Amount Spent",        value: fmtMoney(cur.spend),        delta: dPct("spend") },
+    { label: "Amount Spent",        value: fmtMoney2(cur.spend),       delta: dPct("spend") },
     // Real field is instagram_profile_visits on the facebook (ads)
     // connector — NOT profile_views on the separate instagram (organic)
     // connector, which is where the original build looked and found
