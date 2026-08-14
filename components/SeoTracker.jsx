@@ -1936,6 +1936,12 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach }) {
     { label: "Website Purchases", value: fmt(cur.purchases),      delta: dPct("purchases") },
     { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
     { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+    // Was missing entirely — caught by the client, Aug 2026, same as the
+    // Google-tab gap fixed just before this. meta.addToCart (Meta Pixel
+    // "Add to cart" event) was already fetched generically and already
+    // backs Add To Cart on the combined Summary tab; just never shown here
+    // (Sora's Meta tab has always had this card — Azerai's was missing it).
+    { label: "Add To Cart",      value: fmt(cur.addToCart),        delta: dPct("addToCart") },
     { label: "Impression",       value: fmt(cur.impressions),     delta: dPct("impressions") },
     { label: "Reach",            value: fmt(reach),           delta: reachDPct },
     { label: "Click",            value: fmt(cur.clicks),          delta: dPct("clicks") },
