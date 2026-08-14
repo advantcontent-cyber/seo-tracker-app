@@ -1815,7 +1815,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
     currency: "VND",
     combined: { spend: cur.spendPending ? null : cur.spend, clicks: cur.clicks, impressions: cur.impressions, purchase: cur.purchase, addToCart: cur.addToCart, revenue: cur.revenue, ctr },
     meta: curMeta ? { spend: curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, purchases: curMeta.purchases, addToCart: curMeta.addToCart, purchaseValue: curMeta.purchaseValue } : null,
-    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue, addToCart: curGoogle.addToCart } : null,
   } : null;
 
   const kpis = cur ? [
@@ -2028,6 +2028,12 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
     { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
     { label: "Click",            value: fmt(cur.clicks),      delta: dPct("clicks") },
     { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    // Was missing entirely — caught by the client, Aug 2026 (same gap as
+    // Sora's Google tab). The isolated google.addToCart figure (see
+    // GOOGLE_CONVERSION_ACTION_MATCH in lib/sem.js — "ClickAddRoomCheckout"
+    // for Azerai) was already fetched/summed correctly and already backs
+    // Add To Cart on the combined Summary tab; just never shown here.
+    { label: "Add To Cart",      value: fmt(cur.addToCart),   delta: dPct("addToCart") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
