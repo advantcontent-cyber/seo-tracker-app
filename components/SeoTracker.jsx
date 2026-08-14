@@ -289,7 +289,12 @@ const ACTION_PLANS = {
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-const fmt = (n) => n.toLocaleString("en-US");
+// Null-safe (unlike a bare n.toLocaleString(...)) — a single missing/
+// undefined field anywhere that calls fmt() would otherwise throw and take
+// down the whole tab's render (React error boundary → blank "Application
+// error" page), rather than just showing "0". Caught live, Aug 2026, via
+// AzeraiGoogleTab (see the daily.google overwrite bug fixed in lib/sem.js).
+const fmt = (n) => (n ?? 0).toLocaleString("en-US");
 const fmtMoney = (n) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
 // THB — for clients whose report spec calls for the account's native billing
 // currency rather than a USD conversion (see NATIVE_CURRENCY_CLIENTS in lib/sem.js).
