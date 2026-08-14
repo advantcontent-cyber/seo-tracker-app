@@ -2302,6 +2302,11 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
 
   const kpis = cur ? [
     { label: "Amount Spent",        value: fmtINR(cur.spend),          delta: dPct("spend") },
+    // Real field is instagram_profile_visits on the facebook (ads)
+    // connector — NOT profile_views on the separate instagram (organic)
+    // connector, which is where the original build looked and found
+    // nothing. Caught by the client, Aug 2026 — see lib/sem.js.
+    { label: "IG Profile Visits",   value: fmt(cur.igProfileVisits),   delta: dPct("igProfileVisits") },
     { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
     { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
     { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
@@ -2322,6 +2327,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const days = dateRange(range?.from, range?.to);
   const lpvTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.landingPageViews);
   const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.linkClicks);
+  const igVisitsTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.igProfileVisits);
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
@@ -2358,7 +2364,6 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
             </div>
           </div>
         ))}
-        <SsfbNoDataCard label="IG Profile Visits" />
       </div>
 
       {/* Monthly bar charts */}
@@ -2366,14 +2371,12 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
         <BarBlock title="Landing Page Views Per Month" data={lpvTrend} />
         <BarBlock title="Total Click Per Month" data={clicksTrend} />
       </div>
-      <div className="mt-5">
-        <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-          <span style={{ color: C.ink, fontWeight: 600 }}>Total IG Visit Per Month</span> — no data reported for this account (see note below). Chart will populate once IG Profile Visits has real data to show.
-        </div>
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR — this account's native billing currency, not converted to USD. Profile Followers is daily net new followers gained (not a running total — Instagram's API only exposes a "today" snapshot for the lifetime total, not a queryable history) from Windsor's separate <code>instagram</code> connector, and is itself limited by Instagram to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits (<code>profile_views</code> on that same connector) has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR — this account's native billing currency, not converted to USD. Profile Followers is daily net new followers gained (not a running total — Instagram's API only exposes a "today" snapshot for the lifetime total, not a queryable history) from Windsor's separate <code>instagram</code> connector, and is itself limited by Instagram to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector — a different connector than Profile Followers, so its history isn't subject to the same 30-day window.
       </p>
     </div>
   );
@@ -2487,6 +2490,11 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
 
   const kpis = cur ? [
     { label: "Amount Spent",        value: fmtMoney(cur.spend),        delta: dPct("spend") },
+    // Real field is instagram_profile_visits on the facebook (ads)
+    // connector — NOT profile_views on the separate instagram (organic)
+    // connector, which is where the original build looked and found
+    // nothing. Caught by the client, Aug 2026 — see lib/sem.js.
+    { label: "IG Profile Visits",   value: fmt(cur.igProfileVisits),   delta: dPct("igProfileVisits") },
     { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
     { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
     { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
@@ -2503,6 +2511,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
   const days = dateRange(range?.from, range?.to);
   const lpvTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.landingPageViews);
   const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.linkClicks);
+  const igVisitsTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.igProfileVisits);
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
@@ -2539,7 +2548,6 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
             </div>
           </div>
         ))}
-        <SsfbNoDataCard label="IG Profile Visits" />
       </div>
 
       {/* Monthly bar charts */}
@@ -2547,14 +2555,12 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
         <BarBlock title="Landing Page Views Per Month" data={lpvTrend} />
         <BarBlock title="Total Click Per Month" data={clicksTrend} />
       </div>
-      <div className="mt-5">
-        <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
-          <span style={{ color: C.ink, fontWeight: 600 }}>Total IG Visit Per Month</span> — no data reported for this account (see note below). Chart will populate once IG Profile Visits has real data to show.
-        </div>
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector — a different connector than Profile Followers, so its history isn't subject to the same 30-day window.
       </p>
     </div>
   );
@@ -2611,6 +2617,9 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach }
 
   const kpis = cur ? [
     { label: "Amount Spent",              value: fmtVND(cur.spend),   delta: dPct("spend") },
+    // Real field is instagram_profile_visits on the facebook (ads)
+    // connector. Caught by the client, Aug 2026 — see lib/sem.js.
+    { label: "IG Profile Visits",         value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
     { label: "Link Clicks",               value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
     { label: "Messages Conversation",     value: fmt(curMessages ?? 0), delta: messagesDPct },
     { label: "Cost per Messages Conversation", value: costPerMessage != null ? fmtVND(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
@@ -2632,11 +2641,10 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach }
             </div>
           </div>
         ))}
-        <SsfbNoDataCard label="IG Profile Visits" />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Messages Conversation counts every Meta campaign (no campaign-name filter in this client's spec, unlike Song Saa's identically-named metric). IG Profile Visits has been confirmed to genuinely have no data for this account — kept as "No data reported" rather than dropped.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Messages Conversation counts every Meta campaign (no campaign-name filter in this client's spec, unlike Song Saa's identically-named metric). IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector.
       </p>
     </div>
   );
