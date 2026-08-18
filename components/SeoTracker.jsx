@@ -1569,15 +1569,15 @@ function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, for
 // capped to the top 12 so one busy account's ad count doesn't overwhelm the
 // tab.
 function CreativesPanel({ rows }) {
-  const CAP = 12;
+  const CAP = 18;
   const ranked = [...rows]
     .map((ad) => ({ ...ad, ctr: ad.impressions ? (ad.linkClicks / ad.impressions) * 100 : 0 }))
     .sort((a, b) => b.ctr - a.ctr);
   const shown = ranked.slice(0, CAP);
   const StatRow = ({ label, value }) => (
     <div className="flex items-center justify-between py-0.5">
-      <span style={{ color: C.faint, fontSize: 11.5 }}>{label}</span>
-      <span style={{ color: C.ink, fontSize: 12, fontVariantNumeric: "tabular-nums" }} className="truncate pl-2 text-right">{value}</span>
+      <span style={{ color: C.faint, fontSize: 10 }} className="truncate">{label}</span>
+      <span style={{ color: C.ink, fontSize: 10.5, fontVariantNumeric: "tabular-nums" }} className="truncate pl-1.5 text-right">{value}</span>
     </div>
   );
   return (
@@ -1589,12 +1589,12 @@ function CreativesPanel({ rows }) {
       {shown.length === 0 ? (
         <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No ad creatives for this range.</div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4">
           {shown.map((ad, i) => (
             <div key={ad.adName} className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}` }}>
-              <div className="flex items-center gap-1.5 px-3 py-2" style={{ borderBottom: `1px solid ${C.line}`, background: C.bg }}>
-                <span style={{ color: C.faint, fontSize: 11 }} className="font-medium">{i + 1}</span>
-                <MetaMark size={14} />
+              <div className="flex items-center gap-1 px-2 py-1" style={{ borderBottom: `1px solid ${C.line}`, background: C.bg }}>
+                <span style={{ color: C.faint, fontSize: 10 }} className="font-medium">{i + 1}</span>
+                <MetaMark size={11} />
               </div>
               <div style={{ aspectRatio: "1 / 1", background: C.bg, position: "relative" }}>
                 {ad.thumbnailUrl && (
@@ -1606,19 +1606,19 @@ function CreativesPanel({ rows }) {
                   />
                 )}
                 <div
-                  className="absolute inset-0 items-center justify-center"
-                  style={{ display: ad.thumbnailUrl ? "none" : "flex", color: C.faint, fontSize: 12 }}
+                  className="absolute inset-0 items-center justify-center text-center px-1"
+                  style={{ display: ad.thumbnailUrl ? "none" : "flex", color: C.faint, fontSize: 10 }}
                 >
                   No preview
                 </div>
               </div>
-              <div className="px-3 py-3 flex-1">
-                <div style={{ color: C.ink, fontSize: 13 }} className="font-medium truncate" title={ad.adName}>{ad.adName}</div>
-                <div className="mt-2">
-                  <StatRow label="Ad set name" value={ad.adSetName || "—"} />
-                  <StatRow label="Campaign name" value={ad.campaign || "—"} />
-                  <StatRow label="Impressions" value={fmt(ad.impressions)} />
-                  <StatRow label="Link clicks" value={fmt(ad.linkClicks)} />
+              <div className="px-2 py-2 flex-1">
+                <div style={{ color: C.ink, fontSize: 11 }} className="font-medium truncate" title={ad.adName}>{ad.adName}</div>
+                <div className="mt-1">
+                  <StatRow label="Ad set" value={ad.adSetName || "—"} />
+                  <StatRow label="Campaign" value={ad.campaign || "—"} />
+                  <StatRow label="Impr." value={fmt(ad.impressions)} />
+                  <StatRow label="Clicks" value={fmt(ad.linkClicks)} />
                   <StatRow label="CTR" value={`${ad.ctr.toFixed(2)}%`} />
                 </div>
               </div>
