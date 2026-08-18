@@ -1511,14 +1511,15 @@ function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint
   );
 }
 
-// Meta Impressions/Website Purchases by country — Sora's Meta tab spec (see
-// fetchMetaCountryBreakdown in lib/sem.js). Each chart sorts independently
-// by its own metric (not a shared country order) and caps at the top 10 —
-// matching the client's own reference report, which showed 10 countries per
-// chart. Long country names get an angled tick label past ~6 bars so they
-// don't overlap.
-function CountryBarChart({ title, rows, valueKey, color, formatValue = fmt }) {
-  const sorted = [...rows].sort((a, b) => b[valueKey] - a[valueKey] || a.country.localeCompare(b.country)).slice(0, 10);
+// Ranked bar chart — Impressions/Website Purchases by country (Sora's Meta
+// and Google tab specs; see fetchMetaCountryBreakdown/
+// fetchGoogleCountryBreakdown in lib/sem.js) and All conversions by Campaign
+// (Sora's Google tab). Sorts independently by its own metric (not a shared
+// category order) and caps at the top 10 — matching the client's own
+// reference reports, which showed at most 10 bars per chart. Long category
+// names get an angled tick label past ~6 bars so they don't overlap.
+function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, formatValue = fmt, sourceIcon, sourceLabel }) {
+  const sorted = [...rows].sort((a, b) => b[valueKey] - a[valueKey] || a[nameKey].localeCompare(b[nameKey])).slice(0, 10);
   const angled = sorted.length > 6;
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -1533,7 +1534,7 @@ function CountryBarChart({ title, rows, valueKey, color, formatValue = fmt }) {
             <BarChart data={sorted} margin={{ top: 20, right: 16, left: 4, bottom: angled ? 20 : 4 }}>
               <CartesianGrid stroke={C.line} vertical={false} />
               <XAxis
-                dataKey="country"
+                dataKey={nameKey}
                 tick={{ fill: C.faint, fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
@@ -1552,7 +1553,7 @@ function CountryBarChart({ title, rows, valueKey, color, formatValue = fmt }) {
         )}
       </div>
       <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
-        <MetaMark size={13} /><span style={{ color: C.faint, fontSize: 11 }}>Meta Ads</span>
+        {sourceIcon}<span style={{ color: C.faint, fontSize: 11 }}>{sourceLabel}</span>
       </div>
     </div>
   );
@@ -1780,8 +1781,8 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
 
       {/* Country breakdown */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <CountryBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} />
-        <CountryBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} />
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -1791,7 +1792,7 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
   );
 }
 
-function SoraGoogleTab({ client, selectedRange, range, semData }) {
+function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
 
@@ -1833,6 +1834,27 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
   const trend = days.map((d) => { const g = sem.daily?.[d]?.google; return { day: fmtDayShort(d), spend: g?.spend ?? 0 }; });
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  // Country rows for the Impressions chart below — see googleCountry's fetch
+  // in Detail (via /api/sem-country) and fetchGoogleCountryBreakdown in
+  // lib/sem.js. Empty while the range-scoped fetch is in flight/unset.
+  const countryData = googleCountry?.[client.name] ?? null;
+  const countryRows = countryData
+    ? Object.entries(countryData).map(([country, v]) => ({ country, impressions: v.impressions }))
+    : [];
+
+  // All conversions by Campaign — this IS the blanket all_conversions bucket
+  // (see the GOOGLE_CONVERSION_ACTION_MATCH gotcha in lib/sem.js, which
+  // isolates Website Purchase/Add To Cart away from this same bucket for the
+  // KPI cards above). This chart is a deliberate, separate diagnostic view
+  // the client asked for by that literal name, not a stand-in for the
+  // isolated Purchase figure — shown as-is, campaigns with 0 hidden (matches
+  // the client's own reference report, which only showed non-zero campaigns).
+  const campaignConversions = selectedRange
+    ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google")
+        .map((c) => ({ campaign: c.name, allConversions: Math.round(c.allConversions) }))
+        .filter((c) => c.allConversions > 0)
+    : [];
 
   return (
     <div>
@@ -1879,8 +1901,14 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
         </div>
       </div>
 
+      {/* Country breakdown + All conversions by Campaign */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
+        <RankedBarChart title="All conversions by Campaign" rows={campaignConversions} nameKey="campaign" valueKey="allConversions" color={accent} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase/Revenue and Add To Cart each read from their own specific, isolated conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/begin_checkout and would overcount all three figures (fixed Aug 2026, caught by the client). Country-breakdown chart (Impression by Country) from the client's spec still needs Windsor's country dimension confirmed for this account.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase/Revenue and Add To Cart each read from their own specific, isolated conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/begin_checkout and would overcount all three figures (fixed Aug 2026, caught by the client). The "All conversions by Campaign" chart below is that same broader field, shown deliberately as its own diagnostic view (per the client's spec) rather than a stand-in for the isolated Purchase figure above — campaigns with 0 are hidden. Impressions by Country decodes Google Ads' numeric country_criterion_id via the ISO 3166-1 lookup in lib/sem.js (confirmed live, Aug 2026).
       </p>
     </div>
   );
@@ -5101,17 +5129,23 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSemRange?.from, activeSemRange?.to]);
 
-  // Meta Impressions/Website Purchases by country, for the exact selected
-  // range — see fetchMetaCountryBreakdown in lib/sem.js. Only Sora's Meta
-  // tab reads this (client spec) via the metaCountry prop, but fetched
-  // generically here like liveReach above rather than gated to one client.
+  // Impressions (+ Meta's Website Purchases) by country, for the exact
+  // selected range — see fetchMetaCountryBreakdown/fetchGoogleCountryBreakdown
+  // in lib/sem.js. Only Sora's Meta/Google tabs read this (client spec) via
+  // the metaCountry/googleCountry props, but fetched generically here like
+  // liveReach above rather than gated to one client.
   const [metaCountry, setMetaCountry] = useState(null); // { [client]: { [country]: { impressions, purchases } } } | null
+  const [googleCountry, setGoogleCountry] = useState(null); // { [client]: { [country]: { impressions } } } | null
   useEffect(() => {
     if (!activeSemRange) return;
     let cancelled = false;
     fetch(`/api/sem-country?from=${activeSemRange.from}&to=${activeSemRange.to}`)
       .then((r) => r.json())
-      .then((json) => { if (!cancelled && json.ok) setMetaCountry(json.data); })
+      .then((json) => {
+        if (cancelled || !json.ok) return;
+        setMetaCountry(json.meta);
+        setGoogleCountry(json.google);
+      })
       .catch(() => {}); // charts just stay empty if this fails
     return () => { cancelled = true; };
   }, [activeSemRange?.from, activeSemRange?.to]);
@@ -5309,7 +5343,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "google" && (
-        client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleCountry={googleCountry} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
