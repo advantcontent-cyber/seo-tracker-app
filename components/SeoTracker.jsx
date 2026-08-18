@@ -1559,6 +1559,59 @@ function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, for
   );
 }
 
+// Campaign performance table — Sora's Google tab spec. Distinct from the
+// generic CampaignPerformanceTable further below (Campaign/Amount Spent/
+// Impressions/Reach/CTR/CPC, shared by MetaTab/GoogleTab) — Sora's spec asks
+// for Cost/CPC/Clicks/Impressions/Conversions instead (no Reach, since this
+// is Google-only; Conversions instead of CTR). Cost/Clicks/Impressions/
+// Conversions come straight from campaignsInRange's per-campaign rollup
+// (already fetched — no new Windsor call); CPC is derived (spend/clicks)
+// rather than a separate field, since Windsor doesn't return CPC directly at
+// this granularity. "Conversions" here is Google Ads' plain `conversions`
+// metric — deliberately NOT `allConversions` (the broader bucket already
+// used by the "All conversions by Campaign" chart above; see its comment)
+// and NOT the isolated Website Purchase action either — this column mirrors
+// the client's own reference report's "Conversions" column, which is
+// Google's standard per-campaign metric.
+function SoraCampaignTable({ rows, formatMoney }) {
+  const sorted = [...rows].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0));
+  const COLS = "2fr 1fr 1fr 1fr 1fr 1fr";
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns for this range.</div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: COLS, minWidth: 640, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
+            <span className="uppercase">Campaign name</span>
+            <span className="uppercase text-right">Cost</span>
+            <span className="uppercase text-right">CPC</span>
+            <span className="uppercase text-right">Clicks</span>
+            <span className="uppercase text-right">Impressions</span>
+            <span className="uppercase text-right">Conversions</span>
+          </div>
+          {sorted.map((c, i) => (
+            <div key={c.name} className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: COLS, minWidth: 640, borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <span style={{ color: C.ink, fontSize: 13 }} className="truncate pr-3">{c.name}</span>
+              <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{c.spend == null ? "—" : formatMoney(c.spend)}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{c.spend != null && c.clicks ? formatMoney(c.spend / c.clicks) : "—"}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(c.clicks)}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(c.impressions)}</span>
+              <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(c.conversions)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>Google Ads</span>
+      </div>
+    </div>
+  );
+}
+
 function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
@@ -1843,6 +1896,10 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
     ? Object.entries(countryData).map(([country, v]) => ({ country, impressions: v.impressions }))
     : [];
 
+  // Shared per-campaign rollup for the range — backs both the "All
+  // conversions by Campaign" chart and the Campaign Performance table below.
+  const campaignRows = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
+
   // All conversions by Campaign — this IS the blanket all_conversions bucket
   // (see the GOOGLE_CONVERSION_ACTION_MATCH gotcha in lib/sem.js, which
   // isolates Website Purchase/Add To Cart away from this same bucket for the
@@ -1850,11 +1907,27 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
   // the client asked for by that literal name, not a stand-in for the
   // isolated Purchase figure — shown as-is, campaigns with 0 hidden (matches
   // the client's own reference report, which only showed non-zero campaigns).
-  const campaignConversions = selectedRange
-    ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google")
-        .map((c) => ({ campaign: c.name, allConversions: Math.round(c.allConversions) }))
-        .filter((c) => c.allConversions > 0)
-    : [];
+  const campaignConversions = campaignRows
+    .map((c) => ({ campaign: c.name, allConversions: Math.round(c.allConversions) }))
+    .filter((c) => c.allConversions > 0);
+
+  // Click Through Rate by month — the client's reference report plots this
+  // across a full calendar year, but our own data (via fetchSemData in
+  // lib/sem.js) only goes back to March YEAR (the established reporting
+  // window — MONTHS below is that same canonical, auto-extending window),
+  // so Jan/Feb can't be reproduced here. Months with zero Google impressions
+  // (no data yet, or genuinely no spend that month) are skipped rather than
+  // plotted as a false 0%.
+  const monthlyCtr = MONTHS.map((abbr) => {
+    const moNum = MO_NUM[abbr];
+    let clicks = 0, impressions = 0;
+    for (const [date, day] of Object.entries(sem.daily || {})) {
+      if (Number(date.slice(5, 7)) !== moNum) continue;
+      clicks += day.google?.clicks ?? 0;
+      impressions += day.google?.impressions ?? 0;
+    }
+    return { month: MONTH_FULL[abbr], ctr: impressions ? (clicks / impressions) * 100 : null };
+  }).filter((m) => m.ctr != null);
 
   return (
     <div>
@@ -1907,8 +1980,36 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
         <RankedBarChart title="All conversions by Campaign" rows={campaignConversions} nameKey="campaign" valueKey="allConversions" color={accent} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
       </div>
 
+      {/* Click Through Rate by month */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Through Rate</h3>
+        </div>
+        <div style={{ height: 260 }} className="px-2 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={monthlyCtr} margin={{ top: 24, right: 16, left: 4, bottom: 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v}%`} />
+              <Tooltip formatter={(v) => `${v.toFixed(2)}%`} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Line type="monotone" dataKey="ctr" name="Click Through Rate" stroke={accent} strokeWidth={2} dot={{ r: 4 }}>
+                <LabelList dataKey="ctr" position="top" formatter={(v) => `${v.toFixed(2)}%`} style={{ fill: accent, fontSize: 11, fontWeight: 600 }} />
+              </Line>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+          <GoogleG size={13} /><span style={{ color: C.faint, fontSize: 11 }}>Google Ads</span>
+        </div>
+      </div>
+
+      {/* Campaign performance table */}
+      <div className="mt-5">
+        <SoraCampaignTable rows={campaignRows} formatMoney={fmtTHB} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase/Revenue and Add To Cart each read from their own specific, isolated conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/begin_checkout and would overcount all three figures (fixed Aug 2026, caught by the client). The "All conversions by Campaign" chart below is that same broader field, shown deliberately as its own diagnostic view (per the client's spec) rather than a stand-in for the isolated Purchase figure above — campaigns with 0 are hidden. Impressions by Country decodes Google Ads' numeric country_criterion_id via the ISO 3166-1 lookup in lib/sem.js (confirmed live, Aug 2026).
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Website Purchase/Revenue and Add To Cart each read from their own specific, isolated conversion action — NOT Google's broader "All conversions" field, which also sums in view_item_list/begin_checkout and would overcount all three figures (fixed Aug 2026, caught by the client). The "All conversions by Campaign" chart is that same broader field, shown deliberately as its own diagnostic view (per the client's spec) rather than a stand-in for the isolated Purchase figure above — campaigns with 0 are hidden. Impressions by Country decodes Google Ads' numeric country_criterion_id via the ISO 3166-1 lookup in lib/sem.js (confirmed live, Aug 2026). Click Through Rate is monthly and only covers this account's tracked reporting window (March {YEAR} onward) — the client's own reference report went back to January, which our Windsor pull doesn't reach. Campaign Performance's Conversions column is Google Ads' plain "Conversions" metric (distinct from the broader All conversions bucket above and from the isolated Website Purchase action).
       </p>
     </div>
   );
