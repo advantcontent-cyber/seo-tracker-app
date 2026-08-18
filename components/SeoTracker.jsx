@@ -15,6 +15,7 @@ import {
   Cell,
   BarChart,
   Bar,
+  LabelList,
   LineChart,
   Line,
 } from "recharts";
@@ -1510,6 +1511,53 @@ function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint
   );
 }
 
+// Meta Impressions/Website Purchases by country — Sora's Meta tab spec (see
+// fetchMetaCountryBreakdown in lib/sem.js). Each chart sorts independently
+// by its own metric (not a shared country order) and caps at the top 10 —
+// matching the client's own reference report, which showed 10 countries per
+// chart. Long country names get an angled tick label past ~6 bars so they
+// don't overlap.
+function CountryBarChart({ title, rows, valueKey, color, formatValue = fmt }) {
+  const sorted = [...rows].sort((a, b) => b[valueKey] - a[valueKey] || a.country.localeCompare(b.country)).slice(0, 10);
+  const angled = sorted.length > 6;
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+      </div>
+      <div style={{ height: 260 }} className="px-2 py-4">
+        {sorted.length === 0 ? (
+          <div className="h-full flex items-center justify-center" style={{ color: C.muted, fontSize: 13 }}>No data for this range.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={sorted} margin={{ top: 20, right: 16, left: 4, bottom: angled ? 20 : 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis
+                dataKey="country"
+                tick={{ fill: C.faint, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+                angle={angled ? -30 : 0}
+                textAnchor={angled ? "end" : "middle"}
+                height={angled ? 46 : 30}
+              />
+              <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+              <Tooltip formatter={(v) => formatValue(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Bar dataKey={valueKey} fill={color} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey={valueKey} position="top" formatter={formatValue} style={{ fill: color, fontSize: 11, fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+      <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <MetaMark size={13} /><span style={{ color: C.faint, fontSize: 11 }}>Meta Ads</span>
+      </div>
+    </div>
+  );
+}
+
 function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
@@ -1633,7 +1681,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function SoraMetaTab({ client, selectedRange, range, semData, liveReach }) {
+function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1677,6 +1725,14 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach }) {
   const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spend ?? 0 }; });
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  // Country rows for the two breakdown charts below — see metaCountry's
+  // fetch in Detail (via /api/sem-country) and fetchMetaCountryBreakdown in
+  // lib/sem.js. Empty while the range-scoped fetch is in flight/unset.
+  const countryData = metaCountry?.[client.name] ?? null;
+  const countryRows = countryData
+    ? Object.entries(countryData).map(([country, v]) => ({ country, impressions: v.impressions, purchases: v.purchases }))
+    : [];
 
   return (
     <div>
@@ -1722,8 +1778,14 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach }) {
         </div>
       </div>
 
+      {/* Country breakdown */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <CountryBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} />
+        <CountryBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts (Impression by Country, Purchase by Country) from the client's spec still need Windsor's country dimension confirmed for this account before they can be added.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts show the top 10 countries by their own metric (Impressions / Website Purchases) for the exact selected range.
       </p>
     </div>
   );
@@ -5039,6 +5101,21 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSemRange?.from, activeSemRange?.to]);
 
+  // Meta Impressions/Website Purchases by country, for the exact selected
+  // range — see fetchMetaCountryBreakdown in lib/sem.js. Only Sora's Meta
+  // tab reads this (client spec) via the metaCountry prop, but fetched
+  // generically here like liveReach above rather than gated to one client.
+  const [metaCountry, setMetaCountry] = useState(null); // { [client]: { [country]: { impressions, purchases } } } | null
+  useEffect(() => {
+    if (!activeSemRange) return;
+    let cancelled = false;
+    fetch(`/api/sem-country?from=${activeSemRange.from}&to=${activeSemRange.to}`)
+      .then((r) => r.json())
+      .then((json) => { if (!cancelled && json.ok) setMetaCountry(json.data); })
+      .catch(() => {}); // charts just stay empty if this fails
+    return () => { cancelled = true; };
+  }, [activeSemRange?.from, activeSemRange?.to]);
+
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
@@ -5227,7 +5304,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
         : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
