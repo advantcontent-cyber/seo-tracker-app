@@ -1475,6 +1475,41 @@ function AnalystNotes({ client, period, facts }) {
   );
 }
 
+/* Meta "f" mark — inline SVG so it stays self-contained, mirroring GoogleG's
+   convention below. Rendered in Facebook blue (#1877F2) since Windsor's Meta
+   figures are sourced via the facebook connector, and this file already uses
+   that same blue as the accent for every Meta-branded tab. */
+function MetaMark({ size = 15 }) {
+  return (
+    <svg viewBox="0 0 36 36" width={size} height={size} aria-label="Meta" style={{ display: "block", flexShrink: 0 }}>
+      <circle cx="18" cy="18" r="18" fill="#1877F2" />
+      <path fill="#fff" d="M20.1 28V19.6h2.8l.42-3.3h-3.22v-2.1c0-.95.26-1.6 1.63-1.6h1.74v-2.94A23.6 23.6 0 0 0 20.9 9.5c-2.7 0-4.55 1.65-4.55 4.68v2.12h-3.05v3.3h3.05V28h3.75z" />
+    </svg>
+  );
+}
+
+/* SEM metric card — gives paid-ads KPI tiles the same "what is this number
+   from" footer the SEO tab's cards already have (see SummaryMetric further
+   below: value + a bottom row naming Google Search Console / GA4). Used by
+   Sora's Summary/Meta/Google SEM tabs so every card names its platform. */
+function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint, accent, note, sourceIcon, sourceLabel }) {
+  return (
+    <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: tint ? `${accent}12` : "#fff" }}>
+      <div className="px-5 py-4 flex-1">
+        <div style={{ color: C.muted, fontSize: 12.5 }}>{label}</div>
+        <div className="flex items-baseline gap-2 mt-1.5">
+          <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+          {delta != null && <Delta value={delta} suffix={suffix} invert={invert} />}
+        </div>
+        {note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1.5 leading-snug">{note}</div>}
+      </div>
+      <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        {sourceIcon}<span style={{ color: C.faint, fontSize: 11 }}>{sourceLabel}</span>
+      </div>
+    </div>
+  );
+}
+
 function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
 
@@ -1536,13 +1571,16 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard
+            key={k.label}
+            label={k.label}
+            value={k.value}
+            delta={k.delta}
+            tint={i % 2 === 0}
+            accent={C.accent}
+            sourceIcon={<span className="flex items-center gap-1"><GoogleG size={13} /><MetaMark size={13} /></span>}
+            sourceLabel="Google Ads + Meta Ads"
+          />
         ))}
       </div>
 
@@ -1645,13 +1683,16 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach }) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard
+            key={k.label}
+            label={k.label}
+            value={k.value}
+            delta={k.delta}
+            tint={i % 2 === 0}
+            accent={accent}
+            sourceIcon={<MetaMark size={13} />}
+            sourceLabel="Meta Ads"
+          />
         ))}
       </div>
 
@@ -1736,13 +1777,17 @@ function SoraGoogleTab({ client, selectedRange, range, semData }) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard
+            key={k.label}
+            label={k.label}
+            value={k.value}
+            delta={k.delta}
+            tint={i % 2 === 0}
+            accent={accent}
+            note={k.note}
+            sourceIcon={<GoogleG size={13} />}
+            sourceLabel="Google Ads"
+          />
         ))}
       </div>
 
