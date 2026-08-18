@@ -1559,6 +1559,80 @@ function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, for
   );
 }
 
+// Ad creatives panel — Sora's Meta tab spec. Thumbnails come from Windsor's
+// `thumbnail_url` (see fetchMetaCreatives in lib/sem.js) — real Facebook CDN
+// URLs, but SIGNED and time-limited (they carry an expiry param), not
+// permanent links, so a broken thumbnail on an old/reloaded page is an
+// expected occasional failure, not a bug — onError swaps it for a "No
+// preview" placeholder rather than a broken-image icon. Ranked by CTR
+// descending (matching the client's own reference report's default sort),
+// capped to the top 12 so one busy account's ad count doesn't overwhelm the
+// tab.
+function CreativesPanel({ rows }) {
+  const CAP = 12;
+  const ranked = [...rows]
+    .map((ad) => ({ ...ad, ctr: ad.impressions ? (ad.linkClicks / ad.impressions) * 100 : 0 }))
+    .sort((a, b) => b.ctr - a.ctr);
+  const shown = ranked.slice(0, CAP);
+  const StatRow = ({ label, value }) => (
+    <div className="flex items-center justify-between py-0.5">
+      <span style={{ color: C.faint, fontSize: 11.5 }}>{label}</span>
+      <span style={{ color: C.ink, fontSize: 12, fontVariantNumeric: "tabular-nums" }} className="truncate pl-2 text-right">{value}</span>
+    </div>
+  );
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Creatives</h3>
+        <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-0.5">Ranked by CTR, descending{ranked.length > CAP ? ` · top ${CAP} of ${ranked.length}` : ""}</div>
+      </div>
+      {shown.length === 0 ? (
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No ad creatives for this range.</div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+          {shown.map((ad, i) => (
+            <div key={ad.adName} className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}` }}>
+              <div className="flex items-center gap-1.5 px-3 py-2" style={{ borderBottom: `1px solid ${C.line}`, background: C.bg }}>
+                <span style={{ color: C.faint, fontSize: 11 }} className="font-medium">{i + 1}</span>
+                <MetaMark size={14} />
+              </div>
+              <div style={{ aspectRatio: "1 / 1", background: C.bg, position: "relative" }}>
+                {ad.thumbnailUrl && (
+                  <img
+                    src={ad.thumbnailUrl}
+                    alt={ad.adName}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = "none"; e.currentTarget.nextElementSibling.style.display = "flex"; }}
+                  />
+                )}
+                <div
+                  className="absolute inset-0 items-center justify-center"
+                  style={{ display: ad.thumbnailUrl ? "none" : "flex", color: C.faint, fontSize: 12 }}
+                >
+                  No preview
+                </div>
+              </div>
+              <div className="px-3 py-3 flex-1">
+                <div style={{ color: C.ink, fontSize: 13 }} className="font-medium truncate" title={ad.adName}>{ad.adName}</div>
+                <div className="mt-2">
+                  <StatRow label="Ad set name" value={ad.adSetName || "—"} />
+                  <StatRow label="Campaign name" value={ad.campaign || "—"} />
+                  <StatRow label="Impressions" value={fmt(ad.impressions)} />
+                  <StatRow label="Link clicks" value={fmt(ad.linkClicks)} />
+                  <StatRow label="CTR" value={`${ad.ctr.toFixed(2)}%`} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <MetaMark size={13} /><span style={{ color: C.faint, fontSize: 11 }}>Meta Ads</span>
+      </div>
+    </div>
+  );
+}
+
 // Campaign performance table — Sora's Google tab spec. Distinct from the
 // generic CampaignPerformanceTable further below (Campaign/Amount Spent/
 // Impressions/Reach/CTR/CPC, shared by MetaTab/GoogleTab) — Sora's spec asks
@@ -1735,7 +1809,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry }) {
+function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1838,8 +1912,13 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
         <RankedBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
 
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts show the top 10 countries by their own metric (Impressions / Website Purchases) for the exact selected range.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts show the top 10 countries by their own metric (Impressions / Website Purchases) for the exact selected range. Ad creative thumbnails are Facebook's own signed, time-limited CDN links — an occasional broken preview after a long page session is expected, not a bug.
       </p>
     </div>
   );
@@ -5251,6 +5330,21 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     return () => { cancelled = true; };
   }, [activeSemRange?.from, activeSemRange?.to]);
 
+  // Meta ad creatives (thumbnail + name + performance), for the exact
+  // selected range — see fetchMetaCreatives in lib/sem.js. Only Sora's Meta
+  // tab reads this (client spec) via the metaCreatives prop, but fetched
+  // generically here like metaCountry/googleCountry above.
+  const [metaCreatives, setMetaCreatives] = useState(null); // { [client]: [{ adName, adSetName, campaign, thumbnailUrl, impressions, linkClicks }] } | null
+  useEffect(() => {
+    if (!activeSemRange) return;
+    let cancelled = false;
+    fetch(`/api/sem-creatives?from=${activeSemRange.from}&to=${activeSemRange.to}`)
+      .then((r) => r.json())
+      .then((json) => { if (!cancelled && json.ok) setMetaCreatives(json.data); })
+      .catch(() => {}); // panel just stays empty if this fails
+    return () => { cancelled = true; };
+  }, [activeSemRange?.from, activeSemRange?.to]);
+
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
@@ -5306,7 +5400,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                 color: isLive ? C.healthy : C.watch,
               }}
             >
-              {isLive ? "Live GSC" : gscData ? "GSC not connected" : gscError ? "GSC error" : "Loading…"}
+              {isLive ? "Windsor.ai" : gscData ? "GSC not connected" : gscError ? "GSC error" : "Loading…"}
             </span>
           </div>
         </div>
@@ -5439,7 +5533,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
         : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
