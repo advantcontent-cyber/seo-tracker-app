@@ -1829,6 +1829,20 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
+  // "Total Purchases By Month" / "Total Revenue By Month" — client spec,
+  // matching their own reference report. Same Purchase/Revenue figures as
+  // the daily trend charts above (isolated ad-platform conversion actions,
+  // not the GA4 "Direct" numbers), just bucketed by month instead of day.
+  // Uses `range` (the full available date range), not `selectedRange` —
+  // same "always show the whole trend regardless of the KPI cards' date
+  // filter" convention already used by SsfbOverallTab/SongSaaOverallTab's
+  // identical monthly charts. Sorted chronologically (the client's own
+  // reference report sorts alphabetically by month name — a Looker Studio
+  // default, not a deliberate choice — so this deliberately doesn't match
+  // that ordering).
+  const purchaseByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => soraDayCombined(s, d)?.purchase ?? 0);
+  const revenueByMonth  = monthlyBuckets(sem, range?.from, range?.to, (s, d) => soraDayCombined(s, d)?.revenue ?? 0);
+
   return (
     <div>
       {/* Add To Cart Value card removed for now (Aug 2026, client request) —
@@ -1881,10 +1895,50 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
         </div>
       </div>
 
+      {/* Total Purchases/Revenue By Month */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={purchaseByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revenueByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Revenue" fill="#1877F2" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs. Total Direct Revenue/Total Direct Purchases are the site's own GA4 ecommerce numbers (every channel, not just ad-attributed) — distinct from the ad-platform-attributed Purchases/Revenue above. Item View is Google Ads' account-level "all conversions" figure. Traffic is a blended cross-platform figure: Meta Landing Page Views + Google Ads Clicks.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs. Total Direct Revenue/Total Direct Purchases are the site's own GA4 ecommerce numbers (every channel, not just ad-attributed) — distinct from the ad-platform-attributed Purchases/Revenue above. Item View is Google Ads' account-level "all conversions" figure. Traffic is a blended cross-platform figure: Meta Landing Page Views + Google Ads Clicks. Total Purchases/Revenue By Month use the same ad-platform-attributed figures as the daily trend charts above (not the GA4 "Direct" numbers), and always show the full available history regardless of the date-range picker. Data is only available from March 2026 onward — ask if you'd like January/February included too.
       </p>
     </div>
   );
