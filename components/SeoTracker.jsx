@@ -19,7 +19,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ArrowLeft, Minus, Lock, Check, Clock, ChevronDown, ExternalLink, PieChart, Sparkles, Search, Loader2, Eye, MousePointerClick, Percent, TrendingUp, Users, UserPlus, Target, DollarSign, Activity, ShoppingCart, Receipt, Banknote, Printer, X, FileText, BarChart3, Megaphone } from "lucide-react";
 
 // ── Persistence shim ─────────────────────────────────────────────────────────
 // In Claude's artifact runtime, window.storage is provided by the host. Outside
@@ -1353,6 +1353,29 @@ function soraDayCombined(sem, date) {
     purchase: (d.google?.purchase ?? 0) + (d.meta?.purchases ?? 0),
     addToCart: (d.google?.addToCart ?? 0) + (d.meta?.addToCart ?? 0),
     revenue: (d.meta?.purchaseValue ?? 0) + (d.google?.purchaseValue ?? 0),
+    // Add To Cart Value — same combined-platform shape as Revenue above,
+    // just the AddToCart pixel/conversion-action's $ value instead of
+    // Purchase's. Both action_values_*/all_conversions_value fields were
+    // already fetched for addToCart's count (see lib/sem.js) — just never
+    // summed into a headline figure until now.
+    addToCartValue: (d.meta?.addToCartValue ?? 0) + (d.google?.addToCartValue ?? 0),
+    // Total Direct Revenue / Total Direct Purchases — the site's own GA4
+    // ecommerce numbers (every channel, not just ad-attributed) — see
+    // directRevenue/directPurchases in lib/sem.js. Confirmed against the
+    // client's Looker dashboard, Aug 2026.
+    directRevenue: d.directRevenue ?? 0,
+    directPurchases: d.directPurchases ?? 0,
+    // Item View — confirmed against the client's Looker dashboard (Aug
+    // 2026) to be Google Ads' account-level all_conversions bucket, NOT an
+    // isolated "view_item" action (Sora's Google Ads account has no such
+    // action — only view_item_list, a different metric).
+    itemView: d.google?.allConversions ?? 0,
+    // Traffic — confirmed against the client's Looker dashboard (Aug 2026)
+    // to be a deliberately blended, cross-platform figure: Meta's Landing
+    // Page View pixel event + Google Ads' own click count (NOT the combined
+    // Google+Meta `d.clicks` used elsewhere — Meta's raw clicks aren't part
+    // of this figure at all, only its landing-page-view event is).
+    traffic: (d.meta?.landingPageViews ?? 0) + (d.google?.clicks ?? 0),
   };
 }
 
@@ -1486,6 +1509,45 @@ function MetaMark({ size = 15 }) {
       <circle cx="18" cy="18" r="18" fill="#1877F2" />
       <path fill="#fff" d="M20.1 28V19.6h2.8l.42-3.3h-3.22v-2.1c0-.95.26-1.6 1.63-1.6h1.74v-2.94A23.6 23.6 0 0 0 20.9 9.5c-2.7 0-4.55 1.65-4.55 4.68v2.12h-3.05v3.3h3.05V28h3.75z" />
     </svg>
+  );
+}
+
+// Grouped KPI box with an icon-badge header — Sora's Summary tab spec
+// ("Overall Performance" / "Brand Awareness"), matching the client's own
+// reference report. `rows` is an array of KPI-row arrays: each row renders
+// as its own label/value grid, with a rule between rows so a client-spec
+// "extra row" (e.g. Overall Performance's Add To Cart/Total Direct Revenue/
+// Total Direct Purchases/Item View row) reads as clearly grouped-but-distinct
+// rather than blending into one undifferentiated 8-up grid.
+function PerformanceGroupBox({ icon: Icon, iconColor, title, rows }) {
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center gap-2.5 px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <span className="rounded-md flex items-center justify-center shrink-0" style={{ width: 28, height: 28, background: iconColor }}>
+          <Icon size={15} color="#fff" />
+        </span>
+        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">{title}</h3>
+      </div>
+      <div className="px-5 py-4">
+        {rows.map((row, ri) => (
+          <div
+            key={ri}
+            className={`grid grid-cols-2 lg:grid-cols-4 gap-4${ri > 0 ? " mt-4 pt-4" : ""}`}
+            style={ri > 0 ? { borderTop: `1px solid ${C.line}` } : undefined}
+          >
+            {row.map((k) => (
+              <div key={k.label} className="min-w-0">
+                <div style={{ color: C.muted, fontSize: 12.5 }} className="truncate">{k.label}</div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span style={{ color: C.ink, fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} className="truncate">{k.value}</span>
+                  {k.delta != null && <Delta value={k.delta} suffix="%" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1726,16 +1788,39 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
     google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue, addToCart: curGoogle.addToCart } : null,
   } : null;
 
-  const kpis = cur ? [
-    { label: "Amount Spent",     value: fmtTHB(cur.spend),   delta: dPct("spend") },
-    { label: "Purchase",         value: fmt(cur.purchase),   delta: dPct("purchase") },
-    { label: "Revenue",          value: fmtTHB(cur.revenue), delta: dPct("revenue") },
-    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
-    { label: "Add To Cart",      value: fmt(cur.addToCart),  delta: dPct("addToCart") },
-    { label: "Total Impression", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+  // Two titled boxes (client spec, matching their own reference report) —
+  // "Overall Performance" (spend/purchase/revenue shape, row 2 added Aug
+  // 2026: Add To Cart plus the three metrics below) and "Brand Awareness"
+  // (impression/click shape). See soraDayCombined for where
+  // directRevenue/directPurchases/itemView/traffic/addToCartValue come from.
+  const overallRow1 = cur ? [
+    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
+    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase") },
+    { label: "Revenue",      value: fmtTHB(cur.revenue), delta: dPct("revenue") },
+    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+  ] : [];
+  const overallRow2 = cur ? [
+    { label: "Add To Cart",             value: fmt(cur.addToCart),         delta: dPct("addToCart") },
+    // Total Direct Revenue/Purchases — the site's own GA4 ecommerce numbers
+    // (every channel, not just ad-attributed) — see soraDayCombined.
+    { label: "Total Direct Revenue",    value: fmtTHB(cur.directRevenue),   delta: dPct("directRevenue") },
+    { label: "Total Direct Purchases",  value: fmt(cur.directPurchases),    delta: dPct("directPurchases") },
+    // Item View — Google Ads' account-level all_conversions bucket per the
+    // client's own Looker dashboard, not an isolated "view_item" action
+    // (Sora's account has none) — see soraDayCombined.
+    { label: "Item View",               value: fmt(cur.itemView),           delta: dPct("itemView") },
+  ] : [];
+  const brandRow1 = cur ? [
+    { label: "Total Impression", value: fmt(cur.impressions),  delta: dPct("impressions") },
+    { label: "Total Avg CTR",    value: `${ctr.toFixed(2)}%`,  delta: pctDelta(ctr, prevCtr) },
     { label: "Total Avg CPM",    value: cpm != null ? fmtTHB(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Total Clicks",     value: fmt(cur.clicks),     delta: dPct("clicks") },
+    { label: "Total Clicks",     value: fmt(cur.clicks),       delta: dPct("clicks") },
+  ] : [];
+  // Traffic — a deliberately blended, cross-platform figure (Meta Landing
+  // Page Views + Google Ads clicks), per the client's Looker dashboard —
+  // see soraDayCombined.
+  const brandRow2 = cur ? [
+    { label: "Traffic", value: fmt(cur.traffic), delta: dPct("traffic") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -1746,20 +1831,25 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
 
   return (
     <div>
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k, i) => (
-          <SemMetricCard
-            key={k.label}
-            label={k.label}
-            value={k.value}
-            delta={k.delta}
-            tint={i % 2 === 0}
-            accent={C.accent}
-            sourceIcon={<span className="flex items-center gap-1"><GoogleG size={13} /><MetaMark size={13} /></span>}
-            sourceLabel="Google Ads + Meta Ads"
-          />
-        ))}
+      {/* Add to Cart Value — a standalone single-figure card (client spec),
+          alongside the two grouped performance boxes rather than inside
+          either of them. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <SemMetricCard
+          label="Add To Cart Value"
+          value={cur ? fmtTHB(cur.addToCartValue) : "—"}
+          delta={cur ? dPct("addToCartValue") : null}
+          tint
+          accent={C.accent}
+          sourceIcon={<span className="flex items-center gap-1"><GoogleG size={13} /><MetaMark size={13} /></span>}
+          sourceLabel="Google Ads + Meta Ads"
+        />
+      </div>
+
+      {/* Two grouped performance boxes */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" rows={[overallRow1, overallRow2]} />
+        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" rows={[brandRow1, brandRow2]} />
       </div>
 
       {/* Daily trend charts */}
@@ -1805,7 +1895,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs. Total Direct Revenue/Total Direct Purchases are the site's own GA4 ecommerce numbers (every channel, not just ad-attributed) — distinct from the ad-platform-attributed Purchases/Revenue above. Item View is Google Ads' account-level "all conversions" figure. Traffic is a blended cross-platform figure: Meta Landing Page Views + Google Ads Clicks.
       </p>
     </div>
   );
