@@ -1559,15 +1559,17 @@ function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, for
   );
 }
 
-// Ad creatives panel — Sora's Meta tab spec. Thumbnails come from Windsor's
-// `thumbnail_url` (see fetchMetaCreatives in lib/sem.js) — real Facebook CDN
-// URLs, but SIGNED and time-limited (they carry an expiry param), not
-// permanent links, so a broken thumbnail on an old/reloaded page is an
-// expected occasional failure, not a bug — onError swaps it for a "No
-// preview" placeholder rather than a broken-image icon. Ranked by CTR
-// descending (matching the client's own reference report's default sort),
-// capped to the top 12 so one busy account's ad count doesn't overwhelm the
-// tab.
+// Ad creatives panel — originally Sora's Meta tab spec, now shared by every
+// client's Meta-flavored tab that has Meta ad spend (see fetchMetaCreatives
+// in lib/sem.js, which is already keyed by client). Thumbnails come from
+// Windsor's `thumbnail_url` — real Facebook CDN URLs, but SIGNED and
+// time-limited (they carry an expiry param), not permanent links, so a
+// broken thumbnail on an old/reloaded page is an expected occasional
+// failure, not a bug — onError swaps it for a "No preview" placeholder
+// rather than a broken-image icon. Ranked by CTR descending (matching
+// Sora's reference report's default sort — kept as the default for every
+// client absent a client-specific spec saying otherwise), capped to the
+// top 18 so one busy account's ad count doesn't overwhelm the tab.
 function CreativesPanel({ rows }) {
   const CAP = 18;
   const ranked = [...rows]
@@ -2221,7 +2223,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach }) {
+function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2315,6 +2317,11 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach }) {
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtVND} fmtCpc={fmtVND} />
+
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Revenue and ROAS use Meta's own Pixel Purchase value, not the combined Overall-tab figure.
@@ -2432,7 +2439,7 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
 // SSFB's Cost Per LPV/Cost Per Link Click. Cost Per Whatsapp Message
 // follows that same precedent: total account spend, not just the
 // WhatsApp campaigns' own spend.
-function SongSaaOverallTab({ client, selectedRange, range, semData }) {
+function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2536,6 +2543,11 @@ function SongSaaOverallTab({ client, selectedRange, range, semData }) {
         <BarBlock title="Clicks Per Month" data={clicksTrend} />
       </div>
 
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp), same scope as the Messaging Conversation Started chart below; every other figure here (including the Clicks chart) is account-wide across all Meta campaigns. This account's Google Ads spend is intentionally not included anywhere in this report (per the client, Aug 2026) — the doc's spec is Meta-only.
       </p>
@@ -2588,7 +2600,7 @@ function SsfbNoDataCard({ label }) {
   );
 }
 
-function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
+function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2696,6 +2708,11 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach }) {
         <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
       </div>
 
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in INR — this account's native billing currency, not converted to USD. Profile Followers is daily net new followers gained (not a running total — Instagram's API only exposes a "today" snapshot for the lifetime total, not a queryable history) from Windsor's separate <code>instagram</code> connector, and is itself limited by Instagram to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector — a different connector than Profile Followers, so its history isn't subject to the same 30-day window.
       </p>
@@ -2776,7 +2793,7 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
 // SsfbOverallTab rather than a shared/parameterized component, matching
 // this file's existing convention of one component per client even where
 // the shape overlaps heavily (see Sora vs. Azerai).
-function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
+function SsshOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2880,6 +2897,11 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
         <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
       </div>
 
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector — a different connector than Profile Followers, so its history isn't subject to the same 30-day window.
       </p>
@@ -2897,7 +2919,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach }) {
 // counts). Derived from the SAME campaign-level messagingConversations
 // field Song Saa's report uses (see lib/sem.js) — just summed across every
 // campaign instead of filtering by name, so no new fetch was needed.
-function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach }) {
+function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2962,6 +2984,11 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach }
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -3099,7 +3126,7 @@ function SummaryTab({ client, selectedRange, range, semData }) {
 /*  sub-tab (the combined Google+Meta view above, formerly "the SEM     */
 /*  tab") under the SEM service tab.                                    */
 /* ------------------------------------------------------------------ */
-function MetaTab({ client, selectedRange, range, semData, liveReach }) {
+function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
@@ -3208,6 +3235,11 @@ function MetaTab({ client, selectedRange, range, semData, liveReach }) {
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} />
+
+      {/* Ad creatives */}
+      <div className="mt-5">
+        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).{cur?.spendPending ? " This account bills in a non-USD currency — Amount Spent is pending FX conversion." : ""}
@@ -5331,9 +5363,10 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   }, [activeSemRange?.from, activeSemRange?.to]);
 
   // Meta ad creatives (thumbnail + name + performance), for the exact
-  // selected range — see fetchMetaCreatives in lib/sem.js. Only Sora's Meta
-  // tab reads this (client spec) via the metaCreatives prop, but fetched
-  // generically here like metaCountry/googleCountry above.
+  // selected range — see fetchMetaCreatives in lib/sem.js. Fetched once here
+  // (already keyed by every client with Meta spend, not just Sora) and read
+  // by every client's Meta-flavored tab via the metaCreatives prop, same as
+  // metaCountry/googleCountry above.
   const [metaCreatives, setMetaCreatives] = useState(null); // { [client]: [{ adName, adSetName, campaign, thumbnailUrl, impressions, linkClicks }] } | null
   useEffect(() => {
     if (!activeSemRange) return;
@@ -5512,13 +5545,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           SsfbCampaignTab below. Six Senses Shaharut shares the same Overall
           shape (see SsshOverallTab) but has no Campaign Performance tab. */}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
       {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
         <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
       )}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Shaharut" && (
-        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
 
       {/* Sora Sukhumvit and Azerai (both properties) each have their own
@@ -5528,14 +5561,14 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "sem" && semSub === "summary" && (
         client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} metaCreatives={metaCreatives} />
+        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "meta" && (
         client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
-        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
       {service === "sem" && semSub === "google" && (
         client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleCountry={googleCountry} />

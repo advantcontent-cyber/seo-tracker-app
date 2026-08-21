@@ -1,8 +1,9 @@
 // GET /api/sem-creatives?from=2026-08-01&to=2026-08-14
 // Meta ad creatives (thumbnail + name + performance) for the exact selected
-// SEM date range — see fetchMetaCreatives in lib/sem.js. Only Sora's Meta
-// tab uses this today (client spec), fetched on-demand like /api/sem-country
-// rather than baked into /api/sem's broad daily pull.
+// SEM date range — see fetchMetaCreatives in lib/sem.js. Returns every
+// client with Meta spend (keyed by client name), read by each client's
+// Meta-flavored SEM tab; fetched on-demand like /api/sem-country rather
+// than baked into /api/sem's broad daily pull.
 
 import { fetchMetaCreatives } from "../../../lib/sem";
 
