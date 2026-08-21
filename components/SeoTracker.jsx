@@ -1542,6 +1542,7 @@ function PerformanceGroupBox({ icon: Icon, iconColor, title, rows }) {
                   <span style={{ color: C.ink, fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} className="truncate">{k.value}</span>
                   {k.delta != null && <Delta value={k.delta} suffix="%" />}
                 </div>
+                {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1 leading-snug">{k.note}</div>}
               </div>
             ))}
           </div>
@@ -2262,6 +2263,8 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
   const cpm     = cur && !cur.spendPending && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
   const prevCpm = prev && !prev.spendPending && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
+  const roas     = cur && !cur.spendPending && cur.spend ? cur.revenue / cur.spend : null;
+  const prevRoas = prev && !prev.spendPending && prev.spend ? prev.revenue / prev.spend : null;
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
   const googleOf = (sem, d) => sem.daily?.[d]?.google;
@@ -2274,15 +2277,25 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
     google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue, addToCart: curGoogle.addToCart } : null,
   } : null;
 
-  const kpis = cur ? [
-    { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (Google's USD leg this range)" : undefined },
-    { label: "Purchases",        value: fmt(cur.purchase),   delta: dPct("purchase") },
-    { label: "Revenue",          value: fmtVND(cur.revenue), delta: dPct("revenue") },
-    { label: "Add To Cart",      value: fmt(cur.addToCart),  delta: dPct("addToCart") },
-    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Total Avg. CTR",   value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",              value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Total Click",      value: fmt(cur.clicks),     delta: dPct("clicks") },
+  // Two titled boxes (client spec, matching their own reference report) —
+  // same "Overall Performance"/"Brand Awareness" shape as Sora's Summary
+  // tab, but Azerai's own reference report has only a single extra metric
+  // in each box's second row (Add To Cart; no Traffic row here) rather than
+  // Sora's four — no GA4 "Direct" numbers or Item View for this client.
+  const overallRow1 = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (Google's USD leg this range)" : undefined },
+    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase") },
+    { label: "Revenue",      value: fmtVND(cur.revenue), delta: dPct("revenue") },
+    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+  ] : [];
+  const overallRow2 = cur ? [
+    { label: "Add To Cart", value: fmt(cur.addToCart), delta: dPct("addToCart") },
+  ] : [];
+  const brandRow1 = cur ? [
+    { label: "Impression",     value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Total Avg. CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",            value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Total Click",    value: fmt(cur.clicks),      delta: dPct("clicks") },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -2291,20 +2304,18 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
+  // "Total Purchases By Month" — client spec, matching their own reference
+  // report (Purchases only; no monthly Revenue chart requested for Azerai).
+  // Uses `range` (the full available date range), not `selectedRange` —
+  // same convention as Sora's identical chart.
+  const purchaseByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => azeraiDayCombined(s, d)?.purchase ?? 0);
+
   return (
     <div>
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-          </div>
-        ))}
+      {/* Two grouped performance boxes */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" rows={[overallRow1, overallRow2]} />
+        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" rows={[brandRow1]} />
       </div>
 
       {/* Daily trend charts */}
@@ -2347,10 +2358,30 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
         </div>
       </div>
 
+      {/* Total Purchases By Month */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={purchaseByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Purchase/Add To Cart/Revenue read from this account's specific "Purchase"/"ClickAddRoomCheckout" conversion actions — not Google's broader "All conversions" bucket, which also sums in Begin Checkout, hotline calls, etc. and would overcount both figures (fixed Aug 2026, caught by the client). Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Purchase/Add To Cart/Revenue read from this account's specific "Purchase"/"ClickAddRoomCheckout" conversion actions — not Google's broader "All conversions" bucket, which also sums in Begin Checkout, hotline calls, etc. and would overcount both figures (fixed Aug 2026, caught by the client). Per-platform breakdowns live under the Meta and Google tabs. Total Purchases By Month always shows the full available history (from March 2026 onward) regardless of the date-range picker.
       </p>
     </div>
   );
