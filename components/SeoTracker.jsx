@@ -1831,20 +1831,9 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
 
   return (
     <div>
-      {/* Add to Cart Value — a standalone single-figure card (client spec),
-          alongside the two grouped performance boxes rather than inside
-          either of them. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <SemMetricCard
-          label="Add To Cart Value"
-          value={cur ? fmtTHB(cur.addToCartValue) : "—"}
-          delta={cur ? dPct("addToCartValue") : null}
-          tint
-          accent={C.accent}
-          sourceIcon={<span className="flex items-center gap-1"><GoogleG size={13} /><MetaMark size={13} /></span>}
-          sourceLabel="Google Ads + Meta Ads"
-        />
-      </div>
+      {/* Add To Cart Value card removed for now (Aug 2026, client request) —
+          soraDayCombined still computes cur.addToCartValue below in case
+          it comes back. */}
 
       {/* Two grouped performance boxes */}
       <div className="grid lg:grid-cols-2 gap-5">
