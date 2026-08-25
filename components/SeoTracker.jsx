@@ -332,7 +332,7 @@ const SERVICES = {
   "Six Senses Shaharut": ["sem"],
   "Le Cercle": ["sem"],
 };
-const SVC_LABEL = { seo: "SEO", sem: "SEM" };
+const SVC_LABEL = { seo: "SEO", sem: "Paid" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
 const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
