@@ -1519,7 +1519,12 @@ function MetaMark({ size = 15 }) {
 // "extra row" (e.g. Overall Performance's Add To Cart/Total Direct Revenue/
 // Total Direct Purchases/Item View row) reads as clearly grouped-but-distinct
 // rather than blending into one undifferentiated 8-up grid.
-function PerformanceGroupBox({ icon: Icon, iconColor, title, rows }) {
+function PerformanceGroupBox({ icon: Icon, iconColor, title, rows, cols = 4 }) {
+  // cols=2 keeps the grid at 2-up even on wide screens (rather than
+  // stretching to 4-up at the lg breakpoint) — for boxes with big/long
+  // numbers that get cramped and truncated at 4-up (see Six Senses's
+  // Overall Performance / Brand Awareness boxes below).
+  const gridCols = cols === 2 ? "grid-cols-2" : "grid-cols-2 lg:grid-cols-4";
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center gap-2.5 px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -1532,7 +1537,7 @@ function PerformanceGroupBox({ icon: Icon, iconColor, title, rows }) {
         {rows.map((row, ri) => (
           <div
             key={ri}
-            className={`grid grid-cols-2 lg:grid-cols-4 gap-4${ri > 0 ? " mt-4 pt-4" : ""}`}
+            className={`grid ${gridCols} gap-4${ri > 0 ? " mt-4 pt-4" : ""}`}
             style={ri > 0 ? { borderTop: `1px solid ${C.line}` } : undefined}
           >
             {row.map((k) => (
@@ -2842,6 +2847,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
           icon={BarChart3}
           iconColor={C.accent}
           title="Overall Performance"
+          cols={2}
           rows={[[
             { label: "Amount Spent", value: fmtINR2(cur.spend), delta: dPct("spend") },
             // Real field is instagram_profile_visits on the facebook (ads)
@@ -2856,6 +2862,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
           icon={Megaphone}
           iconColor="#1877F2"
           title="Brand Awareness"
+          cols={2}
           rows={[[
             // Daily NET NEW followers gained, summed over the range — not a
             // running total (Windsor only exposes the lifetime total as a
@@ -3059,6 +3066,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
           icon={BarChart3}
           iconColor={C.accent}
           title="Overall Performance"
+          cols={2}
           rows={[[
             { label: "Amount Spent", value: fmtMoney2(cur.spend), delta: dPct("spend") },
             // Real field is instagram_profile_visits on the facebook (ads)
@@ -3073,6 +3081,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
           icon={Megaphone}
           iconColor="#1877F2"
           title="Brand Awareness"
+          cols={2}
           rows={[[
             // Daily NET NEW followers gained, summed over the range — not a
             // running total (Windsor only exposes the lifetime total as a
