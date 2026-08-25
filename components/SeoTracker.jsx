@@ -226,7 +226,7 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const SERVICES = {
   "IC Khao Yai": ["seo", "sem"],
 };
-const SVC_LABEL = { seo: "SEO", sem: "SEM" };
+const SVC_LABEL = { seo: "SEO", sem: "Paid" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
 const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
