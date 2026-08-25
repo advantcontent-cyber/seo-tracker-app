@@ -2797,30 +2797,6 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
   const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
-  const kpis = cur ? [
-    { label: "Amount Spent",        value: fmtINR2(cur.spend),         delta: dPct("spend") },
-    // Real field is instagram_profile_visits on the facebook (ads)
-    // connector — NOT profile_views on the separate instagram (organic)
-    // connector, which is where the original build looked and found
-    // nothing. Caught by the client, Aug 2026 — see lib/sem.js.
-    { label: "IG Profile Visits",   value: fmt(cur.igProfileVisits),   delta: dPct("igProfileVisits") },
-    { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
-    { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
-    { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
-    { label: "Reach",               value: fmt(reach),             delta: reachDPct },
-    { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",                 value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtINR(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
-    // Daily NET NEW followers gained, summed over the range — not a running
-    // total (Windsor/Instagram don't expose a real historical trend for the
-    // running total, only a "today" snapshot — see clientForIgAccount in
-    // lib/sem.js). Instagram's API only covers the last 30 days excluding
-    // today, so a selected range older than that will read 0 here — that's
-    // "not available", not "no growth" — see the footnote below.
-    { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
-  ] : [];
-
   const days = dateRange(range?.from, range?.to);
   const lpvTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.landingPageViews);
   const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.linkClicks);
@@ -2828,7 +2804,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
-  const BarBlock = ({ title, data }) => (
+  const BarBlock = ({ title, data, color }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
@@ -2841,35 +2817,83 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
             <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-            <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color || accent} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
     </div>
   );
 
+  // Cost-efficiency trio — a decrease is the good direction for all three,
+  // so Delta gets invert=true (matches the client's reference: a falling
+  // cost figure renders green with a down arrow, not red).
+  const costRows = [
+    { label: "CPM", value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtINR(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+  ];
+
   return (
     <div>
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
-        ))}
+      {/* Overall Performance / Brand Awareness — same grouped-box pattern as
+          Sora/Azerai's Summary tab (PerformanceGroupBox above) */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <PerformanceGroupBox
+          icon={BarChart3}
+          iconColor={C.accent}
+          title="Overall Performance"
+          rows={[[
+            { label: "Amount Spent", value: fmtINR2(cur.spend), delta: dPct("spend") },
+            // Real field is instagram_profile_visits on the facebook (ads)
+            // connector — NOT profile_views on the separate instagram
+            // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
+            { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
+            { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
+            { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews") },
+          ]]}
+        />
+        <PerformanceGroupBox
+          icon={Megaphone}
+          iconColor="#1877F2"
+          title="Brand Awareness"
+          rows={[[
+            // Daily NET NEW followers gained, summed over the range — not a
+            // running total (Windsor only exposes the lifetime total as a
+            // non-historical "today" snapshot — see clientForIgAccount in
+            // lib/sem.js). Limited to the last 30 days excluding today by
+            // Instagram's API — a selected range older than that reads 0
+            // because the data isn't available, not because there was no
+            // growth — see the footnote below.
+            { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
+            { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
+            { label: "Reach", value: fmt(reach), delta: reachDPct },
+            { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
+          ]]}
+        />
       </div>
 
-      {/* Monthly bar charts */}
-      <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} />
-        <BarBlock title="Total Click Per Month" data={clicksTrend} />
+      {/* Cost efficiency + Landing Page Views trend */}
+      <div className="grid lg:grid-cols-[280px_1fr] gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-4">
+            {costRows.map((k, i) => (
+              <div key={k.label} className={i > 0 ? "mt-4 pt-4" : ""} style={i > 0 ? { borderTop: `1px solid ${C.line}` } : undefined}>
+                <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span style={{ color: C.ink, fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+                  {k.delta != null && <Delta value={k.delta} suffix="%" invert />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color="#22C1D6" />
       </div>
+
+      {/* Clicks + IG visits trend */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
+        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color="#A78BE0" />
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
       </div>
 
       {/* Ad creatives */}
@@ -2990,26 +3014,6 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
   const reachPrev = liveReach?.previous?.[client.name] ?? prev?.reach ?? null;
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
 
-  const kpis = cur ? [
-    { label: "Amount Spent",        value: fmtMoney2(cur.spend),       delta: dPct("spend") },
-    // Real field is instagram_profile_visits on the facebook (ads)
-    // connector — NOT profile_views on the separate instagram (organic)
-    // connector, which is where the original build looked and found
-    // nothing. Caught by the client, Aug 2026 — see lib/sem.js.
-    { label: "IG Profile Visits",   value: fmt(cur.igProfileVisits),   delta: dPct("igProfileVisits") },
-    { label: "Link Clicks",         value: fmt(cur.linkClicks),        delta: dPct("linkClicks") },
-    { label: "Landing Page Views",  value: fmt(cur.landingPageViews),  delta: dPct("landingPageViews") },
-    { label: "Impressions",         value: fmt(cur.impressions),       delta: dPct("impressions") },
-    { label: "Reach",               value: fmt(reach),             delta: reachDPct },
-    { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",                 value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtMoney(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
-    // See clientForIgAccount in lib/sem.js — same daily-net-new-followers /
-    // 30-day-window caveat as SSFB's identical card.
-    { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
-  ] : [];
-
   const days = dateRange(range?.from, range?.to);
   const lpvTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.landingPageViews);
   const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.linkClicks);
@@ -3017,7 +3021,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
-  const BarBlock = ({ title, data }) => (
+  const BarBlock = ({ title, data, color }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
@@ -3030,35 +3034,83 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
             <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-            <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color || accent} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
     </div>
   );
 
+  // Cost-efficiency trio — a decrease is the good direction for all three,
+  // so Delta gets invert=true (matches the client's reference: a falling
+  // cost figure renders green with a down arrow, not red).
+  const costRows = [
+    { label: "CPM", value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtMoney(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+  ];
+
   return (
     <div>
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
-        ))}
+      {/* Overall Performance / Brand Awareness — same grouped-box pattern as
+          Sora/Azerai's Summary tab (PerformanceGroupBox above) */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <PerformanceGroupBox
+          icon={BarChart3}
+          iconColor={C.accent}
+          title="Overall Performance"
+          rows={[[
+            { label: "Amount Spent", value: fmtMoney2(cur.spend), delta: dPct("spend") },
+            // Real field is instagram_profile_visits on the facebook (ads)
+            // connector — NOT profile_views on the separate instagram
+            // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
+            { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
+            { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
+            { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews") },
+          ]]}
+        />
+        <PerformanceGroupBox
+          icon={Megaphone}
+          iconColor="#1877F2"
+          title="Brand Awareness"
+          rows={[[
+            // Daily NET NEW followers gained, summed over the range — not a
+            // running total (Windsor only exposes the lifetime total as a
+            // non-historical "today" snapshot — see clientForIgAccount in
+            // lib/sem.js). Limited to the last 30 days excluding today by
+            // Instagram's API — a selected range older than that reads 0
+            // because the data isn't available, not because there was no
+            // growth — see the footnote below.
+            { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
+            { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
+            { label: "Reach", value: fmt(reach), delta: reachDPct },
+            { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
+          ]]}
+        />
       </div>
 
-      {/* Monthly bar charts */}
-      <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} />
-        <BarBlock title="Total Click Per Month" data={clicksTrend} />
+      {/* Cost efficiency + Landing Page Views trend */}
+      <div className="grid lg:grid-cols-[280px_1fr] gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-4">
+            {costRows.map((k, i) => (
+              <div key={k.label} className={i > 0 ? "mt-4 pt-4" : ""} style={i > 0 ? { borderTop: `1px solid ${C.line}` } : undefined}>
+                <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span style={{ color: C.ink, fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+                  {k.delta != null && <Delta value={k.delta} suffix="%" invert />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color="#22C1D6" />
       </div>
+
+      {/* Clicks + IG visits trend */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} />
+        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color="#A78BE0" />
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
       </div>
 
       {/* Ad creatives */}
