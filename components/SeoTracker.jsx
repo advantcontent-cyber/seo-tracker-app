@@ -2319,8 +2319,8 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
     <div>
       {/* Two grouped performance boxes */}
       <div className="grid lg:grid-cols-2 gap-5">
-        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" rows={[overallRow1, overallRow2]} />
-        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" rows={[brandRow1]} />
+        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" cols={2} rows={[overallRow1, overallRow2]} />
+        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" cols={2} rows={[brandRow1]} />
       </div>
 
       {/* Daily trend charts */}
