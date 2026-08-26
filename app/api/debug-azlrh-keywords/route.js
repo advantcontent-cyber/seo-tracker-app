@@ -26,30 +26,39 @@ function isAzlrh(accountName) {
   return s.includes("azerai") && !s.includes("ke ga bay");
 }
 
+// Trying several field combinations in one call to minimize deploy round-
+// trips — the ad_group_criterion report rejects being combined with normal
+// campaign-level fields (confirmed: "can only be read from the
+// ad_group_criterion report and cannot be combined with fields outside it").
+const ATTEMPTS = [
+  { label: "keyword text + match type only", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type"] },
+  { label: "+ clicks/impressions", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions"] },
+  { label: "+ cost_micros instead of spend", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions", "cost_micros"] },
+  { label: "+ campaign name", fields: ["account_name", "campaign", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions", "cost_micros"] },
+];
+
 export async function GET() {
-  try {
-    const dateFrom = "2026-03-01";
-    const dateTo = new Date().toISOString().slice(0, 10);
+  const dateFrom = "2026-03-01";
+  const dateTo = new Date().toISOString().slice(0, 10);
+  const results = [];
 
-    const rows = await windsorGet(
-      ["account_name", "campaign", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions", "spend", "conversions", "currency"],
-      dateFrom,
-      dateTo
-    );
-
-    const azlrhRows = rows.filter((r) => isAzlrh(r.account_name));
-    const accountNames = [...new Set(rows.map((r) => r.account_name))];
-    const nonEmptyKeywordRows = azlrhRows.filter((r) => r.ad_group_criterion_keyword_text);
-
-    return Response.json({
-      ok: true,
-      totalRowsAllAccounts: rows.length,
-      accountNamesSeen: accountNames,
-      azlrhRowCount: azlrhRows.length,
-      azlrhRowsWithKeywordText: nonEmptyKeywordRows.length,
-      sampleAzlrhRows: azlrhRows.slice(0, 15),
-    });
-  } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+  for (const attempt of ATTEMPTS) {
+    try {
+      const rows = await windsorGet(attempt.fields, dateFrom, dateTo);
+      const azlrhRows = rows.filter((r) => isAzlrh(r.account_name));
+      results.push({
+        label: attempt.label,
+        fields: attempt.fields,
+        ok: true,
+        totalRowsAllAccounts: rows.length,
+        azlrhRowCount: azlrhRows.length,
+        azlrhRowsWithKeywordText: azlrhRows.filter((r) => r.ad_group_criterion_keyword_text).length,
+        sampleAzlrhRows: azlrhRows.slice(0, 10),
+      });
+    } catch (err) {
+      results.push({ label: attempt.label, fields: attempt.fields, ok: false, error: err.message });
+    }
   }
+
+  return Response.json({ results });
 }
