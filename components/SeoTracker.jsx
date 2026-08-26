@@ -2591,14 +2591,15 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
   );
 }
 
-// Song Saa Private Island — a single-tab Meta-only SEM report, per the
-// client's spec doc. Deliberately Meta-only even though this account also
-// has a real, active Google Ads account (~$1,952 spend over Mar-Aug 2026)
-// — per the client (Aug 2026), the doc's single "Overall" tab is Meta-
-// flavored (Telegram Link Click / Whatsapp Messages have no Google
-// equivalent) and Google is left out entirely rather than folded into
-// Amount Spent/Impression/CTR/CPM/Clicks. "Telegram Link Click" is the
-// doc's literal scorecard name despite actually being about WhatsApp —
+// Song Saa Private Island — originally a single-tab Meta-only SEM report
+// per the client's spec doc (they have a real, active Google Ads account,
+// ~$1,952 spend over Mar-Aug 2026, but asked in Aug 2026 to leave it out of
+// the doc's Meta-flavored "Overall" tab entirely). A later round of client
+// feedback (also Aug 2026) reversed that — Google Ads is now shown in its
+// own labeled section on this tab plus a full "Google" sub-tab (generic
+// GoogleTab, reused as-is) — see googleOf/curGoogle/googleKpis below and the
+// semSub pills. "Telegram Link Click" is the doc's literal scorecard name
+// for the Meta-side metric despite actually being about WhatsApp —
 // both it and Whatsapp Messages are filtered to this account's
 // "ClicktoWhatsapp"-named campaigns specifically (confirmed live: clicks
 // and actions_onsite_conversion_messaging_conversation_started_7d are both
@@ -2631,6 +2632,18 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
   const cpm     = cur && cur.impressions ? (cur.spend / cur.impressions) * 1000 : null;
   const prevCpm = prev && prev.impressions ? (prev.spend / prev.impressions) * 1000 : null;
 
+  // Google Ads — previously never read here at all (this account's Google
+  // spend was intentionally excluded from the report, see the note above).
+  // Per the client's Aug 2026 feedback that decision reversed; the account
+  // was already flowing into daily.google via ACCOUNT_MATCH the whole time
+  // (see lib/sem.js), so no data-layer change is needed — just reading it.
+  const googleOf = (sem, d) => sem.daily?.[d]?.google;
+  const curGoogle = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  const prevGoogle = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
+  const googleDPct = (key) => (prevGoogle && prevGoogle[key] ? Math.round(((curGoogle[key] - prevGoogle[key]) / prevGoogle[key]) * 100) : null);
+  const googleCtr = curGoogle && curGoogle.impressions ? (curGoogle.clicks / curGoogle.impressions) * 100 : 0;
+  const prevGoogleCtr = prevGoogle && prevGoogle.impressions ? (prevGoogle.clicks / prevGoogle.impressions) * 100 : null;
+
   const whatsappCampaigns = (name) => (name || "").toLowerCase().includes("clicktowhatsapp");
   const wa = (from, to) => {
     if (!from || !to) return null;
@@ -2652,6 +2665,16 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
     { label: "CTR",                      value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                      value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks") },
+    // Meta Pixel add-to-cart — a generic field already fetched for every
+    // Meta account (see lib/sem.js), just never surfaced on this tab before.
+    { label: "Add To Cart",              value: fmt(cur.addToCart), delta: dPct("addToCart") },
+  ] : [];
+
+  const googleKpis = curGoogle ? [
+    { label: "Amount Spent", value: curGoogle.spendPending ? "—" : fmtMoney(curGoogle.spend), delta: curGoogle.spendPending ? null : googleDPct("spend") },
+    { label: "Impressions",  value: fmt(curGoogle.impressions), delta: googleDPct("impressions") },
+    { label: "Clicks",       value: fmt(curGoogle.clicks), delta: googleDPct("clicks") },
+    { label: "CTR",          value: `${googleCtr.toFixed(1)}%`, delta: pctDelta(googleCtr, prevGoogleCtr) },
   ] : [];
 
   // Two monthly bar charts from the client's live Looker Studio report
@@ -2668,9 +2691,26 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
   const waMessagesTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) =>
     (s.campaigns?.[d] || []).filter((c) => c.platform === "meta" && whatsappCampaigns(c.name)).reduce((a, c) => a + (c.messagingConversations ?? 0), 0)
   );
+  // Same "ClicktoWhatsapp"-campaign filter as the Telegram Link Click KPI
+  // card above, just bucketed monthly instead of summed for the selected
+  // range — added per the client's feedback ("Add monthly Telegram Clicks
+  // to the Summary table").
+  const waClicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) =>
+    (s.campaigns?.[d] || []).filter((c) => c.platform === "meta" && whatsappCampaigns(c.name)).reduce((a, c) => a + (c.clicks ?? 0), 0)
+  );
   const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.clicks);
   const tickInterval = dayTickInterval(dateRange(range?.from, range?.to).length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  // Analyst notes — same shared component/API as SSFB/SSSH. This account now
+  // has both platforms in its facts (Google previously excluded, see above),
+  // so unlike SSFB/SSSH's meta-only shape, `google` is populated too.
+  const notesFacts = cur ? {
+    currency: "USD",
+    combined: null,
+    meta: { spend: cur.spend, impressions: cur.impressions, clicks: cur.clicks, ctr, cpm, addToCart: cur.addToCart, telegramLinkClicks: curWa?.clicks ?? 0, whatsappMessages: curWa?.messages ?? 0, costPerWhatsappMessage: costPerMessage },
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, impressions: curGoogle.impressions, clicks: curGoogle.clicks, ctr: googleCtr } : null,
+  } : null;
 
   const BarBlock = ({ title, data }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -2711,14 +2751,42 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
         <BarBlock title="Messaging Conversation Started Per Month" data={waMessagesTrend} />
         <BarBlock title="Clicks Per Month" data={clicksTrend} />
       </div>
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBlock title="Telegram Link Click Per Month" data={waClicksTrend} />
+      </div>
+
+      {/* Google Ads — see the notes on googleOf/curGoogle above for why this
+          wasn't here before. Kept as its own clearly-labeled section rather
+          than merged into the Meta KPI grid above, so it's never mistaken
+          for a combined/blended figure. */}
+      <div className="mt-5">
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold mb-3">Google Ads</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {googleKpis.map((k, i) => (
+            <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+              <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+              <div className="flex items-baseline gap-2 mt-1.5">
+                <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+                {k.delta != null && <Delta value={k.delta} suffix="%" />}
+              </div>
+              {k.label === "Amount Spent" && curGoogle?.spendPending && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">Pending FX conversion (billed in a non-USD currency)</div>}
+            </div>
+          ))}
+        </div>
+        <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-3">
+          See the Google tab above for the full campaign-level breakdown.
+        </p>
+      </div>
 
       {/* Ad creatives */}
       <div className="mt-5">
         <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
       </div>
 
+      <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
+
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp), same scope as the Messaging Conversation Started chart below; every other figure here (including the Clicks chart) is account-wide across all Meta campaigns. This account's Google Ads spend is intentionally not included anywhere in this report (per the client, Aug 2026) — the doc's spec is Meta-only.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD. Telegram Link Click and Whatsapp Messages are filtered to this account's "ClicktoWhatsapp"-named campaigns specifically (the doc's own scorecard name for the first one, despite it being about WhatsApp), same scope as the Messaging Conversation Started and Telegram Link Click charts; every other figure here (including the Clicks chart) is account-wide across all Meta campaigns. Google Ads figures above are this account's real, active Google Ads spend (previously excluded from this report; re-added per the client's Aug 2026 feedback) — see the Google tab for the full breakdown.
       </p>
     </div>
   );
@@ -5746,7 +5814,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
               : client.name === "Six Senses Shaharut"
               ? [["overall", "Overall"]]
-              : (client.name === "Song Saa Private Island" || client.name === "Le Cercle")
+              : client.name === "Song Saa Private Island"
+              // Google Ads was intentionally excluded from this report until
+              // the client's Aug 2026 feedback asked for it back — see
+              // SongSaaOverallTab. Le Cercle stays Meta-only for real (no
+              // Google Ads account exists for it), so it keeps just Overall.
+              ? [["summary", "Overall"], ["google", "Google"]]
+              : client.name === "Le Cercle"
               ? [["summary", "Overall"]]
               : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
             ).map(([id, label]) => (
