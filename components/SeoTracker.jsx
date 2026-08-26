@@ -3078,6 +3078,16 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
     { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtMoney2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
   ];
 
+  // Analyst notes — same shared component/API as SSFB's Overall tab, same
+  // Meta-only shape (this account also has no Google leg), just USD instead
+  // of INR.
+  const notesFacts = cur ? {
+    currency: "USD",
+    combined: null,
+    meta: { spend: cur.spend, igProfileVisits: cur.igProfileVisits, linkClicks: cur.linkClicks, landingPageViews: cur.landingPageViews, impressions: cur.impressions, reach, newFollowers: cur.newFollowers, ctr, cpm, costPerLandingPageView: costPerLpv, costPerLinkClick },
+    google: null,
+  } : null;
+
   return (
     <div>
       {/* Overall Performance / Brand Awareness — same grouped-box pattern as
@@ -3147,6 +3157,8 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
       <div className="mt-5">
         <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
       </div>
+
+      <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in USD — this account's native billing currency. Profile Followers is daily net new followers gained (not a running total), limited by Instagram's API to the last 30 days excluding today — a selected range older than that will read 0 here because the data isn't available, not because there was no growth. IG Profile Visits is <code>instagram_profile_visits</code> on the <code>facebook</code> (Meta Ads) connector — a different connector than Profile Followers, so its history isn't subject to the same 30-day window.

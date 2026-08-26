@@ -16,7 +16,7 @@ import { generateSemNotes } from "../../../lib/sem-narrative";
 
 export const dynamic = "force-dynamic";
 
-const SEM_CLIENTS = ["IC Khao Yai", "Nomad Greenland", "Azerai Ke Ga Bay", "Azerai La Residence, Hue", "Sora Sukhumvit", "Six Senses Fort Barwara"];
+const SEM_CLIENTS = ["IC Khao Yai", "Nomad Greenland", "Azerai Ke Ga Bay", "Azerai La Residence, Hue", "Sora Sukhumvit", "Six Senses Fort Barwara", "Six Senses Shaharut"];
 
 export async function POST(req) {
   const supabase = await createServerSupabase();
