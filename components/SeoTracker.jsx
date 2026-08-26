@@ -2810,8 +2810,12 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
     { label: "Reach",               value: fmt(reach),             delta: reachDPct },
     { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                 value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtINR(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    // fmtINR2 (2 decimals), not fmtINR — these are sub-₹1 figures for this
+    // account (e.g. ₹0.48 Cost Per Link Click) and Math.round()'d fmtINR
+    // was flooring them straight to ₹0, hiding real nonzero data. Confirmed
+    // against the client's own Looker Studio reference report (Aug 2026).
+    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtINR2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtINR2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
     // Daily NET NEW followers gained, summed over the range — not a running
     // total (Windsor/Instagram don't expose a real historical trend for the
     // running total, only a "today" snapshot — see clientForIgAccount in
@@ -3003,8 +3007,12 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
     { label: "Reach",               value: fmt(reach),             delta: reachDPct },
     { label: "CTR",                 value: `${ctr.toFixed(2)}%`,       delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",                 value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtMoney(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    // fmtMoney2 (2 decimals), not fmtMoney — same rounds-to-0 bug confirmed
+    // live on this tab (Cost per Landing Page Views / Cost per Link Clicks
+    // both showed $0), see the matching fix + comment on SSFB's identical
+    // cards above.
+    { label: "Cost Per LPV",        value: costPerLpv != null ? fmtMoney2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost Per Link Click", value: costPerLinkClick != null ? fmtMoney2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
     // See clientForIgAccount in lib/sem.js — same daily-net-new-followers /
     // 30-day-window caveat as SSFB's identical card.
     { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
