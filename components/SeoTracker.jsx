@@ -2499,6 +2499,9 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaC
   );
 }
 
+// Shared by both Azerai properties (Ke Ga Bay + La Residence, Hue). The
+// Campaign Performance table below (isAzlrh) is AZLRH-only — its own Aug
+// 2026 feedback item, not part of AZKGB's separate feedback list.
 function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
@@ -2544,6 +2547,13 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
+  // Campaign Performance table — AZLRH-specific feedback item (Aug 2026),
+  // not AZKGB's (whose own feedback list is separate: Purchase/Add To Cart/
+  // Revenue chart work). Scoped by client name rather than a shared prop
+  // since this tab is shared between both Azerai properties.
+  const isAzlrh = client.name === "Azerai La Residence, Hue";
+  const campaigns = isAzlrh && selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
+
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2583,6 +2593,8 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {isAzlrh && <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtVND} fmtCpc={fmtVND} />}
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Website Purchases/Revenue/ROAS read from this account's native "Purchase" conversion action specifically — not Google's broader "All conversions" bucket (which also sums in Begin Checkout, ClickAddRoomCheckout, hotline calls, etc.), and not the account's second, likely-duplicate "azerai - GA4 (web) purchase" action (fixed Aug 2026, caught by the client). Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
