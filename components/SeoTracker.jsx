@@ -1944,7 +1944,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs. Total Direct Revenue/Total Direct Purchases are the site's own GA4 ecommerce numbers (every channel, not just ad-attributed) — distinct from the ad-platform-attributed Purchases/Revenue above. Item View is Google Ads' account-level "all conversions" figure. Traffic is a blended cross-platform figure: Meta Landing Page Views + Google Ads Clicks. Total Purchases/Revenue By Month use the same ad-platform-attributed figures as the daily trend charts above (not the GA4 "Direct" numbers), and always show the full available history regardless of the date-range picker. Data is only available from March 2026 onward — ask if you'd like January/February included too.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {cur?.currency || "THB"} — this account's native billing currency, not converted to USD. Per-platform breakdowns live under the Meta and Google tabs. Total Direct Revenue/Total Direct Purchases are the site's own GA4 ecommerce numbers (every channel, not just ad-attributed) — distinct from the ad-platform-attributed Purchases/Revenue above. Item View is Google Ads' account-level "all conversions" figure. Traffic is a blended cross-platform figure: Meta Landing Page Views + Google Ads Clicks. Total Purchases/Revenue By Month use the same ad-platform-attributed figures as the daily trend charts above (not the GA4 "Direct" numbers), and always show the full available history (from January 2026 onward) regardless of the date-range picker.
       </p>
     </div>
   );
@@ -2309,11 +2309,14 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
 
-  // "Total Purchases By Month" — client spec, matching their own reference
-  // report (Purchases only; no monthly Revenue chart requested for Azerai).
-  // Uses `range` (the full available date range), not `selectedRange` —
-  // same convention as Sora's identical chart.
-  const purchaseByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => azeraiDayCombined(s, d)?.purchase ?? 0);
+  // "Total Purchases/Revenue/Add To Cart By Month" — same shape as Sora's
+  // identical charts (Purchases/Revenue originally; Add To Cart added per
+  // AZKGB's Aug 2026 feedback). Uses `range` (the full available date
+  // range), not `selectedRange` — same "always show the whole trend
+  // regardless of the KPI cards' date filter" convention as Sora's.
+  const purchaseByMonth  = monthlyBuckets(sem, range?.from, range?.to, (s, d) => azeraiDayCombined(s, d)?.purchase ?? 0);
+  const revenueByMonth   = monthlyBuckets(sem, range?.from, range?.to, (s, d) => azeraiDayCombined(s, d)?.revenue ?? 0);
+  const addToCartByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => azeraiDayCombined(s, d)?.addToCart ?? 0);
 
   return (
     <div>
@@ -2363,20 +2366,62 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
         </div>
       </div>
 
-      {/* Total Purchases By Month */}
+      {/* Total Purchases/Revenue By Month — placed side by side per AZKGB's
+          Aug 2026 feedback ("Place the monthly Revenue chart next to the
+          monthly Purchase chart"), same layout as Sora's identical pair. */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={purchaseByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revenueByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
+                <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Revenue" fill="#1877F2" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Total Add To Cart By Month — AZKGB's Aug 2026 feedback item */}
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Add To Cart By Month</h3>
         </div>
         <div style={{ height: 240 }} className="px-2 py-4">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={purchaseByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+            <BarChart data={addToCartByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
               <CartesianGrid stroke={C.line} vertical={false} />
               <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+              <Bar dataKey="value" name="Add To Cart" fill="#5FC77E" radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: "#5FC77E", fontSize: 11, fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -2386,7 +2431,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Purchase/Add To Cart/Revenue read from this account's specific "Purchase"/"ClickAddRoomCheckout" conversion actions — not Google's broader "All conversions" bucket, which also sums in Begin Checkout, hotline calls, etc. and would overcount both figures (fixed Aug 2026, caught by the client). Per-platform breakdowns live under the Meta and Google tabs. Total Purchases By Month always shows the full available history (from March 2026 onward) regardless of the date-range picker.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — Meta bills natively in VND; Google Ads bills in USD and is converted to VND via live daily FX rates (not the client's original spec doc's fixed ×26000 multiplier — per the client, Aug 2026, live rates are more accurate). Purchase/Add To Cart/Revenue read from this account's specific "Purchase"/"ClickAddRoomCheckout" conversion actions — not Google's broader "All conversions" bucket, which also sums in Begin Checkout, hotline calls, etc. and would overcount both figures (fixed Aug 2026, caught by the client). Per-platform breakdowns live under the Meta and Google tabs. Total Purchases By Month always shows the full available history (from January 2026 onward) regardless of the date-range picker.
       </p>
     </div>
   );
