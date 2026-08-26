@@ -31,10 +31,9 @@ function isAzlrh(accountName) {
 // campaign-level fields (confirmed: "can only be read from the
 // ad_group_criterion report and cannot be combined with fields outside it").
 const ATTEMPTS = [
-  { label: "keyword text + match type only", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type"] },
-  { label: "+ clicks/impressions", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions"] },
-  { label: "+ cost_micros instead of spend", fields: ["account_name", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions", "cost_micros"] },
-  { label: "+ campaign name", fields: ["account_name", "campaign", "ad_group_criterion_keyword_text", "ad_group_criterion_keyword_match_type", "clicks", "impressions", "cost_micros"] },
+  { label: "search_term_view_search_term + clicks/impressions", fields: ["account_name", "search_term_view_search_term", "clicks", "impressions"] },
+  { label: "search_term_view_search_term + cost_micros + campaign", fields: ["account_name", "campaign", "search_term_view_search_term", "clicks", "impressions", "cost_micros"] },
+  { label: "search_term_view_search_term + match_type", fields: ["account_name", "search_term_view_search_term", "match_type", "clicks", "impressions"] },
 ];
 
 export async function GET() {
