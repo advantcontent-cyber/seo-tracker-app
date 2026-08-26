@@ -2985,7 +2985,7 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
         ))}
       </div>
 
-      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtINR} fmtCpc={fmtINR2} />
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtINR} fmtCpc={fmtINR2} maxHeight={760} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {rangeLabel}. Figures shown in INR, attributed by ad-set name (<code>adset_name</code>) — ad sets naming "India"/"IN" are bucketed as India, everything else (including "International" and the handful of US/UK/GCC-audience ad sets that predate this dashboard's date range) as International, per the client.
@@ -3611,7 +3611,10 @@ function GoogleTab({ client, selectedRange, range, semData }) {
 // which passes INR formatters via fmtSpend/fmtCpc instead of the USD
 // defaults). Reach is Meta-only (Google Ads doesn't expose it via this
 // connector — same as the account-level KPI), shown as "—" there.
-function CampaignPerformanceTable({ campaigns, rangeLabel, fmtSpend = fmtMoney, fmtCpc = fmtRevenue }) {
+// maxHeight (default 420, ~5 rows) is the scrollable list's cap before it
+// scrolls internally — SSFB asked for a taller view to reduce scrolling on
+// its own Campaign Performance tab, see that call site's override below.
+function CampaignPerformanceTable({ campaigns, rangeLabel, fmtSpend = fmtMoney, fmtCpc = fmtRevenue, maxHeight = 420 }) {
   const rows = [...campaigns].sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1));
   return (
     <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -3619,7 +3622,7 @@ function CampaignPerformanceTable({ campaigns, rangeLabel, fmtSpend = fmtMoney, 
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
         <span style={{ color: C.faint, fontSize: 12.5 }}>by amount spent · {rangeLabel}</span>
       </div>
-      <div style={{ maxHeight: 420, overflowY: "auto" }}>
+      <div style={{ maxHeight, overflowY: "auto" }}>
         <div
           className="grid items-center px-5 py-2"
           style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 0.8fr 0.8fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: "#fff" }}
