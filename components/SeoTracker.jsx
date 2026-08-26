@@ -2832,10 +2832,15 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
   // Cost-efficiency trio — a decrease is the good direction for all three,
   // so Delta gets invert=true (matches the client's reference: a falling
   // cost figure renders green with a down arrow, not red).
+  // Cost per LPV/Link Click use fmtINR2 (2 decimals), not fmtINR — these are
+  // sub-₹1 figures for this account (e.g. ₹0.48 Cost Per Link Click) and
+  // Math.round()'d fmtINR was flooring them straight to ₹0, hiding real
+  // nonzero data. Confirmed against the client's own Looker Studio
+  // reference report (Aug 2026). CPM stays fmtINR — comfortably >1.
   const costRows = [
     { label: "CPM", value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtINR(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtINR(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtINR2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtINR2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
   ];
 
   return (
@@ -3051,10 +3056,14 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
   // Cost-efficiency trio — a decrease is the good direction for all three,
   // so Delta gets invert=true (matches the client's reference: a falling
   // cost figure renders green with a down arrow, not red).
+  // Cost per LPV/Link Click use fmtMoney2 (2 decimals), not fmtMoney — same
+  // rounds-to-0 bug confirmed live on this tab (Cost per Landing Page Views
+  // / Cost per Link Clicks both showed $0), see the matching SSFB fix above.
+  // CPM stays fmtMoney — comfortably >1.
   const costRows = [
     { label: "CPM", value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtMoney(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
-    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtMoney(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
+    { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtMoney2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
+    { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtMoney2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
   ];
 
   return (
