@@ -10,13 +10,6 @@ export async function middleware(request) {
     return response;
   }
 
-  // TEMPORARY — live field discovery for AZLRH's "Top Performing Keywords"
-  // feedback item. DELETE this bypass + app/api/debug-azlrh-keywords once
-  // confirmed.
-  if (request.nextUrl.pathname === "/api/debug-azlrh-keywords") {
-    return response;
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

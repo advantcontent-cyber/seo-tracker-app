@@ -2502,7 +2502,7 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaC
 // Shared by both Azerai properties (Ke Ga Bay + La Residence, Hue). The
 // Campaign Performance table below (isAzlrh) is AZLRH-only — its own Aug
 // 2026 feedback item, not part of AZKGB's separate feedback list.
-function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
+function AzeraiGoogleTab({ client, selectedRange, range, semData, googleSearchTerms }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
 
@@ -2554,6 +2554,14 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
   const isAzlrh = client.name === "Azerai La Residence, Hue";
   const campaigns = isAzlrh && selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
 
+  // Top Performing Keywords — real keyword-level performance isn't
+  // queryable via Windsor (see fetchGoogleSearchTerms in lib/sem.js); this
+  // ranks the account's real triggered search terms instead, by clicks
+  // descending, top 15.
+  const topSearchTerms = isAzlrh
+    ? [...(googleSearchTerms?.[client.name] ?? [])].sort((a, b) => b.clicks - a.clicks).slice(0, 15)
+    : [];
+
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2595,10 +2603,49 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData }) {
       </div>
 
       {isAzlrh && <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtVND} fmtCpc={fmtVND} />}
+      {isAzlrh && <TopKeywordsTable rows={topSearchTerms} rangeLabel={rangeLabel} />}
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Website Purchases/Revenue/ROAS read from this account's native "Purchase" conversion action specifically — not Google's broader "All conversions" bucket (which also sums in Begin Checkout, ClickAddRoomCheckout, hotline calls, etc.), and not the account's second, likely-duplicate "azerai - GA4 (web) purchase" action (fixed Aug 2026, caught by the client). Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND, converted from this account's native USD billing via live daily FX rates.{cur?.spendPending ? " Pending FX conversion for part of this range." : ""} Website Purchases/Revenue/ROAS read from this account's native "Purchase" conversion action specifically — not Google's broader "All conversions" bucket (which also sums in Begin Checkout, ClickAddRoomCheckout, hotline calls, etc.), and not the account's second, likely-duplicate "azerai - GA4 (web) purchase" action (fixed Aug 2026, caught by the client). Reach and Frequency are dropped from this tab — Google Ads has no Reach metric via Windsor, unlike the doc's spec (which lists both, likely carried over from the Meta tab), so neither is computable here.{isAzlrh ? " Top Performing Keywords shows the account's real triggered search terms (Google Ads' search term report) rather than configured keyword targets — Windsor's keyword-level report can't be combined with any performance metric, confirmed live, Aug 2026 — ranked by clicks." : ""}
       </p>
+    </div>
+  );
+}
+
+// Top Performing Keywords table — AZLRH-only, see fetchGoogleSearchTerms in
+// lib/sem.js and the comment on the isAzlrh block in AzeraiGoogleTab above
+// for why this shows search terms rather than literal keyword criteria.
+function TopKeywordsTable({ rows, rangeLabel }) {
+  return (
+    <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top Performing Keywords</h3>
+        <span style={{ color: C.faint, fontSize: 12.5 }}>by clicks · {rangeLabel}</span>
+      </div>
+      <div
+        className="grid items-center px-5 py-2"
+        style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 1fr", color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}
+      >
+        <span className="uppercase">Search Term</span>
+        <span className="uppercase text-right">Clicks</span>
+        <span className="uppercase text-right">Impressions</span>
+        <span className="uppercase text-right">CTR</span>
+        <span className="uppercase text-right">Cost</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No search terms in this range.</div>
+      ) : rows.map((r, i) => {
+        const ctr = r.impressions ? (r.clicks / r.impressions) * 100 : null;
+        return (
+          <div key={r.term} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.4fr 1fr 1fr 1fr 1fr", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+            <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate" title={r.term}>{r.term}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right font-medium">{fmt(r.clicks)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmt(r.impressions)}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{ctr != null ? `${ctr.toFixed(2)}%` : "—"}</span>
+            <span style={{ color: C.muted, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }} className="text-right">{fmtVND(r.cost)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -5719,6 +5766,21 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     return () => { cancelled = true; };
   }, [activeSemRange?.from, activeSemRange?.to]);
 
+  // Top Performing Keywords (really: Google Ads search terms — see
+  // fetchGoogleSearchTerms in lib/sem.js), for the exact selected range.
+  // Currently only AZLRH's Google tab reads this — same on-demand,
+  // fetched-here-keyed-by-every-client pattern as metaCreatives above.
+  const [googleSearchTerms, setGoogleSearchTerms] = useState(null); // { [client]: [{ term, clicks, impressions, cost }] } | null
+  useEffect(() => {
+    if (!activeSemRange) return;
+    let cancelled = false;
+    fetch(`/api/sem-search-terms?from=${activeSemRange.from}&to=${activeSemRange.to}`)
+      .then((r) => r.json())
+      .then((json) => { if (!cancelled && json.ok) setGoogleSearchTerms(json.data); })
+      .catch(() => {}); // panel just stays empty if this fails
+    return () => { cancelled = true; };
+  }, [activeSemRange?.from, activeSemRange?.to]);
+
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
@@ -5919,7 +5981,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       )}
       {service === "sem" && semSub === "google" && (
         client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleCountry={googleCountry} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
         : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
       )}
 
