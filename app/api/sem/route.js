@@ -5,6 +5,14 @@
 
 import { fetchSemData } from "../../../lib/sem";
 
+// Without this, Next.js tries to prerender this route at build time (it has
+// no dynamic segments/params to disqualify it automatically) — harmless
+// under the old, smaller March-onward window, but widening dateFrom to
+// January (Aug 2026, AZKGB feedback) pushed the build-time fetch over some
+// threshold and hung the build at "Generating static pages" indefinitely.
+// Every other live-data route in app/api already has this.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const { data, dateFrom, dateTo } = await fetchSemData();
