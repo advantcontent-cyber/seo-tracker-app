@@ -1788,7 +1788,7 @@ function SoraCampaignTable({ rows, formatMoney }) {
   );
 }
 
-function SoraSummaryTab({ client, selectedRange, range, semData }) {
+function SoraSummaryTab({ client, selectedRange, compareRange, range, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
@@ -1799,7 +1799,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
     );
   }
 
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, soraDayCombined) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, soraDayCombined) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
@@ -1982,7 +1982,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry }) {
+function SoraMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCountry }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1995,7 +1995,7 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
   const currency = (selectedRange && sem.daily?.[selectedRange.to]?.currency) || "THB";
@@ -2121,7 +2121,7 @@ function SoraCreativeTab({ client, metaCreatives }) {
   );
 }
 
-function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry }) {
+function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, googleCountry }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
 
@@ -2134,7 +2134,7 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
   }
 
   const googleOf = (sem, d) => sem.daily?.[d]?.google;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
   const currency = (selectedRange && sem.daily?.[selectedRange.to]?.currency) || "THB";
@@ -2303,7 +2303,7 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
 //     Google's aren't (Google Ads has no Reach metric at all via Windsor,
 //     so Frequency = impressions/reach isn't computable either) — per the
 //     client (Aug 2026), dropped from the Google tab rather than faked.
-function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
+function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
@@ -2314,7 +2314,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
     );
   }
 
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, azeraiDayCombined) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, azeraiDayCombined) : null;
   const dPct = (key) => (cur && !cur.spendPending && prev && prev[key]) ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null;
@@ -2493,7 +2493,7 @@ function AzeraiSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
+function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2506,7 +2506,7 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaC
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
@@ -2603,7 +2603,7 @@ function AzeraiMetaTab({ client, selectedRange, range, semData, liveReach, metaC
 // Shared by both Azerai properties (Ke Ga Bay + La Residence, Hue). The
 // Campaign Performance table below (isAzlrh) is AZLRH-only — its own Aug
 // 2026 feedback item, not part of AZKGB's separate feedback list.
-function AzeraiGoogleTab({ client, selectedRange, range, semData, googleSearchTerms }) {
+function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, googleSearchTerms }) {
   const sem = semData?.[client.name];
   const accent = C.accent;
 
@@ -2616,7 +2616,7 @@ function AzeraiGoogleTab({ client, selectedRange, range, semData, googleSearchTe
   }
 
   const googleOf = (sem, d) => sem.daily?.[d]?.google;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
 
@@ -2769,7 +2769,7 @@ function TopKeywordsTable({ rows, rangeLabel }) {
 // SSFB's Cost Per LPV/Cost Per Link Click. Cost Per Whatsapp Message
 // follows that same precedent: total account spend, not just the
 // WhatsApp campaigns' own spend.
-function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreatives }) {
+function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2782,7 +2782,7 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
@@ -3002,7 +3002,7 @@ function SsfbNoDataCard({ label }) {
   );
 }
 
-function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
+function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -3015,7 +3015,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
 
@@ -3172,7 +3172,7 @@ function SsfbOverallTab({ client, selectedRange, range, semData, liveReach, meta
 // (Campaign, Amount Spent, Impressions, Reach, CTR, CPC) from the client's
 // spec, reusing the same CampaignPerformanceTable built for the generic
 // Meta/Google tabs (with INR formatters instead of its USD defaults).
-function SsfbCampaignTab({ client, selectedRange, semData }) {
+function SsfbCampaignTab({ client, selectedRange, compareRange, semData }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -3184,7 +3184,7 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
     );
   }
 
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? marketSpendInRange(sem, selectedRange.from, selectedRange.to) : null;
   const prev = prevWin ? marketSpendInRange(sem, prevWin.from, prevWin.to) : null;
   const dPct = (key) => (cur?.[key] != null && prev?.[key]) ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null;
@@ -3238,7 +3238,7 @@ function SsfbCampaignTab({ client, selectedRange, semData }) {
 // SsfbOverallTab rather than a shared/parameterized component, matching
 // this file's existing convention of one component per client even where
 // the shape overlaps heavily (see Sora vs. Azerai).
-function SsshOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
+function SsshOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -3251,7 +3251,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
 
@@ -3410,7 +3410,7 @@ function SsshOverallTab({ client, selectedRange, range, semData, liveReach, meta
 // counts). Derived from the SAME campaign-level messagingConversations
 // field Song Saa's report uses (see lib/sem.js) — just summed across every
 // campaign instead of filtering by name, so no new fetch was needed.
-function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
+function LeCercleOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -3423,7 +3423,7 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach, 
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
 
@@ -3489,7 +3489,7 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach, 
   );
 }
 
-function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
+function SummaryTab({ client, selectedRange, compareRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
@@ -3500,7 +3500,7 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
     );
   }
 
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, dayCombined) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, dayCombined) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
@@ -3781,7 +3781,7 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
 /*  sub-tab (the combined Google+Meta view above, formerly "the SEM     */
 /*  tab") under the SEM service tab.                                    */
 /* ------------------------------------------------------------------ */
-function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreatives }) {
+function MetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
@@ -3794,7 +3794,7 @@ function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreativ
   }
 
   const metaOf = (sem, d) => sem.daily?.[d]?.meta;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
@@ -3919,7 +3919,7 @@ function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreativ
 /*  CTR, Amount Spent, Click Book). Sits alongside Summary and Meta      */
 /*  under the SEM service tab.                                          */
 /* ------------------------------------------------------------------ */
-function GoogleTab({ client, selectedRange, range, semData }) {
+function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const sem = semData?.[client.name];
   const accent = C.accent; // matches the Google Ads accent used in Summary
 
@@ -3932,7 +3932,7 @@ function GoogleTab({ client, selectedRange, range, semData }) {
   }
 
   const googleOf = (sem, d) => sem.daily?.[d]?.google;
-  const prevWin = selectedRange ? prevWindow(selectedRange.from, selectedRange.to) : null;
+  const prevWin = compareRange;
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
@@ -6058,11 +6058,44 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     setSemRangeSel((r) => { const from = r?.from ?? semRange.from; return { from: to < from ? to : from, to }; });
   };
 
+  // Compare date range for the SEM tabs' KPI deltas — a second, independently
+  // pickable range (like GA4's date picker "Compare" row), replacing the old
+  // fixed "always the immediately preceding period" behavior with a manually
+  // adjustable one. Defaults to — and keeps auto-following — the immediately
+  // preceding period of equal length (prevWindow) every time the main range
+  // changes, UNTIL the user manually edits either Compare date, at which
+  // point it becomes sticky (compareTouched) and stops auto-following, so a
+  // deliberately-picked comparison (e.g. a specific earlier campaign period)
+  // doesn't get silently overwritten. Only the tabs' KPI deltas read this —
+  // no previous-period raw numbers are shown anywhere, per the client's Aug
+  // 2026 request.
+  const [compareRangeSel, setCompareRangeSel] = useState(null); // { from, to } | null
+  const [compareTouched, setCompareTouched] = useState(false);
+  useEffect(() => {
+    if (activeSemRange && !compareTouched) {
+      setCompareRangeSel(prevWindow(activeSemRange.from, activeSemRange.to));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSemRange?.from, activeSemRange?.to, compareTouched]);
+  const activeCompareRange = compareRangeSel;
+  const setCompareFrom = (v) => {
+    if (!v || !semRange) return;
+    setCompareTouched(true);
+    const from = v < semRange.from ? semRange.from : v > semRange.to ? semRange.to : v;
+    setCompareRangeSel((r) => { const to = r?.to ?? from; return { from, to: from > to ? from : to }; });
+  };
+  const setCompareTo = (v) => {
+    if (!v || !semRange) return;
+    setCompareTouched(true);
+    const to = v < semRange.from ? semRange.from : v > semRange.to ? semRange.to : v;
+    setCompareRangeSel((r) => { const from = r?.from ?? to; return { from: to < from ? to : from, to }; });
+  };
+
   // True (deduplicated) Meta Reach for the exact selected range + its
-  // previous-period comparison — see fetchMetaReach in lib/sem.js for why
+  // compare-range comparison — see fetchMetaReach in lib/sem.js for why
   // this can't be derived from semData's daily rows. Fetched fresh
-  // whenever the date-range picker changes; every tab that shows Reach/
-  // Frequency (MetaTab, SoraMetaTab, AzeraiMetaTab, SsfbOverallTab,
+  // whenever the date-range or compare-range picker changes; every tab that
+  // shows Reach/Frequency (MetaTab, SoraMetaTab, AzeraiMetaTab, SsfbOverallTab,
   // SsshOverallTab, LeCercleOverallTab) reads from this via the
   // liveReach prop, falling back to the (overcounting) summed value from
   // semData while a fetch is in flight or if it fails — better to show a
@@ -6070,10 +6103,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
   const [liveReach, setLiveReach] = useState(null); // { current: {client: reach}, previous: {client: reach} } | null
   useEffect(() => {
     if (!activeSemRange) return;
-    const prevWin = prevWindow(activeSemRange.from, activeSemRange.to);
     const rangesParam = [
       `${activeSemRange.from}:${activeSemRange.to}`,
-      prevWin ? `${prevWin.from}:${prevWin.to}` : null,
+      activeCompareRange ? `${activeCompareRange.from}:${activeCompareRange.to}` : null,
     ].filter(Boolean).join(",");
     let cancelled = false;
     fetch(`/api/sem-reach?ranges=${encodeURIComponent(rangesParam)}`)
@@ -6086,7 +6118,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       .catch(() => {}); // fall back to semData's summed reach — see comment above
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSemRange?.from, activeSemRange?.to]);
+  }, [activeSemRange?.from, activeSemRange?.to, activeCompareRange?.from, activeCompareRange?.to]);
 
   // Impressions (+ Meta's Website Purchases) by country, for the exact
   // selected range — see fetchMetaCountryBreakdown/fetchGoogleCountryBreakdown
@@ -6259,7 +6291,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           ))}
         </div>
       ) : service === "sem" ? (
-        <div className="flex items-center justify-between gap-3 mt-4 mb-6 flex-wrap">
+        <div className="flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
           <div className="flex items-center gap-1.5">
             {(client.name === "Six Senses Fort Barwara"
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
@@ -6298,32 +6330,71 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           {/* Date-range picker — Google/Meta ad spend is fetched daily, so
               this lets Summary/Meta/Google filter to any from–to range
               (like Search Console's date picker) instead of only a broader
-              monthly view. KPI deltas compare against the immediately
-              preceding period of equal length. */}
-          <div className="flex items-center gap-1.5">
-            <input
-              type="date"
-              value={activeSemRange?.from || ""}
-              min={semRange?.from}
-              max={semRange?.to}
-              disabled={!semRange}
-              onChange={(e) => setSemFrom(e.target.value)}
-              className="rounded-lg cursor-pointer"
-              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-              aria-label="Range start"
-            />
-            <span style={{ color: C.faint, fontSize: 13 }}>–</span>
-            <input
-              type="date"
-              value={activeSemRange?.to || ""}
-              min={semRange?.from}
-              max={semRange?.to}
-              disabled={!semRange}
-              onChange={(e) => setSemTo(e.target.value)}
-              className="rounded-lg cursor-pointer"
-              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-              aria-label="Range end"
-            />
+              monthly view. The Compare row below is a second, independently
+              pickable range (like GA4's date picker "Compare" row) that
+              every KPI's delta is measured against — defaults to, and keeps
+              auto-following, the immediately preceding period of equal
+              length until manually edited (see compareRangeSel above). Per
+              the client's Aug 2026 request, only the % delta is shown next
+              to each KPI — the compare period's raw numbers aren't
+              displayed anywhere. */}
+          <div className="flex items-start gap-4">
+            <div className="flex flex-col gap-1">
+              <span style={{ color: C.faint, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Date range</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={activeSemRange?.from || ""}
+                  min={semRange?.from}
+                  max={semRange?.to}
+                  disabled={!semRange}
+                  onChange={(e) => setSemFrom(e.target.value)}
+                  className="rounded-lg cursor-pointer"
+                  style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+                  aria-label="Range start"
+                />
+                <span style={{ color: C.faint, fontSize: 13 }}>–</span>
+                <input
+                  type="date"
+                  value={activeSemRange?.to || ""}
+                  min={semRange?.from}
+                  max={semRange?.to}
+                  disabled={!semRange}
+                  onChange={(e) => setSemTo(e.target.value)}
+                  className="rounded-lg cursor-pointer"
+                  style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+                  aria-label="Range end"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span style={{ color: C.faint, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Compare</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={activeCompareRange?.from || ""}
+                  min={semRange?.from}
+                  max={semRange?.to}
+                  disabled={!semRange}
+                  onChange={(e) => setCompareFrom(e.target.value)}
+                  className="rounded-lg cursor-pointer"
+                  style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+                  aria-label="Compare range start"
+                />
+                <span style={{ color: C.faint, fontSize: 13 }}>–</span>
+                <input
+                  type="date"
+                  value={activeCompareRange?.to || ""}
+                  min={semRange?.from}
+                  max={semRange?.to}
+                  disabled={!semRange}
+                  onChange={(e) => setCompareTo(e.target.value)}
+                  className="rounded-lg cursor-pointer"
+                  style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
+                  aria-label="Compare range end"
+                />
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -6336,13 +6407,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           SsfbCampaignTab below. Six Senses Shaharut shares the same Overall
           shape (see SsshOverallTab) but has no Campaign Performance tab. */}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        <SsfbOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
       {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
-        <SsfbCampaignTab client={client} selectedRange={activeSemRange} semData={semData} />
+        <SsfbCampaignTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} semData={semData} />
       )}
       {service === "sem" && semSub === "overall" && client.name === "Six Senses Shaharut" && (
-        <SsshOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        <SsshOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
 
       {/* Sora Sukhumvit and Azerai (both properties) each have their own
@@ -6350,21 +6421,21 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           different spec from the Click Book template every other SEM
           client uses. See soraDayCombined / azeraiDayCombined above. */}
       {service === "sem" && semSub === "summary" && (
-        client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
-        : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} metaCreatives={metaCreatives} />
-        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
-        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
+        client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
+        : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} metaCreatives={metaCreatives} />
+        : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        : <SummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
-        : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        : <MetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
       {service === "sem" && semSub === "google" && (
-        client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleCountry={googleCountry} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
-        : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} googleCountry={googleCountry} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
+        : <GoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
       )}
       {service === "sem" && semSub === "creative" && client.name === "Sora Sukhumvit" && (
         <SoraCreativeTab client={client} metaCreatives={metaCreatives} />
