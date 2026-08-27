@@ -323,7 +323,13 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // detail tabs render. Default is SEO-only.
 const SERVICES = {
   "IC Khao Yai": ["seo", "sem"],
-  "Nomad Greenland": ["seo", "sem"],
+  // "leads" — Nomad's Aug 2026 feedback ("Add a Leads Analysis tab"). Its
+  // own top-level service tab rather than nested under sem/"Paid", since
+  // the feedback item describes it as sitting next to the (still-pending,
+  // chatbot-platform-unknown) Chatbot Summary tab, not inside Performance
+  // Marketing. Nomad-only — see lib/leads.js for why this can't safely
+  // generalize to other clients yet.
+  "Nomad Greenland": ["seo", "sem", "leads"],
   "Azerai Ke Ga Bay": ["sem"],
   "Azerai La Residence, Hue": ["sem"],
   "Sora Sukhumvit": ["seo", "sem"],
@@ -332,7 +338,7 @@ const SERVICES = {
   "Six Senses Shaharut": ["sem"],
   "Le Cercle": ["sem"],
 };
-const SVC_LABEL = { seo: "SEO", sem: "Paid" };
+const SVC_LABEL = { seo: "SEO", sem: "Paid", leads: "Leads Analysis" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
 const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
@@ -5824,6 +5830,77 @@ function AiSearch({ client, aiData, month }) {
   );
 }
 
+// Nomad Greenland's Leads Analysis tab — see fetchZohoLeadsAndDeals in
+// lib/leads.js. Aggregate stats only (counts/breakdowns), no individual
+// lead/deal records — confirmed with the user, Aug 2026, given this is
+// real customer data (names/emails) sourced from Zoho CRM.
+function NomadLeadsTab({ data }) {
+  if (!data) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        Loading leads data…
+      </div>
+    );
+  }
+
+  const winRate = data.totalDeals ? Math.round(((data.dealsByStage.find((s) => /won/i.test(s.label))?.value ?? 0) / data.totalDeals) * 100) : null;
+
+  const kpis = [
+    { label: "Total Leads", value: fmt(data.totalLeads) },
+    { label: "Total Deals", value: fmt(data.totalDeals) },
+    { label: "Total Deal Value", value: fmtMoney(data.totalDealValue) },
+    { label: "Win Rate", value: winRate != null ? `${winRate}%` : "—" },
+  ];
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Leads By Month</h3>
+        </div>
+        <div style={{ height: 240 }} className="px-2 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.leadsByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Bar dataKey="value" name="Leads" fill={C.accent} radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBreakdown title="Leads by Status" rows={data.leadsByStatus} fmtVal={fmt} />
+        <BarBreakdown title="Leads by Source" rows={data.leadsBySource} fmtVal={fmt} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBreakdown title="Deals by Stage" rows={data.dealsByStage} fmtVal={fmt} />
+        <BarBreakdown title="Deal Value by Stage" rows={data.dealValueByStage} fmtVal={fmtMoney} />
+      </div>
+
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Zoho CRM (via Windsor), January 2026 – today. Aggregate counts and totals only — no individual lead or deal records (names, emails) are shown here. Win Rate is deals in a stage matching "Won" out of all deals; if this account's pipeline uses a different closed-won stage name, this figure may read "—" or 0% incorrectly — worth confirming against Zoho directly.
+      </p>
+    </div>
+  );
+}
+
 function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, semRange, aiData }) {
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
@@ -5944,6 +6021,24 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       .catch(() => {}); // panel just stays empty if this fails
     return () => { cancelled = true; };
   }, [activeSemRange?.from, activeSemRange?.to]);
+
+  // Zoho leads/deals (Nomad Greenland's Leads Analysis tab) — see
+  // fetchZohoLeadsAndDeals in lib/leads.js. Nomad-only (this is a
+  // single-client CRM connection, not a pooled-account feed like the ad
+  // platforms), fetched over the same Jan-1-to-today window as everything
+  // else once the app's canonical range is known — not tied to the SEM
+  // date-range picker, since this tab isn't nested under Performance
+  // Marketing.
+  const [leadsData, setLeadsData] = useState(null);
+  useEffect(() => {
+    if (client.name !== "Nomad Greenland" || !semRange?.from || !semRange?.to) return;
+    let cancelled = false;
+    fetch(`/api/leads?from=${semRange.from}&to=${semRange.to}`)
+      .then((r) => r.json())
+      .then((json) => { if (!cancelled && json.ok) setLeadsData(json.data); })
+      .catch(() => {}); // tab just shows its own error/empty state if this fails
+    return () => { cancelled = true; };
+  }, [client.name, semRange?.from, semRange?.to]);
 
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
@@ -6170,6 +6265,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
       {service === "seo" && seoSub === "explorer" && <KeywordExplorer client={client} />}
 
       {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
+      {service === "leads" && <NomadLeadsTab data={leadsData} />}
     </div>
   );
 }
