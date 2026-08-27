@@ -318,18 +318,17 @@ const fmtINR2 = (n) => `₹${(n ?? 0).toLocaleString("en-IN", { minimumFractionD
 // denomination in circulation is 200 ₫), so a fractional ₫ would just be noise.
 const fmtVND = (n) => `₫${Math.round(n ?? 0).toLocaleString("en-US")}`;
 // EUR/DKK — Nomad Greenland's two platform currencies (Meta bills EUR,
-// Google bills DKK, confirmed live, Aug 2026 — see the "no live FX
-// conversion for default clients" change in lib/sem.js). DKK conventionally
+// Google bills DKK, confirmed live, Aug 2026). No longer used for the
+// generic MetaTab/GoogleTab/SummaryTab's own $-shaped figures (those are
+// fixed-rate-converted to USD now — see FIXED_USD_RATES in lib/sem.js), but
+// kept for anywhere a RAW, pre-conversion currency still needs formatting
+// (e.g. per-campaign currency mismatch diagnostics). DKK conventionally
 // suffixes "kr" rather than a prefixed symbol.
 const fmtEUR = (n) => `€${Math.round(n ?? 0).toLocaleString("en-US")}`;
 const fmtDKK = (n) => `${Math.round(n ?? 0).toLocaleString("en-US")} kr`;
-// Dispatches to the right formatter for whatever real currency a platform's
-// spend is actually denominated in (daily.google.currency/daily.meta.currency
-// from lib/sem.js) — used by the generic MetaTab/GoogleTab/SummaryTab (IC
-// Khao Yai, Nomad Greenland) instead of always assuming USD, now that spend
-// is never converted for these clients. Falls back to fmtMoney ($) for USD
-// or any currency code without a dedicated formatter yet, rather than
-// crashing on an unrecognized code.
+// Dispatches to the right formatter for a given currency code. Falls back to
+// fmtMoney ($) for USD or any currency code without a dedicated formatter
+// yet, rather than crashing on an unrecognized code.
 const CURRENCY_FORMATTERS = { USD: fmtMoney, THB: fmtTHB, INR: fmtINR, VND: fmtVND, EUR: fmtEUR, DKK: fmtDKK };
 const currencySymbol = { USD: "$", THB: "฿", INR: "₹", VND: "₫", EUR: "€", DKK: "kr " };
 const fmtByCurrency = (n, currency) => (CURRENCY_FORMATTERS[currency] || fmtMoney)(n);
@@ -1319,18 +1318,16 @@ function dayCombined(sem, date) {
   return {
     spend: d.spend ?? 0,
     // spendPending: for NATIVE_CURRENCY_CLIENTS/MIXED_CURRENCY_TARGET
-    // clients unchanged; for every other client this is now true only when
-    // Meta and Google genuinely bill in different currencies this day (see
-    // lib/sem.js's reconciliation pass) — deterministic, not a live-FX
-    // failure, so this label means "no combined total available" now, not
-    // "waiting on a rate lookup."
+    // clients, true only when a MIXED_CURRENCY_TARGET row had no live rate
+    // that day; for every other client (the Aug 2026 fixed-rate bucket),
+    // true when either platform's real currency has no FIXED_USD_RATES
+    // entry on file — see convertSpend in lib/sem.js.
     spendPending: !!d.spendPending,
-    // The currency `spend` above is actually denominated in — "USD" by
-    // default, the client's one shared currency for
-    // NATIVE_CURRENCY_CLIENTS/MIXED_CURRENCY_TARGET, or (for every other
-    // client) whichever single currency both platforms happen to share this
-    // day, set by lib/sem.js's reconciliation pass. Meaningless while
-    // spendPending is true.
+    // The currency `spend` above is actually denominated in — the client's
+    // one shared currency for NATIVE_CURRENCY_CLIENTS/MIXED_CURRENCY_TARGET,
+    // or "USD" for every other client (both platforms' spend are converted
+    // via the fixed rate before being summed, so they're always safely
+    // combinable now — see lib/sem.js). Meaningless while spendPending is true.
     currency: d.currency,
     clicks: d.clicks ?? 0,
     impressions: d.impressions ?? 0,
@@ -2833,14 +2830,13 @@ function SongSaaOverallTab({ client, selectedRange, range, semData, metaCreative
     { label: "Add To Cart",              value: fmt(cur.addToCart), delta: dPct("addToCart") },
   ] : [];
 
-  // This account's Google Ads currency was never actually confirmed live —
-  // unlike Meta (Song Saa's Meta account is USD, hence fmtMoney below for
-  // `cur`), Google isn't in NATIVE_CURRENCY_CLIENTS or MIXED_CURRENCY_TARGET,
-  // so its spend now passes through unconverted (see lib/sem.js) rather than
-  // assumed-USD — fmtByCurrency shows whatever Windsor actually reports
-  // instead of risking a mislabeled "$" on a genuinely non-USD figure.
+  // Song Saa isn't in NATIVE_CURRENCY_CLIENTS or MIXED_CURRENCY_TARGET, so
+  // its Google Ads spend is in lib/sem.js's default bucket — converted to
+  // USD via the fixed FIXED_USD_RATES rate (Aug 2026), or flagged
+  // spendPending if its real currency has no fixed rate on file. Hardcode
+  // USD rather than curGoogle.currency (the RAW pre-conversion currency).
   const googleKpis = curGoogle ? [
-    { label: "Amount Spent", value: curGoogle.spendPending ? "—" : fmtByCurrency(curGoogle.spend, curGoogle.currency), delta: curGoogle.spendPending ? null : googleDPct("spend") },
+    { label: "Amount Spent", value: curGoogle.spendPending ? "—" : fmtByCurrency(curGoogle.spend, "USD"), delta: curGoogle.spendPending ? null : googleDPct("spend") },
     { label: "Impressions",  value: fmt(curGoogle.impressions), delta: googleDPct("impressions") },
     { label: "Clicks",       value: fmt(curGoogle.clicks), delta: googleDPct("clicks") },
     { label: "CTR",          value: `${googleCtr.toFixed(1)}%`, delta: pctDelta(googleCtr, prevGoogleCtr) },
@@ -3542,14 +3538,16 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
   const googleImpressionsDPct = (curGoogle && prevGoogle && prevGoogle.impressions) ? Math.round(((curGoogle.impressions - prevGoogle.impressions) / prevGoogle.impressions) * 100) : null;
 
+  // currency on each leg — this tab (SummaryTab, the fallback for ICKY/Nomad
+  // Greenland) always covers lib/sem.js's default (fixed-rate USD) bucket,
+  // so combined/meta/google spend are all already converted to USD (or null
+  // while spendPending) — hardcode "USD" rather than curMeta.currency/
+  // curGoogle.currency, which stay the RAW pre-conversion currency and would
+  // mislabel these already-converted figures.
   const notesFacts = cur ? {
-    // currency on each leg — Meta and Google can genuinely bill in
-    // different currencies for this client (see lib/sem.js), so the AI
-    // needs to know which currency each spend figure is actually in rather
-    // than assume USD.
-    combined: { spend: cur.spendPending ? null : cur.spend, currency: cur.spendPending ? null : cur.currency, clicks: cur.clicks, impressions: cur.impressions, clickBook: cur.clickBook, cpa, cpm, ctr },
-    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, currency: curMeta.currency, clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook, reach } : null,
-    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, currency: curGoogle.currency, clicks: curGoogle.clicks, impressions: curGoogle.impressions, clickBook: curGoogle.clickBook, allConversions: curGoogle.allConversions } : null,
+    combined: { spend: cur.spendPending ? null : cur.spend, currency: cur.spendPending ? null : "USD", clicks: cur.clicks, impressions: cur.impressions, clickBook: cur.clickBook, cpa, cpm, ctr },
+    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, currency: "USD", clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook, reach } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, currency: "USD", clicks: curGoogle.clicks, impressions: curGoogle.impressions, clickBook: curGoogle.clickBook, allConversions: curGoogle.allConversions } : null,
   } : null;
 
   // Combined Amount Spent/CPA/CPM only mean something when Meta and Google
@@ -3633,27 +3631,30 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
     });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
-  // Cost per Click Book by Market combines Meta + Google spend per market —
-  // only safe when both platforms' campaigns in that market actually share
-  // one currency (they don't for IC Khao Yai/Nomad Greenland, see lib/sem.js).
-  // Tracks each market's currency set alongside its spend total; a market
-  // with more than one currency is DROPPED from this chart entirely (not
-  // shown as a wrong blended number) — same "exclude rather than guess"
-  // convention as pending-FX campaigns elsewhere in this file. The chart's
-  // one shared fmtVal uses whichever currency is actually common across the
-  // markets that DO end up shown.
+  // Cost per Click Book by Market combines Meta + Google spend per market.
+  // As of the Aug 2026 fixed-rate change, c.spend (from campaignsInRange,
+  // via convertSpend in lib/sem.js) is already denominated in ONE consistent
+  // currency for the whole client — native currency for NATIVE_CURRENCY_CLIENTS,
+  // the mixed target for MIXED_CURRENCY_TARGET, or USD for everyone else —
+  // regardless of what each platform's raw c.currency says, so summing
+  // Meta+Google spend per market is always safe now. The one remaining
+  // failure mode is a fixed-rate conversion with no rate on file for that
+  // row's currency, which convertSpend already surfaces as c.spend === null
+  // (see addCampaigns in lib/sem.js) — a market where any campaign hit that
+  // is DROPPED from this chart entirely (not shown as an understated
+  // number), same "exclude rather than guess" convention used elsewhere.
   const costPerClickBookByMarket = (() => {
-    const spendAgg = {}; // market -> { total, currencies: Set }
+    const spendAgg = {}; // market -> { total, pending }
     campaignsAll.forEach((c) => {
       const k = campaignMarket(c.name);
-      const entry = spendAgg[k] ??= { total: 0, currencies: new Set() };
-      entry.total += c.spend ?? 0;
-      if (c.currency) entry.currencies.add(c.currency);
+      const entry = spendAgg[k] ??= { total: 0, pending: false };
+      if (c.spend == null) { entry.pending = true; return; }
+      entry.total += c.spend;
     });
     const rows = clickBookByMarket
-      .filter((r) => r.value && spendAgg[r.label]?.currencies.size === 1)
+      .filter((r) => r.value && spendAgg[r.label] && !spendAgg[r.label].pending)
       .map((r) => ({ label: r.label, value: spendAgg[r.label].total / r.value }));
-    return { rows, currency: rows.length ? [...spendAgg[rows[0].label].currencies][0] : undefined };
+    return { rows, currency: rows.length ? cur?.currency : undefined };
   })();
 
   return (
@@ -3798,12 +3799,14 @@ function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreativ
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
 
-  // This account's own real currency (Meta side) — spend is never converted
-  // for this generic tab's clients anymore (IC Khao Yai bills THB here,
-  // Nomad Greenland bills EUR — see lib/sem.js), so every $-shaped figure
-  // below is formatted in whatever currency Windsor actually reports rather
-  // than assuming USD.
-  const fmtSpend = (v) => fmtByCurrency(v, cur?.currency);
+  // This generic tab's clients (IC Khao Yai, Nomad Greenland) are always in
+  // lib/sem.js's default (non-NATIVE_CURRENCY_CLIENTS, non-MIXED_CURRENCY_TARGET)
+  // bucket, so cur.spend here is already converted to USD via the fixed
+  // FIXED_USD_RATES rate (Aug 2026) — cur.currency itself stays the RAW
+  // per-platform billing currency (THB/EUR, for the market-mismatch check
+  // elsewhere), so it must NOT be used to format this already-converted
+  // spend. Hardcode USD rather than reading cur.currency.
+  const fmtSpend = (v) => fmtByCurrency(v, "USD");
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
@@ -3840,7 +3843,7 @@ function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreativ
   const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
-  const currencyPrefix = currencySymbol[cur?.currency] ?? "$";
+  const currencyPrefix = "$"; // spend is always USD here now — see fmtSpend above
 
   // c.spend is null only in the (now vanishingly rare) case a campaign row
   // never got a currency at all — excluded from the market/top-campaigns
@@ -3905,7 +3908,7 @@ function MetaTab({ client, selectedRange, range, semData, liveReach, metaCreativ
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site). Figures shown in this account's real billing currency — not converted to USD.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site). Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
       </p>
     </div>
   );
@@ -3934,9 +3937,10 @@ function GoogleTab({ client, selectedRange, range, semData }) {
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
 
-  // This account's own real currency (Google side) — see the matching
-  // comment on MetaTab's fmtSpend above.
-  const fmtSpend = (v) => fmtByCurrency(v, cur?.currency);
+  // See the matching comment on MetaTab's fmtSpend above — this generic
+  // tab's clients are always in the default (fixed-rate USD) bucket, so
+  // cur.spend is already converted; hardcode USD rather than cur.currency.
+  const fmtSpend = (v) => fmtByCurrency(v, "USD");
 
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
@@ -3961,7 +3965,7 @@ function GoogleTab({ client, selectedRange, range, semData }) {
   const trend = days.map((d) => { const m = sem.daily?.[d]?.google; return { day: fmtDayShort(d), spend: m?.spendPending ? null : (m?.spend ?? 0) }; });
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
-  const currencyPrefix = currencySymbol[cur?.currency] ?? "$";
+  const currencyPrefix = "$"; // spend is always USD here now — see fmtSpend above
 
   // c.spend is null only in the (now vanishingly rare) case a campaign row
   // never got a currency at all — excluded from the market/top-campaigns
@@ -4021,7 +4025,7 @@ function GoogleTab({ client, selectedRange, range, semData }) {
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures. Figures shown in this account's real billing currency — not converted to USD.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures. Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
       </p>
     </div>
   );
