@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — checking whether Windsor is actually connected to Nomad's
+  // Zoho CRM account. DELETE this bypass + app/api/debug-nomad-zoho once
+  // confirmed.
+  if (request.nextUrl.pathname === "/api/debug-nomad-zoho") {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
