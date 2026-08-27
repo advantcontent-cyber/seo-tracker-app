@@ -27,7 +27,7 @@ export async function GET() {
   const dateFrom = "2026-01-01";
   const dateTo = new Date().toISOString().slice(0, 10);
 
-  const leadAttempt = await windsorGet("zoho", ["account_name", "email", "lead_status", "firstname", "lastname", "date"], dateFrom, dateTo);
+  const leadAttempt = await windsorGet("zoho", ["email", "lead_status", "firstname", "lastname", "date"], dateFrom, dateTo);
 
   return Response.json({ leadAttempt });
 }
