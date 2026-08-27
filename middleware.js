@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — surveying real currency values per client before removing
+  // FX conversion. DELETE this bypass + app/api/debug-currencies once
+  // confirmed.
+  if (request.nextUrl.pathname === "/api/debug-currencies") {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
