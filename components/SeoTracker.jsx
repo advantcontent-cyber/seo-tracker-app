@@ -3428,7 +3428,7 @@ function LeCercleOverallTab({ client, selectedRange, range, semData, liveReach, 
   );
 }
 
-function SummaryTab({ client, selectedRange, range, semData }) {
+function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
   const sem = semData?.[client.name];
 
   if (!sem) {
@@ -3463,9 +3463,23 @@ function SummaryTab({ client, selectedRange, range, semData }) {
   const googleOf = (sem, d) => sem.daily?.[d]?.google;
   const curMeta = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, metaOf) : null;
   const curGoogle = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
+  // prevMeta/prevGoogle — needed for Reach's and Google Ads Impressions'
+  // own deltas (ICKY's Aug 2026 feedback), since the combined prev above
+  // (via dayCombined) doesn't carry either figure.
+  const prevMeta = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, metaOf) : null;
+  const prevGoogle = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
+  // True (deduplicated) reach for this exact range — see the matching
+  // comment in MetaTab / fetchMetaReach in lib/sem.js. Falls back to the
+  // summed daily meta.reach (a real overcount) while the live fetch is in
+  // flight or fails.
+  const reach = liveReach?.current?.[client.name] ?? curMeta?.reach ?? 0;
+  const reachPrev = liveReach?.previous?.[client.name] ?? prevMeta?.reach ?? null;
+  const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
+  const googleImpressionsDPct = (curGoogle && prevGoogle && prevGoogle.impressions) ? Math.round(((curGoogle.impressions - prevGoogle.impressions) / prevGoogle.impressions) * 100) : null;
+
   const notesFacts = cur ? {
     combined: { spend: cur.spendPending ? null : cur.spend, clicks: cur.clicks, impressions: cur.impressions, clickBook: cur.clickBook, cpa, cpm, ctr },
-    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook } : null,
+    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook, reach } : null,
     google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, clickBook: curGoogle.clickBook, allConversions: curGoogle.allConversions } : null,
   } : null;
 
@@ -3477,6 +3491,11 @@ function SummaryTab({ client, selectedRange, range, semData }) {
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "CPM",           value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks") },
+    // Reach and Google Ads Impressions — ICKY's Aug 2026 feedback (this
+    // generic template is shared with Nomad Greenland too — harmless there
+    // if either figure just doesn't apply/reads 0).
+    { label: "Reach",                 value: fmt(reach), delta: reachDPct },
+    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -3484,6 +3503,36 @@ function SummaryTab({ client, selectedRange, range, semData }) {
   const clicksTrend    = days.map((d) => ({ day: fmtDayShort(d), clicks: sem.daily?.[d]?.clicks ?? 0 }));
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  // Monthly Click Book / Click bar charts — ICKY's Aug 2026 feedback. Uses
+  // `range` (the full available date range), not `selectedRange` — same
+  // "always show the whole trend regardless of the KPI cards' date filter"
+  // convention as every other client's identical monthly charts.
+  const clickBookByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clickBook ?? 0);
+  const clicksByMonth    = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clicks ?? 0);
+
+  // Click Book by Market / Cost per Click Book by Market — ICKY's Aug 2026
+  // feedback. campaignMarket (already used by MetaTab/GoogleTab's "Spend by
+  // market") parses the 2-letter market code every campaign name is
+  // prefixed with; Click Book itself is combined across both platforms —
+  // Meta's own clickBook field, Google's allConversions — same formula as
+  // dayCombined above, just applied per campaign instead of per day.
+  const campaignsAll = selectedRange
+    ? [...campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta"), ...campaignsInRange(sem, selectedRange.from, selectedRange.to, "google")]
+    : [];
+  const clickBookByMarket = (() => {
+    const agg = {};
+    campaignsAll.forEach((c) => {
+      const k = campaignMarket(c.name);
+      agg[k] = (agg[k] || 0) + (c.platform === "meta" ? (c.clickBook ?? 0) : (c.allConversions ?? 0));
+    });
+    return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  })();
+  const costPerClickBookByMarket = (() => {
+    const spendAgg = {};
+    campaignsAll.forEach((c) => { const k = campaignMarket(c.name); spendAgg[k] = (spendAgg[k] || 0) + (c.spend ?? 0); });
+    return clickBookByMarket.map((r) => ({ label: r.label, value: r.value ? (spendAgg[r.label] || 0) / r.value : 0 }));
+  })();
 
   return (
     <div>
@@ -3541,10 +3590,56 @@ function SummaryTab({ client, selectedRange, range, semData }) {
         </div>
       </div>
 
+      {/* Monthly Click Book / Clicks */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={clickBookByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Click Book" fill={C.accent} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Clicks By Month</h3>
+          </div>
+          <div style={{ height: 240 }} className="px-2 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={clicksByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke={C.line} vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Bar dataKey="value" name="Clicks" fill="#1877F2" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Click Book by Market / Cost per Click Book by Market */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <BarBreakdown title="Click Book by Market" rows={clickBookByMarket} fmtVal={fmt} />
+        <BarBreakdown title="Cost per Click Book by Market" rows={costPerClickBookByMarket} fmtVal={fmtMoney} />
+      </div>
+
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs. Reach is the true deduplicated Meta figure for this exact range (fetched live, not summed from daily rows). Market is parsed from each campaign's name prefix (e.g. "HK_High intent…") — campaigns that don't match this pattern fall under "Other". Click Book by Market combines both platforms (Meta's own Click Book action, Google's All Conversions), same formula as the headline Click Book KPI above.
       </p>
     </div>
   );
@@ -6017,7 +6112,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
         : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} metaCreatives={metaCreatives} />
         : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
-        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+        : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "meta" && (
         client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
