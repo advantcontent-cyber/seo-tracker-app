@@ -3528,6 +3528,33 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
     { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct },
   ] : [];
 
+  // Grouped "Overall Performance"/"Brand Awareness" boxes with icon headers
+  // — matches ICKY's own Looker Studio reference report exactly (screenshot
+  // confirmed, Aug 2026), same pattern as every other custom client's
+  // identical layout (SSFB, Sora, Azerai). ICKY-only — Nomad Greenland
+  // shares this generic template but has no matching spec for this
+  // grouped-box layout, so it keeps the flat KPI grid below (`kpis`).
+  // Reach/Google Ads Impressions aren't part of the reference screenshot's
+  // two boxes (3 + 4 cards) — added as Brand Awareness's second row rather
+  // than dropped, since both are separate, already-confirmed Aug 2026
+  // feedback items in their own right.
+  const isIcky = client.name === "IC Khao Yai";
+  const overallRow1 = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtMoney(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: cur.spendPending ? "Pending FX conversion (a non-USD account this range)" : undefined },
+    { label: "Click Book",   value: fmt(cur.clickBook), delta: dPct("clickBook") },
+    { label: "CPA",          value: cpa != null ? fmtMoney(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
+  ] : [];
+  const brandRow1 = cur ? [
+    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
+    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "CPM",           value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "Clicks",        value: fmt(cur.clicks), delta: dPct("clicks") },
+  ] : [];
+  const brandRow2 = cur ? [
+    { label: "Reach",                  value: fmt(reach), delta: reachDPct },
+    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct },
+  ] : [];
+
   const days = dateRange(range?.from, range?.to);
   const clickBookTrend = days.map((d) => ({ day: fmtDayShort(d), clickBook: dayCombined(sem, d)?.clickBook ?? 0 }));
   const clicksTrend    = days.map((d) => ({ day: fmtDayShort(d), clicks: sem.daily?.[d]?.clicks ?? 0 }));
@@ -3567,18 +3594,25 @@ function SummaryTab({ client, selectedRange, range, semData, liveReach }) {
   return (
     <div>
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
+      {isIcky ? (
+        <div className="grid lg:grid-cols-2 gap-5">
+          <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" rows={[overallRow1]} />
+          <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" rows={[brandRow1, brandRow2]} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpis.map((k, i) => (
+            <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
+              <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
+              <div className="flex items-baseline gap-2 mt-1.5">
+                <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+                {k.delta != null && <Delta value={k.delta} suffix="%" />}
+              </div>
+              {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
             </div>
-            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Daily trend charts */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
