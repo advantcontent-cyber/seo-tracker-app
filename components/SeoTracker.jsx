@@ -1950,7 +1950,7 @@ function SoraSummaryTab({ client, selectedRange, range, semData }) {
   );
 }
 
-function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry, metaCreatives }) {
+function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCountry }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -1986,6 +1986,11 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
     { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases") },
+    // Was missing entirely — Aug 2026 client feedback ("Add missing
+    // Purchase Revenue data"). purchaseValue was already fetched/summed
+    // correctly (it backs Revenue on the combined Summary tab and Google's
+    // own Revenue card), just never surfaced as its own card here.
+    { label: "Revenue",     value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue") },
     { label: "Add To Cart", value: fmt(cur.addToCart),   delta: dPct("addToCart") },
     { label: "Frequency",   value: freq.toFixed(2) },
   ] : [];
@@ -2002,6 +2007,13 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
   const countryRows = countryData
     ? Object.entries(countryData).map(([country, v]) => ({ country, impressions: v.impressions, purchases: v.purchases }))
     : [];
+
+  // Campaign Performance table — Aug 2026 client feedback. Meta's tab never
+  // had one (unlike Google's tab, which has its own bespoke SoraCampaignTable
+  // per an earlier client spec) — reuses the generic CampaignPerformanceTable
+  // instead, same as every other client's Meta tab (MetaTab, AzeraiMetaTab,
+  // SSFB), rather than a new bespoke component.
+  const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
 
   return (
     <div>
@@ -2053,13 +2065,25 @@ function SoraMetaTab({ client, selectedRange, range, semData, liveReach, metaCou
         <RankedBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
 
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
-      </div>
+      <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtTHB} fmtCpc={fmtTHB} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts show the top 10 countries by their own metric (Impressions / Website Purchases) for the exact selected range. Ad creative thumbnails are Facebook's own signed, time-limited CDN links — an occasional broken preview after a long page session is expected, not a bug.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in {currency} — this account's native billing currency, not converted to USD. Country-breakdown charts show the top 10 countries by their own metric (Impressions / Website Purchases) for the exact selected range. Creative performance moved to its own tab, per the client's Aug 2026 feedback — see the Creative Performance tab.
+      </p>
+    </div>
+  );
+}
+
+// Creative Performance — its own sub-tab per the client's Aug 2026 feedback
+// ("Move the Creative Performance section to a separate tab"). Previously
+// inline at the bottom of SoraMetaTab; just CreativesPanel on its own now,
+// no new data/logic.
+function SoraCreativeTab({ client, metaCreatives }) {
+  return (
+    <div>
+      <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
+      <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
+        Ad creative thumbnails are Facebook's own signed, time-limited CDN links — an occasional broken preview after a long page session is expected, not a bug.
       </p>
     </div>
   );
@@ -2132,11 +2156,11 @@ function SoraGoogleTab({ client, selectedRange, range, semData, googleCountry })
     .filter((c) => c.allConversions > 0);
 
   // Click Through Rate by month — the client's reference report plots this
-  // across a full calendar year, but our own data (via fetchSemData in
-  // lib/sem.js) only goes back to March YEAR (the established reporting
-  // window — MONTHS below is that same canonical, auto-extending window),
-  // so Jan/Feb can't be reproduced here. Months with zero Google impressions
-  // (no data yet, or genuinely no spend that month) are skipped rather than
+  // across a full calendar year; our own data (via fetchSemData in
+  // lib/sem.js) goes back to January YEAR (widened from March, Aug 2026 —
+  // MONTHS below is that same canonical, auto-extending window). Months
+  // with zero Google impressions (no data yet, or genuinely no spend that
+  // month) are skipped rather than
   // plotted as a false 0%.
   const monthlyCtr = MONTHS.map((abbr) => {
     const moNum = MO_NUM[abbr];
@@ -6036,6 +6060,11 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               ? [["summary", "Overall"], ["google", "Google"]]
               : client.name === "Le Cercle"
               ? [["summary", "Overall"]]
+              // Creative Performance split into its own tab per the client's
+              // Aug 2026 feedback — was inline at the bottom of SoraMetaTab,
+              // see SoraCreativeTab.
+              : client.name === "Sora Sukhumvit"
+              ? [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"], ["creative", "Creative Performance"]]
               : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
             ).map(([id, label]) => (
               <button
@@ -6115,7 +6144,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : <SummaryTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
         : <MetaTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
@@ -6123,6 +6152,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleCountry={googleCountry} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
         : <GoogleTab client={client} selectedRange={activeSemRange} range={semRange} semData={semData} />
+      )}
+      {service === "sem" && semSub === "creative" && client.name === "Sora Sukhumvit" && (
+        <SoraCreativeTab client={client} metaCreatives={metaCreatives} />
       )}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
