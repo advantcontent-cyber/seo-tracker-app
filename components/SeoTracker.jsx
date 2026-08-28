@@ -1601,14 +1601,36 @@ function PerformanceGroupBox({ icon: Icon, iconColor, title, rows, cols = 4 }) {
   );
 }
 
+// Colorful KPI badge palette — Sora's "colorful dashboard" redesign only
+// (Aug 2026, client trial run before considering a wider rollout). Validated
+// via the dataviz skill's validate_palette.js against this app's white card
+// surface (`#fff`): all hard gates (lightness band, chroma floor, CVD
+// adjacent-pair separation, normal-vision floor) pass. Three slots (aqua/
+// yellow/magenta) clear the contrast-vs-surface check only with the "relief
+// rule" (visible direct labels) — already satisfied here since every card
+// carries its own value/label text and every chart carries value labels, so
+// color is never the only cue. Cycled by position (icon badges are
+// decorative identity per card, not a compared categorical series, so
+// strict fixed-meaning assignment doesn't apply the way it would to e.g.
+// stacked segments of one chart).
+const KPI_HUES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+
 /* SEM metric card — gives paid-ads KPI tiles the same "what is this number
    from" footer the SEO tab's cards already have (see SummaryMetric further
    below: value + a bottom row naming Google Search Console / GA4). Used by
-   Sora's Summary/Meta/Google SEM tabs so every card names its platform. */
-function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint, accent, note, sourceIcon, sourceLabel }) {
+   Sora's Summary/Meta/Google SEM tabs so every card names its platform.
+   `icon` is optional (Aug 2026, Sora's colorful redesign) — a colored
+   circular badge above the label, using `accent` as its fill; every other
+   existing caller omits it and renders exactly as before. */
+function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint, accent, note, sourceIcon, sourceLabel, icon: Icon }) {
   return (
-    <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: tint ? `${accent}12` : "#fff" }}>
+    <div className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: tint ? `${accent}12` : "#fff", boxShadow: Icon ? "0 1px 2px rgba(11,11,11,0.04)" : undefined }}>
       <div className="px-5 py-4 flex-1">
+        {Icon && (
+          <span className="rounded-full flex items-center justify-center mb-3" style={{ width: 34, height: 34, background: accent }}>
+            <Icon size={17} color="#fff" strokeWidth={2.25} />
+          </span>
+        )}
         <div style={{ color: C.muted, fontSize: 12.5 }}>{label}</div>
         <div className="flex items-baseline gap-2 mt-1.5">
           <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</span>
@@ -1838,39 +1860,38 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
     google: curGoogle ? { spend: curGoogle.spend, clicks: curGoogle.clicks, impressions: curGoogle.impressions, purchases: curGoogle.purchase, purchaseValue: curGoogle.purchaseValue, addToCart: curGoogle.addToCart } : null,
   } : null;
 
-  // Two titled boxes (client spec, matching their own reference report) —
+  // Two titled groups (client spec, matching their own reference report) —
   // "Overall Performance" (spend/purchase/revenue shape, row 2 added Aug
   // 2026: Add To Cart plus the three metrics below) and "Brand Awareness"
   // (impression/click shape). See soraDayCombined for where
   // directRevenue/directPurchases/itemView/traffic/addToCartValue come from.
-  const overallRow1 = cur ? [
-    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
-    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase") },
-    { label: "Revenue",      value: fmtTHB(cur.revenue), delta: dPct("revenue") },
-    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
-  ] : [];
-  const overallRow2 = cur ? [
-    { label: "Add To Cart",             value: fmt(cur.addToCart),         delta: dPct("addToCart") },
+  // Each card also carries an `icon` — Sora's colorful-redesign trial (Aug
+  // 2026, see KPI_HUES above SemMetricCard) — colored per its position in
+  // the group via KPI_HUES, cycling if a group runs past 8 cards.
+  const overallCards = cur ? [
+    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend"), icon: DollarSign },
+    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase"), icon: ShoppingCart },
+    { label: "Revenue",      value: fmtTHB(cur.revenue), delta: dPct("revenue"), icon: Banknote },
+    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas), icon: Percent },
+    { label: "Add To Cart",             value: fmt(cur.addToCart),         delta: dPct("addToCart"), icon: Receipt },
     // Total Direct Revenue/Purchases — the site's own GA4 ecommerce numbers
     // (every channel, not just ad-attributed) — see soraDayCombined.
-    { label: "Total Direct Revenue",    value: fmtTHB(cur.directRevenue),   delta: dPct("directRevenue") },
-    { label: "Total Direct Purchases",  value: fmt(cur.directPurchases),    delta: dPct("directPurchases") },
+    { label: "Total Direct Revenue",    value: fmtTHB(cur.directRevenue),   delta: dPct("directRevenue"), icon: TrendingUp },
+    { label: "Total Direct Purchases",  value: fmt(cur.directPurchases),    delta: dPct("directPurchases"), icon: Target },
     // Item View — Google Ads' account-level all_conversions bucket per the
     // client's own Looker dashboard, not an isolated "view_item" action
     // (Sora's account has none) — see soraDayCombined.
-    { label: "Item View",               value: fmt(cur.itemView),           delta: dPct("itemView") },
+    { label: "Item View",               value: fmt(cur.itemView),           delta: dPct("itemView"), icon: Eye },
   ] : [];
-  const brandRow1 = cur ? [
-    { label: "Total Impression", value: fmt(cur.impressions),  delta: dPct("impressions") },
-    { label: "Total Avg CTR",    value: `${ctr.toFixed(2)}%`,  delta: pctDelta(ctr, prevCtr) },
-    { label: "Total Avg CPM",    value: cpm != null ? fmtTHB(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Total Clicks",     value: fmt(cur.clicks),       delta: dPct("clicks") },
-  ] : [];
-  // Traffic — a deliberately blended, cross-platform figure (Meta Landing
-  // Page Views + Google Ads clicks), per the client's Looker dashboard —
-  // see soraDayCombined.
-  const brandRow2 = cur ? [
-    { label: "Traffic", value: fmt(cur.traffic), delta: dPct("traffic") },
+  const brandCards = cur ? [
+    { label: "Total Impression", value: fmt(cur.impressions),  delta: dPct("impressions"), icon: Eye },
+    { label: "Total Avg CTR",    value: `${ctr.toFixed(2)}%`,  delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Total Avg CPM",    value: cpm != null ? fmtTHB(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Total Clicks",     value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
+    // Traffic — a deliberately blended, cross-platform figure (Meta Landing
+    // Page Views + Google Ads clicks), per the client's Looker dashboard —
+    // see soraDayCombined.
+    { label: "Traffic", value: fmt(cur.traffic), delta: dPct("traffic"), icon: Users },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -1899,10 +1920,22 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
           soraDayCombined still computes cur.addToCartValue below in case
           it comes back. */}
 
-      {/* Two grouped performance boxes */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" cols={2} rows={[overallRow1, overallRow2]} />
-        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" cols={2} rows={[brandRow1, brandRow2]} />
+      {/* Two titled groups of individual colorful KPI cards — replaces the
+          plain grouped-box layout for Sora's colorful-redesign trial (Aug
+          2026); same two groups/metrics as before, just one card per metric
+          instead of a text row, matching Meta/Google tabs' card style. */}
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Overall Performance</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {overallCards.map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+        ))}
+      </div>
+
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3 mt-6">Brand Awareness</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {brandCards.map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+        ))}
       </div>
 
       {/* Daily trend charts */}
@@ -1919,8 +1952,8 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={C.accent} strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color={C.accent} />
+                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={KPI_HUES[0]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1937,8 +1970,8 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#1877F2" strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke={KPI_HUES[1]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[1]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1958,8 +1991,8 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Purchase" fill={KPI_HUES[2]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: KPI_HUES[2], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1976,8 +2009,8 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Revenue" fill="#1877F2" radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Revenue" fill={KPI_HUES[6]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: KPI_HUES[6], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1996,7 +2029,6 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
 
 function SoraMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCountry }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -2023,20 +2055,22 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
   const freq = cur && reach ? cur.impressions / reach : 0;
 
+  // Each card also carries an `icon` — Sora's colorful-redesign trial (Aug
+  // 2026, see KPI_HUES above SemMetricCard).
   const kpis = cur ? [
-    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend") },
-    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",       value: fmt(reach),        delta: reachDPct },
-    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
-    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases") },
+    { label: "Amount Spent", value: fmtTHB(cur.spend),   delta: dPct("spend"), icon: DollarSign },
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Reach",       value: fmt(reach),        delta: reachDPct, icon: Users },
+    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Purchase",    value: fmt(cur.purchases),   delta: dPct("purchases"), icon: ShoppingCart },
     // Was missing entirely — Aug 2026 client feedback ("Add missing
     // Purchase Revenue data"). purchaseValue was already fetched/summed
     // correctly (it backs Revenue on the combined Summary tab and Google's
     // own Revenue card), just never surfaced as its own card here.
-    { label: "Revenue",     value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue") },
-    { label: "Add To Cart", value: fmt(cur.addToCart),   delta: dPct("addToCart") },
-    { label: "Frequency",   value: freq.toFixed(2) },
+    { label: "Revenue",     value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue"), icon: Banknote },
+    { label: "Add To Cart", value: fmt(cur.addToCart),   delta: dPct("addToCart"), icon: Receipt },
+    { label: "Frequency",   value: freq.toFixed(2), icon: Activity },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -2069,8 +2103,8 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
             label={k.label}
             value={k.value}
             delta={k.delta}
-            tint={i % 2 === 0}
-            accent={accent}
+            icon={k.icon}
+            accent={KPI_HUES[i % KPI_HUES.length]}
             sourceIcon={<MetaMark size={13} />}
             sourceLabel="Meta Ads"
           />
@@ -2088,16 +2122,16 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
             <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="soraMetaSpend" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                  <stop offset="0%" stopColor={KPI_HUES[0]} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={KPI_HUES[0]} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} vertical={false} />
               <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
               <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraMetaSpend)" />
-              <SelectionBand selectedRange={selectedRange} color={accent} />
+              <Area type="monotone" dataKey="spend" stroke={KPI_HUES[0]} strokeWidth={2} fill="url(#soraMetaSpend)" />
+              <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -2105,8 +2139,8 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
 
       {/* Country breakdown */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
-        <RankedBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={KPI_HUES[2]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Website Purchases by Country" rows={countryRows} valueKey="purchases" color={KPI_HUES[5]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtTHB} fmtCpc={fmtTHB} />
@@ -2137,7 +2171,6 @@ function CreativeTab({ client, metaCreatives }) {
 
 function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, googleCountry }) {
   const sem = semData?.[client.name];
-  const accent = C.accent;
 
   if (!sem) {
     return (
@@ -2158,19 +2191,21 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
 
+  // Each card also carries an `icon` — Sora's colorful-redesign trial (Aug
+  // 2026, see KPI_HUES above SemMetricCard).
   const kpis = cur ? [
-    { label: "Amount Spent",     value: fmtTHB(cur.spend),    delta: dPct("spend") },
-    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Clicks",           value: fmt(cur.clicks),      delta: dPct("clicks") },
-    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Website Purchase", value: fmt(cur.purchase), delta: dPct("purchase") },
-    { label: "Revenue",          value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue") },
+    { label: "Amount Spent",     value: fmtTHB(cur.spend),    delta: dPct("spend"), icon: DollarSign },
+    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Clicks",           value: fmt(cur.clicks),      delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Website Purchase", value: fmt(cur.purchase), delta: dPct("purchase"), icon: ShoppingCart },
+    { label: "Revenue",          value: fmtTHB(cur.purchaseValue), delta: dPct("purchaseValue"), icon: Banknote },
     // Was missing entirely — caught by the client, Aug 2026. The isolated
     // google.addToCart figure (see GOOGLE_CONVERSION_ACTION_MATCH in
     // lib/sem.js) was already being fetched/summed correctly (it backs
     // Add To Cart on the combined Summary tab), just never surfaced as
     // its own card here.
-    { label: "Add To Cart",      value: fmt(cur.addToCart), delta: dPct("addToCart") },
+    { label: "Add To Cart",      value: fmt(cur.addToCart), delta: dPct("addToCart"), icon: Receipt },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -2229,8 +2264,8 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
             label={k.label}
             value={k.value}
             delta={k.delta}
-            tint={i % 2 === 0}
-            accent={accent}
+            icon={k.icon}
+            accent={KPI_HUES[i % KPI_HUES.length]}
             note={k.note}
             sourceIcon={<GoogleG size={13} />}
             sourceLabel="Google Ads"
@@ -2249,16 +2284,16 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
             <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="soraGoogleSpend" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                  <stop offset="0%" stopColor={KPI_HUES[0]} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={KPI_HUES[0]} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} vertical={false} />
               <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
               <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#soraGoogleSpend)" />
-              <SelectionBand selectedRange={selectedRange} color={accent} />
+              <Area type="monotone" dataKey="spend" stroke={KPI_HUES[0]} strokeWidth={2} fill="url(#soraGoogleSpend)" />
+              <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -2266,8 +2301,8 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
 
       {/* Country breakdown + All conversions by Campaign */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
-        <RankedBarChart title="All conversions by Campaign" rows={campaignConversions} nameKey="campaign" valueKey="allConversions" color={accent} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={KPI_HUES[2]} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
+        <RankedBarChart title="All conversions by Campaign" rows={campaignConversions} nameKey="campaign" valueKey="allConversions" color={KPI_HUES[6]} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
       </div>
 
       {/* Click Through Rate by month */}
@@ -2282,8 +2317,8 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
               <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v}%`} />
               <Tooltip formatter={(v) => `${v.toFixed(2)}%`} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Line type="monotone" dataKey="ctr" name="Click Through Rate" stroke={accent} strokeWidth={2} dot={{ r: 4 }}>
-                <LabelList dataKey="ctr" position="top" formatter={(v) => `${v.toFixed(2)}%`} style={{ fill: accent, fontSize: 11, fontWeight: 600 }} />
+              <Line type="monotone" dataKey="ctr" name="Click Through Rate" stroke={KPI_HUES[3]} strokeWidth={2} dot={{ r: 4 }}>
+                <LabelList dataKey="ctr" position="top" formatter={(v) => `${v.toFixed(2)}%`} style={{ fill: KPI_HUES[3], fontSize: 11, fontWeight: 600 }} />
               </Line>
             </LineChart>
           </ResponsiveContainer>
