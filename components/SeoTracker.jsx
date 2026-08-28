@@ -353,7 +353,12 @@ const SERVICES = {
   "Six Senses Shaharut": ["sem"],
   "Le Cercle": ["sem"],
 };
-const SVC_LABEL = { seo: "SEO", sem: "Paid", leads: "Leads Analysis" };
+const SVC_LABEL = { seo: "SEO", sem: "Performance Marketing", leads: "Leads Analysis" };
+// Compact form for the sidebar's per-property pill badges, which have no
+// room for the full "Performance Marketing" label (see SVC_LABEL above) —
+// client asked to drop the bare "SEM" wording dashboard-wide, so this can't
+// just fall back to the raw service id like the badge used to.
+const SVC_BADGE = { seo: "SEO", sem: "PM", leads: "Leads" };
 const servicesOf = (name) => SERVICES[name] || ["seo"];
 const hasService = (name, svc) => servicesOf(name).includes(svc);
 const r1 = (x) => Math.round(x * 10) / 10; // one decimal, for position / CTR points
@@ -6532,7 +6537,7 @@ function Sidebar({ clients, selected, onSelect }) {
                 className="rounded px-1 uppercase shrink-0"
                 style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.04em", color: C.accent, background: "rgba(0,119,200,0.10)" }}
               >
-                {s}
+                {SVC_BADGE[s] || s.toUpperCase()}
               </span>
             ))}
           </button>
