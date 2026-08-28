@@ -2493,7 +2493,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
   );
 }
 
-function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
+function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives, metaCountry }) {
   const sem = semData?.[client.name];
   const accent = "#1877F2";
 
@@ -2542,10 +2542,30 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
     { label: "Frequency",        value: freq.toFixed(2) },
   ] : [];
 
-  const days = dateRange(range?.from, range?.to);
-  const trend = days.map((d) => { const m = sem.daily?.[d]?.meta; return { day: fmtDayShort(d), spend: m?.spend ?? 0 }; });
-  const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
+
+  // "Clicks Per Month" — replaces the old daily Amount Spent trend area
+  // chart per the client, Aug 2026, plus the three country-breakdown charts
+  // below (Impressions/Clicks/Amount Spent by Country). monthlyBuckets uses
+  // `range` (the full available date range), not `selectedRange` (the
+  // date-picker's filtered window) — same "always show the full trend"
+  // convention as Song Saa/SSFB's monthly bar charts.
+  const clicksTrend = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.meta?.clicks);
+
+  // Country rows for the three breakdown charts below — see metaCountry's
+  // fetch in Detail (via /api/sem-country) and fetchMetaCountryBreakdown in
+  // lib/sem.js. Amount Spent by Country groups anything past the top 7 into
+  // an "Others" slice so the pie stays readable — RankedBarChart already
+  // caps its own bars at the top 10.
+  const countryData = metaCountry?.[client.name] ?? null;
+  const countryRows = countryData
+    ? Object.entries(countryData).map(([country, v]) => ({ country, impressions: v.impressions, clicks: v.clicks, spend: v.spend }))
+    : [];
+  const sortedBySpend = [...countryRows].sort((a, b) => b.spend - a.spend);
+  const spendPieData = sortedBySpend.length > 8
+    ? [...sortedBySpend.slice(0, 7).map((r) => ({ label: r.country, value: r.spend })),
+       { label: "Others", value: sortedBySpend.slice(7).reduce((a, r) => a + r.spend, 0) }]
+    : sortedBySpend.map((r) => ({ label: r.country, value: r.spend }));
 
   return (
     <div>
@@ -2563,27 +2583,30 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
 
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
+          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Month</h3>
           <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
         </div>
         <div style={{ height: 240 }} className="px-2 py-3">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="azeraiMetaSpend" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
-                </linearGradient>
-              </defs>
+            <BarChart data={clicksTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
               <CartesianGrid stroke={C.line} vertical={false} />
-              <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
-              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={58} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
-              <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#azeraiMetaSpend)" />
-              <SelectionBand selectedRange={selectedRange} color={accent} />
-            </AreaChart>
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Country breakdown — client spec, Aug 2026: Impressions/Clicks/
+          Amount Spent by country, Meta only */}
+      <div className="grid lg:grid-cols-2 gap-5 mt-5">
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Clicks by Country" rows={countryRows} valueKey="clicks" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+      </div>
+      <div className="mt-5">
+        <ReportPie title="Amount Spent by Country" data={spendPieData} source="Meta Ads" sourceIcon={<MetaMark size={13} />} formatValue={fmtVND} />
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtVND} fmtCpc={fmtVND} />
@@ -2594,7 +2617,7 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Revenue and ROAS use Meta's own Pixel Purchase value, not the combined Overall-tab figure.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Revenue and ROAS use Meta's own Pixel Purchase value, not the combined Overall-tab figure. Clicks Per Month always shows the full available history regardless of the date-range picker, same as the equivalent monthly bar charts elsewhere. Country-breakdown charts (Impressions/Clicks by Country, Amount Spent by Country) are scoped to the exact selected range and show the top 10 countries by their own metric (bar charts) or top 7 + an "Others" slice (Amount Spent pie).
       </p>
     </div>
   );
@@ -4144,7 +4167,7 @@ const Hi = ({ children, color = C.accent }) => <span style={{ color, fontWeight:
 
 const PIE_PALETTE = ["#0077C8", "#1A7A50", "#C74E7B", "#B87A00", "#7A5AC2", "#38B6FF", "#E06C4F", "#4A6A8A"];
 
-function ReportPie({ title, subtitle, data, source = "Google Search Console" }) {
+function ReportPie({ title, subtitle, data, source = "Google Search Console", sourceIcon, formatValue = fmt }) {
   const total = data.reduce((a, d) => a + d.value, 0) || 1;
   const items = data.map((d, i) => ({ ...d, key: d.key ?? d.label, color: d.color ?? PIE_PALETTE[i % PIE_PALETTE.length] }));
   return (
@@ -4160,7 +4183,7 @@ function ReportPie({ title, subtitle, data, source = "Google Search Console" }) 
               <Pie data={items} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1} stroke="none">
                 {items.map((d) => <Cell key={d.key} fill={d.color} />)}
               </Pie>
-              <Tooltip formatter={(v, n) => [fmt(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Tooltip formatter={(v, n) => [formatValue(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
             </RePieChart>
           </ResponsiveContainer>
         </div>
@@ -4174,14 +4197,14 @@ function ReportPie({ title, subtitle, data, source = "Google Search Console" }) 
                 <span style={{ color: C.muted }} className="truncate">{d.label}</span>
               </span>
               <span style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }} className="shrink-0 pl-2">
-                {fmt(d.value)} <span style={{ color: C.faint }}>({((d.value / total) * 100).toFixed(1)}%)</span>
+                {formatValue(d.value)} <span style={{ color: C.faint }}>({((d.value / total) * 100).toFixed(1)}%)</span>
               </span>
             </div>
           ))}
         </div>
       </div>
       <div className="px-5 py-3 mt-auto flex items-center gap-2" style={{ borderTop: `1px solid ${C.line}` }}>
-        <GoogleG size={14} /><span style={{ color: C.faint, fontSize: 11.5 }}>{source}</span>
+        {sourceIcon ?? <GoogleG size={14} />}<span style={{ color: C.faint, fontSize: 11.5 }}>{source}</span>
       </div>
     </div>
   );
@@ -6120,12 +6143,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSemRange?.from, activeSemRange?.to, activeCompareRange?.from, activeCompareRange?.to]);
 
-  // Impressions (+ Meta's Website Purchases) by country, for the exact
-  // selected range — see fetchMetaCountryBreakdown/fetchGoogleCountryBreakdown
-  // in lib/sem.js. Only Sora's Meta/Google tabs read this (client spec) via
-  // the metaCountry/googleCountry props, but fetched generically here like
-  // liveReach above rather than gated to one client.
-  const [metaCountry, setMetaCountry] = useState(null); // { [client]: { [country]: { impressions, purchases } } } | null
+  // Impressions (+ Meta's Website Purchases/Clicks/Amount Spent) by country,
+  // for the exact selected range — see fetchMetaCountryBreakdown/
+  // fetchGoogleCountryBreakdown in lib/sem.js. Read by Sora's Meta/Google
+  // tabs and Azerai's Meta tab (both properties) via the metaCountry/
+  // googleCountry props, but fetched generically here like liveReach above
+  // rather than gated to specific clients.
+  const [metaCountry, setMetaCountry] = useState(null); // { [client]: { [country]: { impressions, purchases, clicks, spend } } } | null
   const [googleCountry, setGoogleCountry] = useState(null); // { [client]: { [country]: { impressions } } } | null
   useEffect(() => {
     if (!activeSemRange) return;
@@ -6428,8 +6452,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : <SummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
       {service === "sem" && semSub === "meta" && (
-        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} />
-        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
+        client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
+        : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} metaCountry={metaCountry} />
         : <MetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
       {service === "sem" && semSub === "google" && (
