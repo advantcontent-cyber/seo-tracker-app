@@ -2111,11 +2111,13 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
   );
 }
 
-// Creative Performance — its own sub-tab per the client's Aug 2026 feedback
-// ("Move the Creative Performance section to a separate tab"). Previously
-// inline at the bottom of SoraMetaTab; just CreativesPanel on its own now,
-// no new data/logic.
-function SoraCreativeTab({ client, metaCreatives }) {
+// Creative Performance — its own sub-tab, per Sora's Aug 2026 feedback
+// ("Move the Creative Performance section to a separate tab") originally,
+// then extended to every other client (Azerai, Song Saa, SSFB, SSSH, Le
+// Cercle, IC Khao Yai, Nomad Greenland) so Creatives is no longer buried at
+// the bottom of Meta/Overall for anyone. Just CreativesPanel on its own —
+// no client-specific data/logic, so one shared component covers all of them.
+function CreativeTab({ client, metaCreatives }) {
   return (
     <div>
       <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
@@ -2616,11 +2618,6 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtVND} fmtCpc={fmtVND} />
 
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
-      </div>
-
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Figures shown in VND — this account's native billing currency, not converted to USD. Revenue and ROAS use Meta's own Pixel Purchase value, not the combined Overall-tab figure. Clicks Per Month always shows the full available history regardless of the date-range picker, same as the equivalent monthly bar charts elsewhere. Country-breakdown charts (Impressions/Clicks by Country, Amount Spent by Country) are scoped to the exact selected range and show the top 10 countries by their own metric (bar charts) or top 7 + an "Others" slice (Amount Spent pie).
       </p>
@@ -2971,11 +2968,6 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
         </p>
       </div>
 
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
-      </div>
-
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -3177,11 +3169,6 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <BarBlock title="Total Clicks Per Month" data={clicksTrend} color="#A78BE0" />
         <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
-      </div>
-
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
       </div>
 
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
@@ -3414,11 +3401,6 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
         <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
       </div>
 
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
-      </div>
-
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -3503,11 +3485,6 @@ function LeCercleOverallTab({ client, selectedRange, compareRange, range, semDat
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
       </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
@@ -3929,11 +3906,6 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
-
-      {/* Ad creatives */}
-      <div className="mt-5">
-        <CreativesPanel rows={metaCreatives?.[client.name] ?? []} />
-      </div>
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site). Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
@@ -6323,23 +6295,23 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div className="no-print flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
           <div className="flex items-center gap-1.5">
             {(client.name === "Six Senses Fort Barwara"
-              ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
+              ? [["overall", "Overall"], ["campaigns", "Campaign Performance"], ["creative", "Creative Performance"]]
               : client.name === "Six Senses Shaharut"
-              ? [["overall", "Overall"]]
+              ? [["overall", "Overall"], ["creative", "Creative Performance"]]
               : client.name === "Song Saa Private Island"
               // Google Ads was intentionally excluded from this report until
               // the client's Aug 2026 feedback asked for it back — see
               // SongSaaOverallTab. Le Cercle stays Meta-only for real (no
               // Google Ads account exists for it), so it keeps just Overall.
-              ? [["summary", "Overall"], ["google", "Google"]]
+              ? [["summary", "Overall"], ["google", "Google"], ["creative", "Creative Performance"]]
               : client.name === "Le Cercle"
-              ? [["summary", "Overall"]]
-              // Creative Performance split into its own tab per the client's
-              // Aug 2026 feedback — was inline at the bottom of SoraMetaTab,
-              // see SoraCreativeTab.
-              : client.name === "Sora Sukhumvit"
-              ? [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"], ["creative", "Creative Performance"]]
-              : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"]]
+              ? [["summary", "Overall"], ["creative", "Creative Performance"]]
+              // Everyone else (Sora, Azerai both properties, IC Khao Yai,
+              // Nomad Greenland): Summary/Meta/Google + its own Creative
+              // Performance tab. Creative Performance split out of Meta per
+              // the client's Aug 2026 feedback (originally Sora-only, then
+              // extended to every client — see CreativeTab).
+              : [["summary", "Summary"], ["meta", "Meta"], ["google", "Google"], ["creative", "Creative Performance"]]
             ).map(([id, label]) => (
               <button
                 key={id}
@@ -6505,8 +6477,8 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
         : <GoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
       )}
-      {semSub === "creative" && client.name === "Sora Sukhumvit" && (
-        <SoraCreativeTab client={client} metaCreatives={metaCreatives} />
+      {semSub === "creative" && (
+        <CreativeTab client={client} metaCreatives={metaCreatives} />
       )}
         </div>
       )}
