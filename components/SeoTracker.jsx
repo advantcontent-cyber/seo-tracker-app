@@ -6246,7 +6246,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
                 color: isLive ? C.healthy : C.watch,
               }}
             >
-              {isLive ? "Windsor.ai" : gscData ? "GSC not connected" : gscError ? "GSC error" : "Loading…"}
+              {isLive || gscData ? "Windsor.ai" : gscError ? "GSC error" : "Loading…"}
             </span>
           </div>
         </div>
