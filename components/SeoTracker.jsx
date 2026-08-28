@@ -6320,7 +6320,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           ))}
         </div>
       ) : service === "sem" ? (
-        <div className="flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
+        <div className="no-print flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
           <div className="flex items-center gap-1.5">
             {(client.name === "Six Senses Fort Barwara"
               ? [["overall", "Overall"], ["campaigns", "Campaign Performance"]]
@@ -6368,6 +6368,16 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               to each KPI — the compare period's raw numbers aren't
               displayed anywhere. */}
           <div className="flex items-start gap-4">
+            <div style={{ alignSelf: "flex-end" }}>
+              <button
+                onClick={() => window.print()}
+                disabled={!activeSemRange}
+                className="inline-flex items-center gap-1.5 rounded-lg transition-colors"
+                style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.accent, fontSize: 12.5, fontWeight: 600, padding: "6px 12px", whiteSpace: "nowrap", cursor: activeSemRange ? "pointer" : "default", opacity: activeSemRange ? 1 : 0.5 }}
+              >
+                <Printer size={13} /> Download report at selected time range
+              </button>
+            </div>
             <div className="flex flex-col gap-1">
               <span style={{ color: C.faint, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Date range</span>
               <div className="flex items-center gap-1.5">
@@ -6430,18 +6440,47 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
         <div className="mt-6" />
       )}
 
+      {/* Download PDF (General feedback item #2): wraps every SEM/Performance
+          Marketing tab's content below in a print-scoped container, reusing
+          the same "hide everything else, print only this" convention as
+          #amn-report-print in ReportView above. The tab nav + date pickers
+          are marked .no-print (see the row above) since they're controls,
+          not report content; this masthead — hidden on screen, shown only
+          on print via .print-only — replaces them with static text so the
+          printed page still says which client/report/date range this is. */}
+      {service === "sem" && (
+        <div id="sem-report-print">
+          <style>{`
+            .print-only { display: none; }
+            @media print {
+              body * { visibility: hidden; }
+              #sem-report-print, #sem-report-print * { visibility: visible; }
+              #sem-report-print { position: absolute; inset: 0; width: 100%; height: auto; overflow: visible; padding: 24px; }
+              .no-print { display: none !important; }
+              .print-only { display: block !important; }
+            }
+          `}</style>
+          <div className="print-only" style={{ marginBottom: 16 }}>
+            <h2 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 22, color: C.ink, marginBottom: 4 }}>
+              {client.name} — {SVC_LABEL.sem} Report
+            </h2>
+            <p style={{ color: C.muted, fontSize: 12.5 }}>
+              {activeSemRange ? `${activeSemRange.from} – ${activeSemRange.to}` : ""} · Prepared by the AMN
+            </p>
+          </div>
+
       {/* Six Senses Fort Barwara — Meta-only custom SEM report (Overall +
           Campaign Performance), a different shape from both the Click Book
           template and Sora's Purchase/ROAS template. See SsfbOverallTab /
           SsfbCampaignTab below. Six Senses Shaharut shares the same Overall
           shape (see SsshOverallTab) but has no Campaign Performance tab. */}
-      {service === "sem" && semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
+      {semSub === "overall" && client.name === "Six Senses Fort Barwara" && (
         <SsfbOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
-      {service === "sem" && semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
+      {semSub === "campaigns" && client.name === "Six Senses Fort Barwara" && (
         <SsfbCampaignTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} semData={semData} />
       )}
-      {service === "sem" && semSub === "overall" && client.name === "Six Senses Shaharut" && (
+      {semSub === "overall" && client.name === "Six Senses Shaharut" && (
         <SsshOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
 
@@ -6449,25 +6488,27 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
           custom SEM report (Purchase/Add To Cart/Revenue/ROAS shape) — a
           different spec from the Click Book template every other SEM
           client uses. See soraDayCombined / azeraiDayCombined above. */}
-      {service === "sem" && semSub === "summary" && (
+      {semSub === "summary" && (
         client.name === "Sora Sukhumvit" ? <SoraSummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiSummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
         : client.name === "Song Saa Private Island" ? <SongSaaOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} metaCreatives={metaCreatives} />
         : client.name === "Le Cercle" ? <LeCercleOverallTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
         : <SummaryTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} />
       )}
-      {service === "sem" && semSub === "meta" && (
+      {semSub === "meta" && (
         client.name === "Sora Sukhumvit" ? <SoraMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCountry={metaCountry} metaCreatives={metaCreatives} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiMetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} metaCountry={metaCountry} />
         : <MetaTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} liveReach={liveReach} metaCreatives={metaCreatives} />
       )}
-      {service === "sem" && semSub === "google" && (
+      {semSub === "google" && (
         client.name === "Sora Sukhumvit" ? <SoraGoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} googleCountry={googleCountry} />
         : (client.name === "Azerai Ke Ga Bay" || client.name === "Azerai La Residence, Hue") ? <AzeraiGoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} googleSearchTerms={googleSearchTerms} />
         : <GoogleTab client={client} selectedRange={activeSemRange} compareRange={activeCompareRange} range={semRange} semData={semData} />
       )}
-      {service === "sem" && semSub === "creative" && client.name === "Sora Sukhumvit" && (
+      {semSub === "creative" && client.name === "Sora Sukhumvit" && (
         <SoraCreativeTab client={client} metaCreatives={metaCreatives} />
+      )}
+        </div>
       )}
 
       {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
