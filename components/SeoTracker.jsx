@@ -1189,7 +1189,9 @@ const campaignMarket = (name) => {
 };
 
 // Horizontal bar breakdown (like the reference "Traffic by Website").
-function BarBreakdown({ title, rows, fmtVal }) {
+// `color` is optional (Aug 2026, colorful-redesign rollout) — every existing
+// caller omits it and keeps the default C.accent bar color unchanged.
+function BarBreakdown({ title, rows, fmtVal, color = C.accent }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -1203,7 +1205,7 @@ function BarBreakdown({ title, rows, fmtVal }) {
           <div key={r.label} className="flex items-center gap-3">
             <span style={{ color: C.muted, fontSize: 12.5, width: 92 }} className="shrink-0 truncate">{r.label}</span>
             <div className="flex-1 rounded-full" style={{ background: C.bg, height: 8 }}>
-              <div className="rounded-full" style={{ width: `${Math.max(4, (r.value / max) * 100)}%`, height: 8, background: C.accent }} />
+              <div className="rounded-full" style={{ width: `${Math.max(4, (r.value / max) * 100)}%`, height: 8, background: color }} />
             </div>
             <span style={{ color: C.ink, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }} className="shrink-0 text-right" >{fmtVal(r.value)}</span>
           </div>
@@ -2392,20 +2394,20 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
   // tab, but Azerai's own reference report has only a single extra metric
   // in each box's second row (Add To Cart; no Traffic row here) rather than
   // Sora's four — no GA4 "Direct" numbers or Item View for this client.
-  const overallRow1 = cur ? [
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (Google's USD leg this range)" : undefined },
-    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase") },
-    { label: "Revenue",      value: fmtVND(cur.revenue), delta: dPct("revenue") },
-    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
+  const overallCards = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (Google's USD leg this range)" : undefined, icon: DollarSign },
+    { label: "Purchases",    value: fmt(cur.purchase),   delta: dPct("purchase"), icon: ShoppingCart },
+    { label: "Revenue",      value: fmtVND(cur.revenue), delta: dPct("revenue"), icon: Banknote },
+    { label: "ROAS",         value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas), icon: Percent },
+    { label: "Add To Cart", value: fmt(cur.addToCart), delta: dPct("addToCart"), icon: Receipt },
   ] : [];
-  const overallRow2 = cur ? [
-    { label: "Add To Cart", value: fmt(cur.addToCart), delta: dPct("addToCart") },
-  ] : [];
-  const brandRow1 = cur ? [
-    { label: "Impression",     value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Total Avg. CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",            value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Total Click",    value: fmt(cur.clicks),      delta: dPct("clicks") },
+  const brandCards = cur ? [
+    { label: "Impression",     value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Total Avg. CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "CPM",            value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Total Click",    value: fmt(cur.clicks),      delta: dPct("clicks"), icon: MousePointerClick },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -2425,10 +2427,20 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
 
   return (
     <div>
-      {/* Two grouped performance boxes */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" cols={2} rows={[overallRow1, overallRow2]} />
-        <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" cols={2} rows={[brandRow1]} />
+      {/* Two titled groups of individual colorful KPI cards — same treatment
+          as Sora's Summary tab (rolled out Aug 2026). */}
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Overall Performance</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {overallCards.map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+        ))}
+      </div>
+
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3 mt-6">Brand Awareness</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {brandCards.map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+        ))}
       </div>
 
       {/* Daily trend charts */}
@@ -2445,8 +2457,8 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={C.accent} strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color={C.accent} />
+                <Line type="monotone" dataKey="purchase" name="Purchase" stroke={KPI_HUES[0]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -2463,8 +2475,8 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#1877F2" strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke={KPI_HUES[1]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[1]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -2486,8 +2498,8 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Purchase" fill={C.accent} radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Purchase" fill={KPI_HUES[2]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => v.toFixed(1).replace(/\.0$/, "")} style={{ fill: KPI_HUES[2], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -2504,8 +2516,8 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
                 <Tooltip formatter={(v) => fmtVND(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Revenue" fill="#1877F2" radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Revenue" fill={KPI_HUES[6]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v))} style={{ fill: KPI_HUES[6], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -2525,8 +2537,8 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
               <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Bar dataKey="value" name="Add To Cart" fill="#5FC77E" radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: "#5FC77E", fontSize: 11, fontWeight: 600 }} />
+              <Bar dataKey="value" name="Add To Cart" fill={KPI_HUES[4]} radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: KPI_HUES[4], fontSize: 11, fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -2544,7 +2556,6 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
 
 function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives, metaCountry }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -2573,22 +2584,24 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
   const freq = cur && reach ? cur.impressions / reach : 0;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent",     value: fmtVND(cur.spend),        delta: dPct("spend") },
-    { label: "Website Purchases", value: fmt(cur.purchases),      delta: dPct("purchases") },
-    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
-    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
+    { label: "Amount Spent",     value: fmtVND(cur.spend),        delta: dPct("spend"), icon: DollarSign },
+    { label: "Website Purchases", value: fmt(cur.purchases),      delta: dPct("purchases"), icon: ShoppingCart },
+    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue"), icon: Banknote },
+    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas), icon: Percent },
     // Was missing entirely — caught by the client, Aug 2026, same as the
     // Google-tab gap fixed just before this. meta.addToCart (Meta Pixel
     // "Add to cart" event) was already fetched generically and already
     // backs Add To Cart on the combined Summary tab; just never shown here
     // (Sora's Meta tab has always had this card — Azerai's was missing it).
-    { label: "Add To Cart",      value: fmt(cur.addToCart),        delta: dPct("addToCart") },
-    { label: "Impression",       value: fmt(cur.impressions),     delta: dPct("impressions") },
-    { label: "Reach",            value: fmt(reach),           delta: reachDPct },
-    { label: "Click",            value: fmt(cur.clicks),          delta: dPct("clicks") },
-    { label: "CTR",              value: `${ctr.toFixed(1)}%`,     delta: pctDelta(ctr, prevCtr) },
-    { label: "Frequency",        value: freq.toFixed(2) },
+    { label: "Add To Cart",      value: fmt(cur.addToCart),        delta: dPct("addToCart"), icon: Receipt },
+    { label: "Impression",       value: fmt(cur.impressions),     delta: dPct("impressions"), icon: Eye },
+    { label: "Reach",            value: fmt(reach),           delta: reachDPct, icon: Users },
+    { label: "Click",            value: fmt(cur.clicks),          delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`,     delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Frequency",        value: freq.toFixed(2), icon: Activity },
   ] : [];
 
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
@@ -2620,13 +2633,7 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
         ))}
       </div>
 
@@ -2642,7 +2649,7 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
               <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill={KPI_HUES[0]} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -2651,8 +2658,8 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
       {/* Country breakdown — client spec, Aug 2026: Impressions/Clicks/
           Amount Spent by country, Meta only */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
-        <RankedBarChart title="Clicks by Country" rows={countryRows} valueKey="clicks" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Impressions by Country" rows={countryRows} valueKey="impressions" color={KPI_HUES[2]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        <RankedBarChart title="Clicks by Country" rows={countryRows} valueKey="clicks" color={KPI_HUES[5]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
       <div className="mt-5">
         <ReportPie title="Amount Spent by Country" data={spendPieData} source="Meta Ads" sourceIcon={<MetaMark size={13} />} formatValue={fmtVND} heading="h2" />
@@ -2672,7 +2679,6 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
 // 2026 feedback item, not part of AZKGB's separate feedback list.
 function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, googleSearchTerms }) {
   const sem = semData?.[client.name];
-  const accent = C.accent;
 
   if (!sem) {
     return (
@@ -2694,20 +2700,22 @@ function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, 
   const roas     = cur && !cur.spendPending && cur.spend ? cur.purchaseValue / cur.spend : null;
   const prevRoas = prev && !prev.spendPending && prev.spend ? prev.purchaseValue / prev.spend : null;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (USD → VND this range)" : undefined },
-    { label: "Website Purchases", value: fmt(cur.purchase), delta: dPct("purchase") },
-    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue") },
-    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas) },
-    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Click",            value: fmt(cur.clicks),      delta: dPct("clicks") },
-    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
+    { label: "Amount Spent",     value: cur.spendPending ? "—" : fmtVND(cur.spend), delta: dPct("spend"), note: cur.spendPending ? "Pending FX conversion (USD → VND this range)" : undefined, icon: DollarSign },
+    { label: "Website Purchases", value: fmt(cur.purchase), delta: dPct("purchase"), icon: ShoppingCart },
+    { label: "Revenue",          value: fmtVND(cur.purchaseValue), delta: dPct("purchaseValue"), icon: Banknote },
+    { label: "ROAS",             value: roas != null ? roas.toFixed(2) : "—", delta: pctDelta(roas, prevRoas), icon: Percent },
+    { label: "Impression",       value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Click",            value: fmt(cur.clicks),      delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",              value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
     // Was missing entirely — caught by the client, Aug 2026 (same gap as
     // Sora's Google tab). The isolated google.addToCart figure (see
     // GOOGLE_CONVERSION_ACTION_MATCH in lib/sem.js — "ClickAddRoomCheckout"
     // for Azerai) was already fetched/summed correctly and already backs
     // Add To Cart on the combined Summary tab; just never shown here.
-    { label: "Add To Cart",      value: fmt(cur.addToCart),   delta: dPct("addToCart") },
+    { label: "Add To Cart",      value: fmt(cur.addToCart),   delta: dPct("addToCart"), icon: Receipt },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -2734,14 +2742,7 @@ function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, 
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
         ))}
       </div>
 
@@ -2755,16 +2756,16 @@ function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, 
             <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="azeraiGoogleSpend" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                  <stop offset="0%" stopColor={KPI_HUES[0]} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={KPI_HUES[0]} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} vertical={false} />
               <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={58} tickFormatter={(v) => `₫${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
               <Tooltip formatter={(v) => (v == null ? "Pending FX conversion" : fmtVND(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-              <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#azeraiGoogleSpend)" connectNulls={false} />
-              <SelectionBand selectedRange={selectedRange} color={accent} />
+              <Area type="monotone" dataKey="spend" stroke={KPI_HUES[0]} strokeWidth={2} fill="url(#azeraiGoogleSpend)" connectNulls={false} />
+              <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -2838,7 +2839,6 @@ function TopKeywordsTable({ rows, rangeLabel }) {
 // WhatsApp campaigns' own spend.
 function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData, metaCreatives }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -2883,18 +2883,20 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
   const costPerMessage = cur && curWa?.messages ? cur.spend / curWa.messages : null;
   const prevCostPerMessage = prev && prevWa?.messages ? prev.spend / prevWa.messages : null;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent",             value: fmtMoney(cur.spend), delta: dPct("spend") },
-    { label: "Telegram Link Click",      value: fmt(curWa?.clicks ?? 0), delta: waDPct("clicks") },
-    { label: "Whatsapp Messages",        value: fmt(curWa?.messages ?? 0), delta: waDPct("messages") },
-    { label: "Cost Per Whatsapp Message", value: costPerMessage != null ? fmtMoney(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
-    { label: "Impression",               value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "CTR",                      value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",                      value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks") },
+    { label: "Amount Spent",             value: fmtMoney(cur.spend), delta: dPct("spend"), icon: DollarSign },
+    { label: "Telegram Link Click",      value: fmt(curWa?.clicks ?? 0), delta: waDPct("clicks"), icon: MousePointerClick },
+    { label: "Whatsapp Messages",        value: fmt(curWa?.messages ?? 0), delta: waDPct("messages"), icon: Megaphone },
+    { label: "Cost Per Whatsapp Message", value: costPerMessage != null ? fmtMoney(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage), icon: Banknote },
+    { label: "Impression",               value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "CTR",                      value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "CPM",                      value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks"), icon: MousePointerClick },
     // Meta Pixel add-to-cart — a generic field already fetched for every
     // Meta account (see lib/sem.js), just never surfaced on this tab before.
-    { label: "Add To Cart",              value: fmt(cur.addToCart), delta: dPct("addToCart") },
+    { label: "Add To Cart",              value: fmt(cur.addToCart), delta: dPct("addToCart"), icon: Receipt },
   ] : [];
 
   // Song Saa isn't in NATIVE_CURRENCY_CLIENTS or MIXED_CURRENCY_TARGET, so
@@ -2903,10 +2905,10 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
   // spendPending if its real currency has no fixed rate on file. Hardcode
   // USD rather than curGoogle.currency (the RAW pre-conversion currency).
   const googleKpis = curGoogle ? [
-    { label: "Amount Spent", value: curGoogle.spendPending ? "—" : fmtByCurrency(curGoogle.spend, "USD"), delta: curGoogle.spendPending ? null : googleDPct("spend") },
-    { label: "Impressions",  value: fmt(curGoogle.impressions), delta: googleDPct("impressions") },
-    { label: "Clicks",       value: fmt(curGoogle.clicks), delta: googleDPct("clicks") },
-    { label: "CTR",          value: `${googleCtr.toFixed(1)}%`, delta: pctDelta(googleCtr, prevGoogleCtr) },
+    { label: "Amount Spent", value: curGoogle.spendPending ? "—" : fmtByCurrency(curGoogle.spend, "USD"), delta: curGoogle.spendPending ? null : googleDPct("spend"), icon: DollarSign },
+    { label: "Impressions",  value: fmt(curGoogle.impressions), delta: googleDPct("impressions"), icon: Eye },
+    { label: "Clicks",       value: fmt(curGoogle.clicks), delta: googleDPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",          value: `${googleCtr.toFixed(1)}%`, delta: pctDelta(googleCtr, prevGoogleCtr), icon: Percent },
   ] : [];
 
   // Two monthly bar charts from the client's live Looker Studio report
@@ -2944,7 +2946,7 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
     google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, impressions: curGoogle.impressions, clicks: curGoogle.clicks, ctr: googleCtr } : null,
   } : null;
 
-  const BarBlock = ({ title, data }) => (
+  const BarBlock = ({ title, data, color }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
@@ -2957,7 +2959,7 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
             <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-            <Bar dataKey="value" fill={accent} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -2968,23 +2970,17 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
         ))}
       </div>
 
       {/* Monthly bar charts */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Messaging Conversation Started Per Month" data={waMessagesTrend} />
-        <BarBlock title="Clicks Per Month" data={clicksTrend} />
+        <BarBlock title="Messaging Conversation Started Per Month" data={waMessagesTrend} color={KPI_HUES[0]} />
+        <BarBlock title="Clicks Per Month" data={clicksTrend} color={KPI_HUES[2]} />
       </div>
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Telegram Link Click Per Month" data={waClicksTrend} />
+        <BarBlock title="Telegram Link Click Per Month" data={waClicksTrend} color={KPI_HUES[1]} />
       </div>
 
       {/* Google Ads — see the notes on googleOf/curGoogle above for why this
@@ -2995,14 +2991,17 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
         <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold mb-3">Google Ads</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {googleKpis.map((k, i) => (
-            <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-              <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-              <div className="flex items-baseline gap-2 mt-1.5">
-                <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-                {k.delta != null && <Delta value={k.delta} suffix="%" />}
-              </div>
-              {k.label === "Amount Spent" && curGoogle?.spendPending && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">Pending FX conversion (billed in a non-USD currency)</div>}
-            </div>
+            <SemMetricCard
+              key={k.label}
+              label={k.label}
+              value={k.value}
+              delta={k.delta}
+              icon={k.icon}
+              accent={KPI_HUES[i % KPI_HUES.length]}
+              note={k.label === "Amount Spent" && curGoogle?.spendPending ? "Pending FX conversion (billed in a non-USD currency)" : undefined}
+              sourceIcon={<GoogleG size={13} />}
+              sourceLabel="Google Ads"
+            />
           ))}
         </div>
         <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-3">
@@ -3066,7 +3065,6 @@ function SsfbNoDataCard({ label }) {
 
 function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -3117,7 +3115,7 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
             <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-            <Bar dataKey="value" fill={color || accent} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -3150,43 +3148,41 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
 
   return (
     <div>
-      {/* Overall Performance / Brand Awareness — same grouped-box pattern as
-          Sora/Azerai's Summary tab (PerformanceGroupBox above) */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        <PerformanceGroupBox
-          icon={BarChart3}
-          iconColor={C.accent}
-          title="Overall Performance"
-          cols={2}
-          rows={[[
-            { label: "Amount Spent", value: fmtINR2(cur.spend), delta: dPct("spend") },
-            // Real field is instagram_profile_visits on the facebook (ads)
-            // connector — NOT profile_views on the separate instagram
-            // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
-            { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
-            { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
-            { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews") },
-          ]]}
-        />
-        <PerformanceGroupBox
-          icon={Megaphone}
-          iconColor="#1877F2"
-          title="Brand Awareness"
-          cols={2}
-          rows={[[
-            // Daily NET NEW followers gained, summed over the range — not a
-            // running total (Windsor only exposes the lifetime total as a
-            // non-historical "today" snapshot — see clientForIgAccount in
-            // lib/sem.js). Limited to the last 30 days excluding today by
-            // Instagram's API — a selected range older than that reads 0
-            // because the data isn't available, not because there was no
-            // growth — see the footnote below.
-            { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
-            { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-            { label: "Reach", value: fmt(reach), delta: reachDPct },
-            { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
-          ]]}
-        />
+      {/* Overall Performance / Brand Awareness — two titled groups of
+          individual colorful KPI cards, same treatment as Sora/Azerai's
+          Summary tab (colorful-redesign rollout, Aug 2026). */}
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Overall Performance</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Amount Spent", value: fmtINR2(cur.spend), delta: dPct("spend"), icon: DollarSign },
+          // Real field is instagram_profile_visits on the facebook (ads)
+          // connector — NOT profile_views on the separate instagram
+          // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
+          { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits"), icon: Eye },
+          { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks"), icon: MousePointerClick },
+          { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews"), icon: FileText },
+        ].map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        ))}
+      </div>
+
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3 mt-6">Brand Awareness</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          // Daily NET NEW followers gained, summed over the range — not a
+          // running total (Windsor only exposes the lifetime total as a
+          // non-historical "today" snapshot — see clientForIgAccount in
+          // lib/sem.js). Limited to the last 30 days excluding today by
+          // Instagram's API — a selected range older than that reads 0
+          // because the data isn't available, not because there was no
+          // growth — see the footnote below.
+          { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers"), icon: UserPlus },
+          { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+          { label: "Reach", value: fmt(reach), delta: reachDPct, icon: Users },
+          { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+        ].map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        ))}
       </div>
 
       {/* Cost efficiency + Landing Page Views trend */}
@@ -3204,13 +3200,13 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
             ))}
           </div>
         </div>
-        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color="#22C1D6" />
+        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color={KPI_HUES[2]} />
       </div>
 
       {/* Clicks + IG visits trend */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color="#A78BE0" />
-        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
+        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color={KPI_HUES[6]} />
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color={KPI_HUES[5]} />
       </div>
 
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
@@ -3231,7 +3227,6 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
 // Meta/Google tabs (with INR formatters instead of its USD defaults).
 function SsfbCampaignTab({ client, selectedRange, compareRange, semData }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -3248,9 +3243,11 @@ function SsfbCampaignTab({ client, selectedRange, compareRange, semData }) {
   const total = cur && cur.india != null && cur.international != null ? cur.india + cur.international : null;
   const share = (v) => (total ? Math.round((v / total) * 100) : null);
 
+  // Icons — colorful-redesign rollout (Aug 2026, see KPI_HUES above
+  // SemMetricCard; trialed on Sora first, then approved).
   const cards = [
-    { label: "Ad Spend — India", key: "india" },
-    { label: "Ad Spend — International", key: "international" },
+    { label: "Ad Spend — India", key: "india", icon: Target },
+    { label: "Ad Spend — International", key: "international", icon: TrendingUp },
   ];
 
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "meta") : [];
@@ -3259,20 +3256,26 @@ function SsfbCampaignTab({ client, selectedRange, compareRange, semData }) {
   return (
     <div>
       <div className="grid grid-cols-2 gap-4">
-        {cards.map((c) => (
-          <div key={c.key} className="rounded-lg px-5 py-4" style={{ background: `${accent}12`, border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{c.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {cur?.[c.key] != null ? fmtINR(cur[c.key]) : "—"}
+        {cards.map((c, i) => {
+          const Icon = c.icon;
+          return (
+            <div key={c.key} className="rounded-xl px-5 py-4" style={{ background: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 1px 2px rgba(11,11,11,0.04)" }}>
+              <span className="rounded-full flex items-center justify-center mb-3" style={{ width: 34, height: 34, background: KPI_HUES[i % KPI_HUES.length] }}>
+                <Icon size={17} color="#fff" strokeWidth={2.25} />
               </span>
-              {dPct(c.key) != null && <Delta value={dPct(c.key)} suffix="%" />}
+              <div style={{ color: C.muted, fontSize: 12.5 }}>{c.label}</div>
+              <div className="flex items-baseline gap-2 mt-1.5">
+                <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {cur?.[c.key] != null ? fmtINR(cur[c.key]) : "—"}
+                </span>
+                {dPct(c.key) != null && <Delta value={dPct(c.key)} suffix="%" />}
+              </div>
+              {cur?.[c.key] != null && share(cur[c.key]) != null && (
+                <div className="mt-1" style={{ color: C.faint, fontSize: 12 }}>{share(cur[c.key])}% of total spend</div>
+              )}
             </div>
-            {cur?.[c.key] != null && share(cur[c.key]) != null && (
-              <div className="mt-1" style={{ color: C.faint, fontSize: 12 }}>{share(cur[c.key])}% of total spend</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={rangeLabel} fmtSpend={fmtINR} fmtCpc={fmtINR2} maxHeight={760} />
@@ -3297,7 +3300,6 @@ function SsfbCampaignTab({ client, selectedRange, compareRange, semData }) {
 // the shape overlaps heavily (see Sora vs. Azerai).
 function SsshOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -3348,7 +3350,7 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
             <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-            <Bar dataKey="value" fill={color || accent} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -3380,43 +3382,41 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
 
   return (
     <div>
-      {/* Overall Performance / Brand Awareness — same grouped-box pattern as
-          Sora/Azerai's Summary tab (PerformanceGroupBox above) */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        <PerformanceGroupBox
-          icon={BarChart3}
-          iconColor={C.accent}
-          title="Overall Performance"
-          cols={2}
-          rows={[[
-            { label: "Amount Spent", value: fmtMoney2(cur.spend), delta: dPct("spend") },
-            // Real field is instagram_profile_visits on the facebook (ads)
-            // connector — NOT profile_views on the separate instagram
-            // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
-            { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
-            { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
-            { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews") },
-          ]]}
-        />
-        <PerformanceGroupBox
-          icon={Megaphone}
-          iconColor="#1877F2"
-          title="Brand Awareness"
-          cols={2}
-          rows={[[
-            // Daily NET NEW followers gained, summed over the range — not a
-            // running total (Windsor only exposes the lifetime total as a
-            // non-historical "today" snapshot — see clientForIgAccount in
-            // lib/sem.js). Limited to the last 30 days excluding today by
-            // Instagram's API — a selected range older than that reads 0
-            // because the data isn't available, not because there was no
-            // growth — see the footnote below.
-            { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers") },
-            { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-            { label: "Reach", value: fmt(reach), delta: reachDPct },
-            { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
-          ]]}
-        />
+      {/* Overall Performance / Brand Awareness — two titled groups of
+          individual colorful KPI cards, same treatment as Sora/Azerai/SSFB's
+          equivalent tabs (colorful-redesign rollout, Aug 2026). */}
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Overall Performance</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Amount Spent", value: fmtMoney2(cur.spend), delta: dPct("spend"), icon: DollarSign },
+          // Real field is instagram_profile_visits on the facebook (ads)
+          // connector — NOT profile_views on the separate instagram
+          // (organic) connector. Caught by the client, Aug 2026 — see lib/sem.js.
+          { label: "Instagram Profile Visits", value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits"), icon: Eye },
+          { label: "Link Clicks", value: fmt(cur.linkClicks), delta: dPct("linkClicks"), icon: MousePointerClick },
+          { label: "Landing Page Views", value: fmt(cur.landingPageViews), delta: dPct("landingPageViews"), icon: FileText },
+        ].map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        ))}
+      </div>
+
+      <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3 mt-6">Brand Awareness</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          // Daily NET NEW followers gained, summed over the range — not a
+          // running total (Windsor only exposes the lifetime total as a
+          // non-historical "today" snapshot — see clientForIgAccount in
+          // lib/sem.js). Limited to the last 30 days excluding today by
+          // Instagram's API — a selected range older than that reads 0
+          // because the data isn't available, not because there was no
+          // growth — see the footnote below.
+          { label: "Profile Followers (new)", value: fmt(cur.newFollowers ?? 0), delta: dPct("newFollowers"), icon: UserPlus },
+          { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+          { label: "Reach", value: fmt(reach), delta: reachDPct, icon: Users },
+          { label: "CTR", value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+        ].map((k, i) => (
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
+        ))}
       </div>
 
       {/* Cost efficiency + Landing Page Views trend */}
@@ -3434,13 +3434,13 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
             ))}
           </div>
         </div>
-        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color="#22C1D6" />
+        <BarBlock title="Landing Page Views Per Month" data={lpvTrend} color={KPI_HUES[2]} />
       </div>
 
       {/* Clicks + IG visits trend */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color="#A78BE0" />
-        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color="#5FC77E" />
+        <BarBlock title="Total Clicks Per Month" data={clicksTrend} color={KPI_HUES[6]} />
+        <BarBlock title="Total IG Visit Per Month" data={igVisitsTrend} color={KPI_HUES[5]} />
       </div>
 
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
@@ -3464,7 +3464,6 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
 // campaign instead of filtering by name, so no new fetch was needed.
 function LeCercleOverallTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2";
 
   if (!sem) {
     return (
@@ -3501,31 +3500,27 @@ function LeCercleOverallTab({ client, selectedRange, compareRange, range, semDat
   const costPerMessage = cur && curMessages ? cur.spend / curMessages : null;
   const prevCostPerMessage = prev && prevMessages ? prev.spend / prevMessages : null;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent",              value: fmtVND(cur.spend),   delta: dPct("spend") },
+    { label: "Amount Spent",              value: fmtVND(cur.spend),   delta: dPct("spend"), icon: DollarSign },
     // Real field is instagram_profile_visits on the facebook (ads)
     // connector. Caught by the client, Aug 2026 — see lib/sem.js.
-    { label: "IG Profile Visits",         value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits") },
-    { label: "Link Clicks",               value: fmt(cur.linkClicks), delta: dPct("linkClicks") },
-    { label: "Messages Conversation",     value: fmt(curMessages ?? 0), delta: messagesDPct },
-    { label: "Cost per Messages Conversation", value: costPerMessage != null ? fmtVND(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage) },
-    { label: "Impressions",               value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",                     value: fmt(reach),       delta: reachDPct },
-    { label: "CTR",                       value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",                       value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "IG Profile Visits",         value: fmt(cur.igProfileVisits), delta: dPct("igProfileVisits"), icon: Eye },
+    { label: "Link Clicks",               value: fmt(cur.linkClicks), delta: dPct("linkClicks"), icon: MousePointerClick },
+    { label: "Messages Conversation",     value: fmt(curMessages ?? 0), delta: messagesDPct, icon: Megaphone },
+    { label: "Cost per Messages Conversation", value: costPerMessage != null ? fmtVND(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage), icon: Banknote },
+    { label: "Impressions",               value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Reach",                     value: fmt(reach),       delta: reachDPct, icon: Users },
+    { label: "CTR",                       value: `${ctr.toFixed(2)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "CPM",                       value: cpm != null ? fmtVND(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
   ] : [];
 
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
         ))}
       </div>
 
@@ -3606,19 +3601,21 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   const fmtSpend = (v) => fmtByCurrency(v, cur?.currency);
   const spendNote = cur?.spendPending ? "Google and Meta bill in different currencies this range — see the Meta/Google tabs for real figures." : undefined;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote },
-    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook") },
-    { label: "CPA",           value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
-    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks") },
+    { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote, icon: DollarSign },
+    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
+    { label: "CPA",           value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
+    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks"), icon: MousePointerClick },
     // Reach and Google Ads Impressions — ICKY's Aug 2026 feedback (this
     // generic template is shared with Nomad Greenland too — harmless there
     // if either figure just doesn't apply/reads 0).
-    { label: "Reach",                 value: fmt(reach), delta: reachDPct },
-    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct },
+    { label: "Reach",                 value: fmt(reach), delta: reachDPct, icon: Users },
+    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct, icon: Eye },
   ] : [];
 
   // Grouped "Overall Performance"/"Brand Awareness" boxes with icon headers
@@ -3632,20 +3629,18 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // than dropped, since both are separate, already-confirmed Aug 2026
   // feedback items in their own right.
   const isIcky = client.name === "IC Khao Yai";
-  const overallRow1 = cur ? [
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote },
-    { label: "Click Book",   value: fmt(cur.clickBook), delta: dPct("clickBook") },
-    { label: "CPA",          value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa) },
+  const overallCards = cur ? [
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote, icon: DollarSign },
+    { label: "Click Book",   value: fmt(cur.clickBook), delta: dPct("clickBook"), icon: Target },
+    { label: "CPA",          value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
   ] : [];
-  const brandRow1 = cur ? [
-    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
-    { label: "Clicks",        value: fmt(cur.clicks), delta: dPct("clicks") },
-  ] : [];
-  const brandRow2 = cur ? [
-    { label: "Reach",                  value: fmt(reach), delta: reachDPct },
-    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct },
+  const brandCards = cur ? [
+    { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Clicks",        value: fmt(cur.clicks), delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "Reach",                  value: fmt(reach), delta: reachDPct, icon: Users },
+    { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct, icon: Eye },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -3706,23 +3701,28 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
 
   return (
     <div>
-      {/* KPI cards */}
+      {/* KPI cards — two titled groups for ICKY (matches its own reference
+          report), a flat grid for Nomad Greenland; both individual colorful
+          cards now (colorful-redesign rollout, Aug 2026). */}
       {isIcky ? (
-        <div className="grid lg:grid-cols-2 gap-5">
-          <PerformanceGroupBox icon={BarChart3} iconColor={C.accent} title="Overall Performance" rows={[overallRow1]} />
-          <PerformanceGroupBox icon={Megaphone} iconColor="#1877F2" title="Brand Awareness" rows={[brandRow1, brandRow2]} />
-        </div>
+        <>
+          <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3">Overall Performance</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {overallCards.map((k, i) => (
+              <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+            ))}
+          </div>
+          <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-3 mt-6">Brand Awareness</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {brandCards.map((k, i) => (
+              <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
+            ))}
+          </div>
+        </>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((k, i) => (
-            <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-              <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-              <div className="flex items-baseline gap-2 mt-1.5">
-                <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-                {k.delta != null && <Delta value={k.delta} suffix="%" />}
-              </div>
-              {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-            </div>
+            <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceLabel="Combined" />
           ))}
         </div>
       )}
@@ -3741,8 +3741,8 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="clickBook" name="Click Book" stroke={C.accent} strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color={C.accent} />
+                <Line type="monotone" dataKey="clickBook" name="Click Book" stroke={KPI_HUES[0]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -3759,8 +3759,8 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="clicks" name="Clicks" stroke="#1877F2" strokeWidth={2} dot={false} />
-                <SelectionBand selectedRange={selectedRange} color="#1877F2" />
+                <Line type="monotone" dataKey="clicks" name="Clicks" stroke={KPI_HUES[1]} strokeWidth={2} dot={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[1]} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -3780,8 +3780,8 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Click Book" fill={C.accent} radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: C.accent, fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Click Book" fill={KPI_HUES[2]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: KPI_HUES[2], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -3798,8 +3798,8 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Clicks" fill="#1877F2" radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: "#1877F2", fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="value" name="Clicks" fill={KPI_HUES[6]} radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: KPI_HUES[6], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -3809,8 +3809,8 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
 
       {/* Click Book by Market / Cost per Click Book by Market */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBreakdown title="Click Book by Market" rows={clickBookByMarket} fmtVal={fmt} />
-        <BarBreakdown title="Cost per Click Book by Market" rows={costPerClickBookByMarket.rows} fmtVal={(v) => fmtByCurrency(v, costPerClickBookByMarket.currency)} />
+        <BarBreakdown title="Click Book by Market" rows={clickBookByMarket} fmtVal={fmt} color={KPI_HUES[3]} />
+        <BarBreakdown title="Cost per Click Book by Market" rows={costPerClickBookByMarket.rows} fmtVal={(v) => fmtByCurrency(v, costPerClickBookByMarket.currency)} color={KPI_HUES[4]} />
       </div>
 
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
@@ -3830,7 +3830,6 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
 /* ------------------------------------------------------------------ */
 function MetaTab({ client, selectedRange, compareRange, range, semData, liveReach, metaCreatives }) {
   const sem = semData?.[client.name];
-  const accent = "#1877F2"; // Meta blue, matches the platform toggle in Summary
 
   if (!sem) {
     return (
@@ -3875,15 +3874,17 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
   const reachDPct = reachPrev ? Math.round(((reach - reachPrev) / reachPrev) * 100) : null;
   const freq = cur && reach ? cur.impressions / reach : 0;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend") },
-    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Reach",       value: fmt(reach),        delta: reachDPct },
-    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
-    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
-    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb) },
-    { label: "Frequency",   value: freq.toFixed(2) },
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), icon: DollarSign },
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Reach",       value: fmt(reach),        delta: reachDPct, icon: Users },
+    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
+    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
+    { label: "Frequency",   value: freq.toFixed(2), icon: Activity },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -3907,14 +3908,7 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
         ))}
       </div>
 
@@ -3930,21 +3924,21 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
               <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <defs>
                   <linearGradient id="metaSpend" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                    <stop offset="0%" stopColor={KPI_HUES[0]} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={KPI_HUES[0]} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${currencyPrefix}${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "No data" : fmtSpend(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#metaSpend)" connectNulls={false} />
-                <SelectionBand selectedRange={selectedRange} color={accent} />
+                <Area type="monotone" dataKey="spend" stroke={KPI_HUES[0]} strokeWidth={2} fill="url(#metaSpend)" connectNulls={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtSpend} />
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtSpend} color={KPI_HUES[2]} />
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
@@ -3963,7 +3957,6 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
 /* ------------------------------------------------------------------ */
 function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const sem = semData?.[client.name];
-  const accent = C.accent; // matches the Google Ads accent used in Summary
 
   if (!sem) {
     return (
@@ -3994,13 +3987,15 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
   const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
 
+  // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
+  // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
-    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend") },
-    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions") },
-    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks") },
-    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr) },
-    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook") },
-    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb) },
+    { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), icon: DollarSign },
+    { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
+    { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
+    { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
+    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
+    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -4024,14 +4019,7 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${accent}12` : "#fff", border: `1px solid ${C.line}` }}>
-            <div style={{ color: C.muted, fontSize: 12.5 }}>{k.label}</div>
-            <div className="flex items-baseline gap-2 mt-1.5">
-              <span style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
-              {k.delta != null && <Delta value={k.delta} suffix="%" />}
-            </div>
-            {k.note && <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">{k.note}</div>}
-          </div>
+          <SemMetricCard key={k.label} label={k.label} value={k.value} delta={k.delta} note={k.note} icon={k.icon} accent={KPI_HUES[i % KPI_HUES.length]} sourceIcon={<GoogleG size={13} />} sourceLabel="Google Ads" />
         ))}
       </div>
 
@@ -4047,21 +4035,21 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
               <AreaChart data={trend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
                 <defs>
                   <linearGradient id="googleSpend" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                    <stop offset="0%" stopColor={KPI_HUES[0]} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={KPI_HUES[0]} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${currencyPrefix}${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`} />
                 <Tooltip formatter={(v) => (v == null ? "No data" : fmtSpend(v))} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Area type="monotone" dataKey="spend" stroke={accent} strokeWidth={2} fill="url(#googleSpend)" connectNulls={false} />
-                <SelectionBand selectedRange={selectedRange} color={accent} />
+                <Area type="monotone" dataKey="spend" stroke={KPI_HUES[0]} strokeWidth={2} fill="url(#googleSpend)" connectNulls={false} />
+                <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtSpend} />
+        <BarBreakdown title="Spend by market" rows={byMarket} fmtVal={fmtSpend} color={KPI_HUES[2]} />
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
