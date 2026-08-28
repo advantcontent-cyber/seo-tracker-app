@@ -617,6 +617,13 @@ function Portfolio({ clients, onSelect, month, gscData }) {
 
   return (
     <div>
+      {/* Page title — this landing view had no heading at all before; every
+          other page (a selected client's Detail view) has the client name
+          as its h1, so this needs its own to match. */}
+      <h1 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none mb-5">
+        Overview
+      </h1>
+
       {/* Attention strip — the triage signature */}
       <div
         className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5 mb-5 rounded-lg"
@@ -938,7 +945,7 @@ function KeywordIdeas({ client, ideas }) {
     <div className="rounded-lg mb-6 overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <div>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Keyword ideas</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Keyword ideas</h2>
           <div style={{ color: C.faint, fontSize: 12 }} className="mt-0.5">
             New topics to target · global search volume · difficulty (TH)
           </div>
@@ -1020,9 +1027,9 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
     return (
       <div>
         <KeywordIdeas client={client} ideas={keywordIdeas} />
-        <h3 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none mb-1.5">
+        <h2 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none mb-1.5">
           12-month blog plan
-        </h3>
+        </h2>
         <p style={{ color: C.muted, fontSize: 12.5 }} className="mb-4 leading-relaxed">
           Import your plan sheet to populate this table. Columns: Client, Month, Keyword, Title, SEO meta, Brief, Draft, Published. Status is read from the links — a Published URL is Live, a Draft link is Drafting, a Brief link is Briefed, none is Planned. Rows route to each property by the Client column.
         </p>
@@ -1085,9 +1092,9 @@ function BlogPlan({ client, imported, onImport, keywordIdeas = [], planKeywords 
       <KeywordIdeas client={client} ideas={keywordIdeas} />
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
-          <h3 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none">
+          <h2 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 22 }} className="leading-none">
             12-month blog plan
-          </h3>
+          </h2>
           <div style={{ color: C.faint, fontSize: 13 }} className="mt-1.5">
             {rows.length} {rows.length === 1 ? "post" : "posts"} · {live} live, {drafting} drafting, {briefed} briefed · imported
           </div>
@@ -1187,7 +1194,7 @@ function BarBreakdown({ title, rows, fmtVal }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
       </div>
       <div className="px-5 py-4 flex flex-col gap-3">
         {rows.length === 0 ? (
@@ -1500,7 +1507,7 @@ function AnalystNotes({ client, period, facts }) {
   return (
     <div className="mt-5">
       <div className="flex items-center justify-between mb-3">
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Analyst Notes</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Analyst Notes</h2>
         <button
           onClick={generate}
           disabled={loading || !facts}
@@ -1516,7 +1523,7 @@ function AnalystNotes({ client, period, facts }) {
           <div key={b.key} className="rounded-lg p-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
             <div className="flex items-center gap-2 mb-2">
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: b.dot }} />
-              <h4 style={{ color: C.ink, fontSize: 13 }} className="font-semibold">{b.label}</h4>
+              <h3 style={{ color: C.ink, fontSize: 13 }} className="font-semibold">{b.label}</h3>
             </div>
             <textarea
               value={notes[b.key]}
@@ -1568,7 +1575,7 @@ function PerformanceGroupBox({ icon: Icon, iconColor, title, rows, cols = 4 }) {
         <span className="rounded-md flex items-center justify-center shrink-0" style={{ width: 28, height: 28, background: iconColor }}>
           <Icon size={15} color="#fff" />
         </span>
-        <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">{title}</h2>
       </div>
       <div className="px-5 py-4">
         {rows.map((row, ri) => (
@@ -1629,7 +1636,7 @@ function RankedBarChart({ title, rows, nameKey = "country", valueKey, color, for
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
       </div>
       <div style={{ height: 260 }} className="px-2 py-4">
         {sorted.length === 0 ? (
@@ -1690,7 +1697,7 @@ function CreativesPanel({ rows }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Creatives</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Creatives</h2>
         <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-0.5">Ranked by CTR, descending{ranked.length > CAP ? ` · top ${CAP} of ${ranked.length}` : ""}</div>
       </div>
       {shown.length === 0 ? (
@@ -1760,7 +1767,7 @@ function SoraCampaignTable({ rows, formatMoney }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h2>
       </div>
       {sorted.length === 0 ? (
         <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No campaigns for this range.</div>
@@ -1902,7 +1909,7 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -1920,7 +1927,7 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -1942,7 +1949,7 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -1960,7 +1967,7 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -2073,7 +2080,7 @@ function SoraMetaTab({ client, selectedRange, compareRange, range, semData, live
       {/* Spend trend */}
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h2>
           <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
         </div>
         <div style={{ height: 240 }} className="px-2 py-3">
@@ -2234,7 +2241,7 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
       {/* Spend trend */}
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h2>
           <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
         </div>
         <div style={{ height: 240 }} className="px-2 py-3">
@@ -2266,7 +2273,7 @@ function SoraGoogleTab({ client, selectedRange, compareRange, range, semData, go
       {/* Click Through Rate by month */}
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Through Rate</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Through Rate</h2>
         </div>
         <div style={{ height: 260 }} className="px-2 py-4">
           <ResponsiveContainer width="100%" height="100%">
@@ -2393,7 +2400,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Purchase Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -2411,7 +2418,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Revenue Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -2435,7 +2442,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Purchases By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -2453,7 +2460,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Revenue By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -2474,7 +2481,7 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
       {/* Total Add To Cart By Month — AZKGB's Aug 2026 feedback item */}
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Add To Cart By Month</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Add To Cart By Month</h2>
         </div>
         <div style={{ height: 240 }} className="px-2 py-4">
           <ResponsiveContainer width="100%" height="100%">
@@ -2590,7 +2597,7 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
 
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Month</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Month</h2>
           <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
         </div>
         <div style={{ height: 240 }} className="px-2 py-3">
@@ -2613,7 +2620,7 @@ function AzeraiMetaTab({ client, selectedRange, compareRange, range, semData, li
         <RankedBarChart title="Clicks by Country" rows={countryRows} valueKey="clicks" color={accent} sourceIcon={<MetaMark size={13} />} sourceLabel="Meta Ads" />
       </div>
       <div className="mt-5">
-        <ReportPie title="Amount Spent by Country" data={spendPieData} source="Meta Ads" sourceIcon={<MetaMark size={13} />} formatValue={fmtVND} />
+        <ReportPie title="Amount Spent by Country" data={spendPieData} source="Meta Ads" sourceIcon={<MetaMark size={13} />} formatValue={fmtVND} heading="h2" />
       </div>
 
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtVND} fmtCpc={fmtVND} />
@@ -2705,7 +2712,7 @@ function AzeraiGoogleTab({ client, selectedRange, compareRange, range, semData, 
 
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h2>
           <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
         </div>
         <div style={{ height: 240 }} className="px-2 py-3">
@@ -2745,7 +2752,7 @@ function TopKeywordsTable({ rows, rangeLabel }) {
   return (
     <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top Performing Keywords</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top Performing Keywords</h2>
         <span style={{ color: C.faint, fontSize: 12.5 }}>by clicks · {rangeLabel}</span>
       </div>
       <div
@@ -2905,7 +2912,7 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
   const BarBlock = ({ title, data }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
         <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
       </div>
       <div style={{ height: 220 }} className="px-2 py-3">
@@ -2950,7 +2957,7 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
           than merged into the Meta KPI grid above, so it's never mistaken
           for a combined/blended figure. */}
       <div className="mt-5">
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold mb-3">Google Ads</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold mb-3">Google Ads</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {googleKpis.map((k, i) => (
             <div key={k.label} className="rounded-lg px-5 py-4" style={{ background: i % 2 === 0 ? `${C.accent}12` : "#fff", border: `1px solid ${C.line}` }}>
@@ -3065,7 +3072,7 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
   const BarBlock = ({ title, data, color }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
         <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
       </div>
       <div style={{ height: 220 }} className="px-2 py-3">
@@ -3296,7 +3303,7 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
   const BarBlock = ({ title, data, color }) => (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h2>
         <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
       </div>
       <div style={{ height: 220 }} className="px-2 py-3">
@@ -3689,7 +3696,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Book Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Book Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -3707,7 +3714,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Day</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Clicks Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -3729,7 +3736,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -3747,7 +3754,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
         </div>
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Clicks By Month</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Clicks By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -3880,7 +3887,7 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
       <div className="grid lg:grid-cols-3 gap-5 mt-5">
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Meta</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 240 }} className="px-2 py-3">
@@ -3997,7 +4004,7 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
       <div className="grid lg:grid-cols-3 gap-5 mt-5">
         <div className="lg:col-span-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Amount Spent · Google Ads</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 240 }} className="px-2 py-3">
@@ -4046,7 +4053,7 @@ function CampaignPerformanceTable({ campaigns, rangeLabel, fmtSpend = fmtMoney, 
   return (
     <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h3>
+        <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Campaign Performance</h2>
         <span style={{ color: C.faint, fontSize: 12.5 }}>by amount spent · {rangeLabel}</span>
       </div>
       <div style={{ maxHeight, overflowY: "auto" }}>
@@ -4144,13 +4151,18 @@ const Hi = ({ children, color = C.accent }) => <span style={{ color, fontWeight:
 
 const PIE_PALETTE = ["#0077C8", "#1A7A50", "#C74E7B", "#B87A00", "#7A5AC2", "#38B6FF", "#E06C4F", "#4A6A8A"];
 
-function ReportPie({ title, subtitle, data, source = "Google Search Console", sourceIcon, formatValue = fmt }) {
+// `heading` defaults to h3 since every current caller except AzeraiMetaTab's
+// country-breakdown pie sits inside an already-bannered Organic Visibility/
+// Traffic/Conversions page (own h2 title one level up) — AzeraiMetaTab has
+// no such banner, so it passes heading="h2" to stay a direct child of the
+// client's own h1.
+function ReportPie({ title, subtitle, data, source = "Google Search Console", sourceIcon, formatValue = fmt, heading: Heading = "h3" }) {
   const total = data.reduce((a, d) => a + d.value, 0) || 1;
   const items = data.map((d, i) => ({ ...d, key: d.key ?? d.label, color: d.color ?? PIE_PALETTE[i % PIE_PALETTE.length] }));
   return (
     <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</h3>
+        <Heading style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{title}</Heading>
         {subtitle && <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-0.5">{subtitle}</div>}
       </div>
       <div className="px-5 py-4 flex items-center gap-4">
@@ -4846,10 +4858,14 @@ const niceGoal = (v) => {
   return 10 * mag;
 };
 
+// h3, not h2 — its only caller (OrganicSummary's "Traffic Metrics"/
+// "Visibility Metrics"/"Conversion Metrics" dividers) already sits under
+// that page's own h2 banner ("{client.name} · Report Summary"), so this is
+// a third-level heading, not a second one.
 function SectionBanner({ title }) {
   return (
     <div className="rounded-lg px-6 py-3.5" style={{ background: `linear-gradient(120deg, ${C.accent}, #003E6B)` }}>
-      <h2 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 20 }} className="leading-none">{title}</h2>
+      <h3 style={{ color: "#fff", fontFamily: "Spectral, Georgia, serif", fontSize: 20 }} className="leading-none">{title}</h3>
     </div>
   );
 }
@@ -5858,7 +5874,7 @@ function AiSearch({ client, aiData, month }) {
       {/* Trend */}
       <div className="rounded-lg mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">AI referral sessions</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">AI referral sessions</h2>
           <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · monthly trend, Mar–{MONTHS[LAST]}</span>
         </div>
         <div style={{ height: 200 }} className="px-2 py-3">
@@ -5898,7 +5914,7 @@ function AiSearch({ client, aiData, month }) {
       {mo.pages?.length > 0 && (
         <div className="rounded-lg overflow-hidden mt-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top pages from AI</h3>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top pages from AI</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it · {monthLabel}</span>
           </div>
           <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
@@ -5985,7 +6001,7 @@ function NomadLeadsTab({ data }) {
 
       <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Leads By Month</h3>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Leads By Month</h2>
         </div>
         <div style={{ height: 240 }} className="px-2 py-4">
           <ResponsiveContainer width="100%" height="100%">
@@ -6232,9 +6248,9 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
               {STATUS[client.status].label}
             </span>
           </div>
-          <h2 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none">
+          <h1 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none">
             {client.name}
-          </h2>
+          </h1>
           <div style={{ color: C.faint, fontSize: 13 }} className="mt-1.5 flex items-center gap-2.5 flex-wrap">
             <span>{client.domain} · {client.market}</span>
             <span
@@ -6433,9 +6449,14 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
             }
           `}</style>
           <div className="print-only" style={{ marginBottom: 16 }}>
-            <h2 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 22, color: C.ink, marginBottom: 4 }}>
+            {/* h1, not h2 — the real client-name h1 above is invisible during
+                print (visibility:hidden via the body-wide print rule), so
+                this masthead is the only page title an actual printout/PDF
+                sees. Everything printed below it (tab section titles) is h2,
+                so this keeps the printed page's own outline correct. */}
+            <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 22, color: C.ink, marginBottom: 4 }}>
               {client.name} — {SVC_LABEL.sem} Report
-            </h2>
+            </h1>
             <p style={{ color: C.muted, fontSize: 12.5 }}>
               {activeSemRange ? `${activeSemRange.from} – ${activeSemRange.to}` : ""} · Prepared by the AMN
             </p>
