@@ -10,13 +10,6 @@ export async function middleware(request) {
     return response;
   }
 
-  // TEMPORARY — field-discovery debug route (ICKY Click Book investigation,
-  // Aug 2026). Same bypass pattern as /api/cron above. DELETE along with
-  // app/api/debug-icky-conversions once confirmed.
-  if (request.nextUrl.pathname.startsWith("/api/debug-icky-conversions")) {
-    return response;
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
