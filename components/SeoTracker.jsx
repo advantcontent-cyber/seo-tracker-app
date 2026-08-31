@@ -3042,16 +3042,35 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
 // KPI card below), but Profile Visits (`profile_views`) still comes back 0
 // with no history — genuinely no data for this account, kept as
 // "No data reported" below rather than dropped or a fabricated 0.
-function monthlyBuckets(sem, from, to, picker) {
+// `to`'s month is still in progress (doesn't reach that month's real last
+// day) when `to` is the upper edge of the whole available range — i.e. "today",
+// per fetchSemData in lib/sem.js always capping there. `markPartial` (opt-in,
+// default off so every other existing caller's month labels stay unchanged)
+// flags that bar as month-to-date rather than let a still-accumulating month
+// read as a real decline against a prior COMPLETE month — the ICKY team
+// caught exactly this misread live (Aug 2026: a mid-month snapshot made Aug,
+// one of their actual peak months, look like it was falling off). Opted in
+// on ICKY/generic-client's Click Book + Clicks monthly charts only, since
+// that's the pair the feedback was about; `partial` is returned regardless
+// of the flag so a caller can check it without repeating the date math.
+function monthlyBuckets(sem, from, to, picker, { markPartial = false } = {}) {
   const map = new Map();
   for (const d of dateRange(from, to)) {
     const key = d.slice(0, 7); // "YYYY-MM"
     map.set(key, (map.get(key) ?? 0) + (picker(sem, d) ?? 0));
   }
-  return [...map.entries()].map(([key, value]) => ({
-    month: `${MONTH_ABBR[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`,
-    value,
-  }));
+  const toKey = to?.slice(0, 7);
+  const toDay = to ? Number(to.slice(8, 10)) : null;
+  const toMonthLastDay = to ? new Date(Number(to.slice(0, 4)), Number(to.slice(5, 7)), 0).getDate() : null;
+  const partialKey = to && toDay < toMonthLastDay ? toKey : null;
+  return [...map.entries()].map(([key, value]) => {
+    const partial = key === partialKey;
+    return {
+      month: `${MONTH_ABBR[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}${markPartial && partial ? "*" : ""}`,
+      value,
+      partial,
+    };
+  });
 }
 
 function SsfbNoDataCard({ label }) {
@@ -3653,8 +3672,9 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // `range` (the full available date range), not `selectedRange` — same
   // "always show the whole trend regardless of the KPI cards' date filter"
   // convention as every other client's identical monthly charts.
-  const clickBookByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clickBook ?? 0);
-  const clicksByMonth    = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clicks ?? 0);
+  const clickBookByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clickBook ?? 0, { markPartial: true });
+  const clicksByMonth    = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clicks ?? 0, { markPartial: true });
+  const monthlyChartsHavePartialMonth = clickBookByMonth.some((m) => m.partial) || clicksByMonth.some((m) => m.partial);
 
   // Click Book by Market / Cost per Click Book by Market — ICKY's Aug 2026
   // feedback. campaignMarket (already used by MetaTab/GoogleTab's "Spend by
@@ -3806,6 +3826,11 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
           </div>
         </div>
       </div>
+      {monthlyChartsHavePartialMonth && (
+        <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-2">
+          * Month to date — data through {fmtDayLong(range.to)}, not a complete month. Compare it against prior months with that in mind.
+        </p>
+      )}
 
       {/* Click Book by Market / Cost per Click Book by Market */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
