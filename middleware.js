@@ -10,13 +10,6 @@ export async function middleware(request) {
     return response;
   }
 
-  // TEMPORARY — field-discovery debug route (ICKY Outbound Click category
-  // verification, Sept 2026). Same bypass pattern as /api/cron above.
-  // DELETE along with app/api/debug-icky-category once confirmed.
-  if (request.nextUrl.pathname.startsWith("/api/debug-icky-category")) {
-    return response;
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
