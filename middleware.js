@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — field-discovery debug route for ICKY's campaign-filter/
+  // conversion-category Click Book redefinition (Hung's Aug 2026 feedback).
+  // Remove alongside app/api/debug-icky-fields once confirmed.
+  if (request.nextUrl.pathname.startsWith("/api/debug-icky-fields")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
