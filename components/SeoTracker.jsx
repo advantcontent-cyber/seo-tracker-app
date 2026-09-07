@@ -3864,7 +3864,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs, always in that platform's own real currency. Reach is the true deduplicated Meta figure for this exact range (fetched live, not summed from daily rows). Market is parsed from each campaign's name prefix (e.g. "HK_High intent…") — campaigns that don't match this pattern fall under "Other". Click Book by Market combines both platforms (Meta's own Click Book action, Google's {isIcky ? "conversions in the Outbound Click category" : "All Conversions"}) — a real count, safe to combine regardless of currency. Cost per Click Book by Market drops any market where Meta and Google spend don't share one currency, rather than show a blended figure that mixes two currencies into one number.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs, always in that platform's own real currency. Reach is the true deduplicated Meta figure for this exact range (fetched live, not summed from daily rows). Market is parsed from each campaign's name prefix (e.g. "HK_High intent…") — campaigns that don't match this pattern fall under "Other". {isIcky && 'Every Google Ads figure here is scoped to Advant-managed campaigns only ("[Advant]"-named — this account also runs other agencies\' or legacy campaigns not shown). '}Click Book by Market combines both platforms (Meta's own Click Book action, Google's {isIcky ? "conversions in the Outbound Click category" : "All Conversions"}) — a real count, safe to combine regardless of currency. Cost per Click Book by Market drops any market where Meta and Google spend don't share one currency, rather than show a blended figure that mixes two currencies into one number.
       </p>
     </div>
   );
@@ -4019,6 +4019,14 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, googleOf) : null;
   const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, googleOf) : null;
   const campaigns = selectedRange ? campaignsInRange(sem, selectedRange.from, selectedRange.to, "google") : [];
+  // IC Khao Yai (Sept 2026, Hung's feedback — see CAMPAIGN_NAME_FILTER/
+  // OUTBOUND_CLICK_CATEGORY_CLIENTS in lib/sem.js): `cur`/`campaigns` above
+  // are already Advant-campaign-filtered at the data layer, but this tab's
+  // own Click Book KPI still needs to read the redefined field —
+  // outboundClickConversions (Outbound Click category) instead of the old
+  // clickBook field (the single "Offer Book Now Click" named action) that
+  // SummaryTab's Overall Performance card already switched away from.
+  const isIcky = client.name === "IC Khao Yai";
 
   // See the matching comment on MetaTab's fmtSpend above — this generic
   // tab's clients are always in the default (fixed-rate USD) bucket, so
@@ -4029,11 +4037,14 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
+  const clickBook     = isIcky ? (cur?.outboundClickConversions ?? 0) : (cur?.clickBook ?? 0);
+  const prevClickBook = isIcky ? (prev?.outboundClickConversions ?? 0) : (prev?.clickBook ?? 0);
+  const dClickBookPct = prevClickBook ? Math.round(((clickBook - prevClickBook) / prevClickBook) * 100) : null;
   // spendPending can't happen for this tab anymore (no cross-currency
   // mismatch within a single platform) — kept as a defensive fallback, not
   // a live code path.
-  const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
-  const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
+  const cpcb     = cur && !cur.spendPending && clickBook ? cur.spend / clickBook : null;
+  const prevCpcb = prev && !prev.spendPending && prevClickBook ? prev.spend / prevClickBook : null;
 
   // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
   // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
@@ -4042,7 +4053,7 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
+    { label: "Click Book",  value: fmt(clickBook),   delta: dClickBookPct, icon: Target },
     { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
   ] : [];
 
@@ -4103,7 +4114,9 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account's broader Conversions/All conv. figures. Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
+        Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. {isIcky
+          ? 'Every figure here is scoped to Advant-managed campaigns only ("[Advant]"-named — this account also runs other agencies\' or legacy campaigns not shown). Click Book counts conversions in the "Outbound Click" category (Check Availability, Offer Book Now Click, Offer Click) — distinct from this account\'s broader All Conversions figure.'
+          : 'Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account\'s broader Conversions/All conv. figures.'} Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
       </p>
     </div>
   );

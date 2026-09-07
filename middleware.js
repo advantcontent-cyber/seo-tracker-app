@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — field-discovery/verification debug route for ICKY's
+  // Advant-campaign filter (Sept 2026, Hung's feedback). Remove alongside
+  // app/api/debug-icky-verify once confirmed.
+  if (request.nextUrl.pathname.startsWith("/api/debug-icky-verify")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
