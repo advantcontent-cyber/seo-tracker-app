@@ -4185,9 +4185,10 @@ function GoogleG({ size = 15 }) {
   );
 }
 
-/* One branded/non-branded query panel: title + description, then a GSC
-   performance table (Keyword | Impressions | Clicks), sorted by impressions. */
-function QueryPanel({ title, description, rows }) {
+/* One branded/non-branded query panel (or, via columnLabel/renderLabel/emptyText,
+   the top-blog-posts panel below it): title + description, then a GSC
+   performance table (label column | Impressions | Clicks), sorted by impressions. */
+function QueryPanel({ title, description, rows, columnLabel = "Keyword", renderLabel, emptyText = "No queries this month." }) {
   const GRID = "2.2fr 1fr 0.8fr";
   return (
     <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -4196,15 +4197,15 @@ function QueryPanel({ title, description, rows }) {
         <p style={{ color: C.muted, fontSize: 12.5 }} className="mt-1 leading-relaxed">{description}</p>
       </div>
       <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11.5, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
-        <span className="uppercase">Keyword</span>
+        <span className="uppercase">{columnLabel}</span>
         <span className="uppercase flex items-center justify-end gap-1">Impressions <ChevronDown size={11} /></span>
         <span className="uppercase text-right">Clicks</span>
       </div>
       {rows.length === 0 ? (
-        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No queries this month.</div>
+        <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>{emptyText}</div>
       ) : rows.map((r, i) => (
-        <div key={r.k} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
-          <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate pr-3">{r.k}</span>
+        <div key={r.k ?? r.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate pr-3">{renderLabel ? renderLabel(r) : r.k}</span>
           <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.impressions)}</span>
           <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.clicks)}</span>
         </div>
@@ -4214,6 +4215,20 @@ function QueryPanel({ title, description, rows }) {
         <span style={{ color: C.faint, fontSize: 11.5 }}>Google Search Console</span>
       </div>
     </div>
+  );
+}
+
+// Renders a blog post row's URL as its readable path (e.g. "/blog/best-time-
+// to-visit-khao-yai"), linking out to the live page — used by the Top Blog
+// Posts panel in Organic Visibility, since GSC gives us URLs, not titles.
+function blogPostPath(url) {
+  try { return new URL(url).pathname; } catch { return url; }
+}
+function renderBlogLabel(r) {
+  return (
+    <a href={r.page} target="_blank" rel="noopener noreferrer" className="hover:underline" title={r.page}>
+      {blogPostPath(r.page)}
+    </a>
   );
 }
 
@@ -4314,6 +4329,17 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const brandedRows = (queryRows || []).filter((r) => isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
   const nonBrandedRows = (queryRows || []).filter((r) => !isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
   const topIntent = [...nonBrandedRows].sort((a, b) => b.clicks - a.clicks)[0];
+
+  // Top 10 blog posts (from the per-page GSC roll-up), filtered to /blog/
+  // URLs — the same path convention pageUrl()/pubUrl already use elsewhere
+  // in this file for blog-intent pages. topPages is kept unsliced in
+  // lib/gsc.js specifically so this filter+slice sees every blog URL, not
+  // just whichever pages happened to rank in a global top 100.
+  const curPages = gscData?.[client.name]?.[moNum]?.topPages ?? [];
+  const blogRows = curPages
+    .filter((r) => blogPostPath(r.page).includes("/blog/"))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 10);
 
   // Daily peaks for the narrative.
   const peakClicks = daily.reduce((m, d) => (d.clicks > m.clicks ? d : m), { clicks: -1 });
@@ -4499,6 +4525,16 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
         <QueryPanel title="Branded Queries" description="Terms include your brand, product names, or any variations of them." rows={brandedRows} />
         <QueryPanel title="Non-Branded Queries" description="Terms related to your products or services that users might search for before they have a specific brand in mind." rows={nonBrandedRows} />
       </div>
+
+      {/* Top blog posts — same GSC data source, filtered to /blog/ URLs */}
+      <QueryPanel
+        title="Top Blog Posts"
+        description="Your 10 best-performing blog posts this month, by search impressions."
+        rows={blogRows}
+        columnLabel="Blog Post"
+        renderLabel={renderBlogLabel}
+        emptyText="No blog posts with search data this month."
+      />
     </div>
   );
 }
