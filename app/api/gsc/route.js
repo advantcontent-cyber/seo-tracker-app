@@ -19,8 +19,13 @@ export async function GET(req) {
   const compareTo = sp.get("compareTo") || undefined;
 
   try {
-    const { data } = await fetchGscData(from, to, compareFrom, compareTo);
-    return Response.json({ ok: true, data, bounds: gscBounds() });
+    const result = await fetchGscData(from, to, compareFrom, compareTo);
+    return Response.json({
+      ok: true,
+      data: result.data,
+      range: { from: result.from, to: result.to, compareFrom: result.compareFrom, compareTo: result.compareTo },
+      bounds: gscBounds(),
+    });
   } catch (err) {
     console.error("[/api/gsc]", err);
     return Response.json({ error: err.message }, { status: 500 });

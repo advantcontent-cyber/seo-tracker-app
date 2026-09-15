@@ -92,6 +92,7 @@ export async function POST(req) {
       geography: geo,
       aiSearch: ai ? {
         totals: ai.totals,
+        trend: ai.trend,
         bing: ai.bing,
         topEngine: ai.engines?.[0] || null,
         topPage: ai.pages?.[0] || null,
