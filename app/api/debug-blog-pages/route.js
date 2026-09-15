@@ -1,7 +1,6 @@
-// TEMP: verifies the new per-page (no "query" dimension) Windsor call added
-// in lib/gsc.js for the Top Blog Posts panel — confirms it returns real,
-// sensibly-aggregated per-URL clicks/impressions before merging. Delete this
-// route (and its middleware.js bypass) once confirmed.
+// TEMP: verifies the sitemap-backed Top Blog Posts data added in lib/gsc.js
+// (topBlogPosts per property/month) before merging. Delete this route (and
+// its middleware.js bypass) once confirmed.
 import { fetchGscData } from "../../../lib/gsc";
 
 export const dynamic = "force-dynamic";
@@ -14,14 +13,9 @@ export async function GET() {
       summary[client] = {};
       for (const [mo, val] of Object.entries(months)) {
         if (mo === "series" || !val?.topPages) continue;
-        const blog = val.topPages.filter((r) => {
-          try { return new URL(r.page).pathname.includes("/blog/"); } catch { return false; }
-        });
         summary[client][mo] = {
           totalPagesWithData: val.topPages.length,
-          blogPageCount: blog.length,
-          top5Blog: blog.slice(0, 5),
-          top5AnyPage: val.topPages.slice(0, 5),
+          topBlogPosts: val.topBlogPosts,
         };
       }
     }

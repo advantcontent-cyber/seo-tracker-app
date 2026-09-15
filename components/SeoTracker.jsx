@@ -4218,9 +4218,10 @@ function QueryPanel({ title, description, rows, columnLabel = "Keyword", renderL
   );
 }
 
-// Renders a blog post row's URL as its readable path (e.g. "/blog/best-time-
-// to-visit-khao-yai"), linking out to the live page — used by the Top Blog
-// Posts panel in Organic Visibility, since GSC gives us URLs, not titles.
+// Renders a blog post row's URL as its readable path (e.g.
+// "/best-time-to-visit-khao-yai/"), linking out to the live page — used by
+// the Top Blog Posts panel in Organic Visibility, since GSC gives us URLs,
+// not titles.
 function blogPostPath(url) {
   try { return new URL(url).pathname; } catch { return url; }
 }
@@ -4330,16 +4331,11 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const nonBrandedRows = (queryRows || []).filter((r) => !isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
   const topIntent = [...nonBrandedRows].sort((a, b) => b.clicks - a.clicks)[0];
 
-  // Top 10 blog posts (from the per-page GSC roll-up), filtered to /blog/
-  // URLs — the same path convention pageUrl()/pubUrl already use elsewhere
-  // in this file for blog-intent pages. topPages is kept unsliced in
-  // lib/gsc.js specifically so this filter+slice sees every blog URL, not
-  // just whichever pages happened to rank in a global top 100.
-  const curPages = gscData?.[client.name]?.[moNum]?.topPages ?? [];
-  const blogRows = curPages
-    .filter((r) => blogPostPath(r.page).includes("/blog/"))
-    .sort((a, b) => b.impressions - a.impressions)
-    .slice(0, 10);
+  // Top 10 blog posts — precomputed server-side in lib/gsc.js against each
+  // property's real blog-post sitemap (not a guessed URL-path convention;
+  // the 4 connected sites organise blog posts very differently — see
+  // BLOG_SITEMAP_MAP in lib/gsc.js for what was actually confirmed).
+  const blogRows = gscData?.[client.name]?.[moNum]?.topBlogPosts ?? [];
 
   // Daily peaks for the narrative.
   const peakClicks = daily.reduce((m, d) => (d.clicks > m.clicks ? d : m), { clicks: -1 });
