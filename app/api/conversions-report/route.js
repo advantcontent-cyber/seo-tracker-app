@@ -1,8 +1,9 @@
-// GET /api/conversions-report?client=<name>&year=<y>&month=<m>
+// GET /api/conversions-report?client=<name>&from=<yyyy-mm-dd>&to=<yyyy-mm-dd>
 // Live GA4 data for the Organic Conversions Report (conversions/revenue summary,
 // device + session revenue splits, daily series, and page / traffic / geo /
-// engagement breakdowns) for one property/month. Auth + role scope mirror the
-// other report routes. Data layer in lib/conversions-report.js.
+// engagement breakdowns) for one property/date range. Auth + role scope mirror
+// the other report routes. Data layer in lib/conversions-report.js. No compare
+// params — this report has never shown period-over-period deltas.
 
 import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
@@ -31,15 +32,15 @@ export async function GET(req) {
 
   const sp = req.nextUrl.searchParams;
   const client = sp.get("client");
-  const year = parseInt(sp.get("year"), 10);
-  const month = parseInt(sp.get("month"), 10);
+  const from = sp.get("from");
+  const to = sp.get("to");
   if (!client || !ALL_CLIENTS.includes(client)) return Response.json({ error: "Unknown property" }, { status: 400 });
-  if (!year || !month) return Response.json({ error: "year and month are required" }, { status: 400 });
+  if (!from || !to) return Response.json({ error: "from and to are required" }, { status: 400 });
   if (role !== "admin" && client !== roleRow?.client_name)
     return Response.json({ error: "Not authorised for this property" }, { status: 403 });
 
   try {
-    const report = await fetchConversionsReport(client, year, month);
+    const report = await fetchConversionsReport(client, from, to);
     return Response.json({ ok: true, ...report }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (err) {
     console.error("[/api/conversions-report]", err);
