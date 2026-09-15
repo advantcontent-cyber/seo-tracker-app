@@ -1,6 +1,6 @@
 // GET /api/cron/generate-drafts
 // Monthly job (Vercel Cron): for each client with a brand voice profile, pick
-// this month's top blog opportunities from GSC, generate an on-brand,
+// the last 30 days' top blog opportunities from GSC, generate an on-brand,
 // EEAT-scaffolded draft via OpenRouter, and upsert it into seo_blog_drafts at
 // status 'drafting'. Never publishes — a human reviews and promotes to 'live'.
 //
@@ -35,7 +35,8 @@ export async function GET(request) {
     // Google Docs creation is optional — only if a service account is configured.
     const googleEnabled = !!getServiceAccount();
 
-    // 1. GSC data + the brand voice profiles that gate which clients we draft for.
+    // 1. GSC data (last 30 days — fetchGscData()'s default with no from/to
+    //    given) + the brand voice profiles that gate which clients we draft for.
     const [{ data: gscData }, profilesRes] = await Promise.all([
       fetchGscData(),
       admin.from("seo_voice_profiles").select("client_name, profile, drive_folder_id"),
@@ -50,14 +51,11 @@ export async function GET(request) {
       .select("client_name, keyword");
     const existingSet = new Set((existing ?? []).map((d) => `${d.client_name}::${(d.keyword || "").toLowerCase()}`));
 
-    // 3. Per client (that has a voice profile), pick this month's blog keywords.
+    // 3. Per client (that has a voice profile), pick the last 30 days' blog keywords.
     for (const clientName of Object.keys(profiles)) {
-      const monthsForClient = Object.keys(gscData?.[clientName] ?? {})
-        .map(Number).filter((n) => !Number.isNaN(n));
-      if (!monthsForClient.length) { summary.skipped.push(`${clientName}: no GSC data`); continue; }
-      const latestMonth = Math.max(...monthsForClient); // most recent month with data
+      if (!gscData?.[clientName]?.topQueries?.length) { summary.skipped.push(`${clientName}: no GSC data`); continue; }
 
-      const picks = selectBlogKeywords(gscData, clientName, latestMonth, 2);
+      const picks = selectBlogKeywords(gscData, clientName, 2);
       if (!picks.length) { summary.skipped.push(`${clientName}: no blog opportunities`); continue; }
 
       for (const pick of picks) {
