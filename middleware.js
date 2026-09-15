@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMP: debug routes bypass auth for one-off verification against live
+  // Windsor data during development — see project memory for the pattern.
+  // Always removed (along with the route itself) before merge.
+  if (request.nextUrl.pathname.startsWith("/api/debug-")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
