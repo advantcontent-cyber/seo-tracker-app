@@ -4331,11 +4331,14 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
   const nonBrandedRows = (queryRows || []).filter((r) => !isBrandQuery(client.name, r.k)).sort((a, b) => b.impressions - a.impressions).slice(0, 10);
   const topIntent = [...nonBrandedRows].sort((a, b) => b.clicks - a.clicks)[0];
 
-  // Top 10 blog posts — precomputed server-side in lib/gsc.js against each
+  // Top 10 blog posts of all time (a rolling 16-month window — Windsor's own
+  // cap, same as GSC's) — precomputed server-side in lib/gsc.js against each
   // property's real blog-post sitemap (not a guessed URL-path convention;
   // the 4 connected sites organise blog posts very differently — see
-  // BLOG_SITEMAP_MAP in lib/gsc.js for what was actually confirmed).
-  const blogRows = gscData?.[client.name]?.[moNum]?.topBlogPosts ?? [];
+  // BLOG_SITEMAP_MAP in lib/gsc.js for what was actually confirmed). Not
+  // month-scoped, so this doesn't change when the month selector does.
+  const blogRows = gscData?.[client.name]?.topBlogPostsAllTime ?? [];
+  const blogRange = gscData?.[client.name]?.blogPostsRange;
 
   // Daily peaks for the narrative.
   const peakClicks = daily.reduce((m, d) => (d.clicks > m.clicks ? d : m), { clicks: -1 });
@@ -4522,14 +4525,19 @@ function OrganicVisibility({ client, month, gscData, queryRows }) {
         <QueryPanel title="Non-Branded Queries" description="Terms related to your products or services that users might search for before they have a specific brand in mind." rows={nonBrandedRows} />
       </div>
 
-      {/* Top blog posts — same GSC data source, filtered to /blog/ URLs */}
+      {/* Top blog posts — all time (rolling 16-month window), not scoped to
+          the selected month; see blogRows/blogRange above. */}
       <QueryPanel
         title="Top Blog Posts"
-        description="Your 10 best-performing blog posts this month, by search impressions."
+        description={
+          blogRange
+            ? `Your 10 best-performing blog posts since ${fmtReportDate(blogRange.from)}, by search impressions.`
+            : "Your 10 best-performing blog posts, by search impressions."
+        }
         rows={blogRows}
         columnLabel="Blog Post"
         renderLabel={renderBlogLabel}
-        emptyText="No blog posts with search data this month."
+        emptyText="No blog posts with search data yet."
       />
     </div>
   );
