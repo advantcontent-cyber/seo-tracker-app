@@ -15,7 +15,17 @@ import { generateReportNarrative } from "../../../lib/report-narrative";
 export const dynamic = "force-dynamic";
 
 const ALL_CLIENTS = ["Shinta Mani Wild", "Sora Sukhumvit", "Nomad Greenland", "IC Khao Yai"];
-const MONTH_FULL = { 3: "March", 4: "April", 5: "May", 6: "June", 7: "July" };
+
+// Human-readable period label built from real from/to dates — e.g.
+// "Aug 1 – Aug 31, 2026", or "Jul 15 – Aug 15, 2026" across a month
+// boundary. Replaces the old hardcoded MONTH_FULL map (capped at July).
+function periodLabel(from, to) {
+  const fmt = (iso) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m - 1]} ${d}, ${y}`;
+  };
+  return `${fmt(from)} – ${fmt(to)}`;
+}
 
 // The single day with the most clicks (resp. impressions) in the daily series.
 function peakBy(daily, key) {
@@ -39,18 +49,18 @@ export async function POST(req) {
   const role = roleRow?.role ?? "admin";
 
   const body = await req.json().catch(() => null);
-  const { client, year, month, summary, blogPicks, nearPageOneQueries, actionPlan, ai } = body || {};
+  const { client, from, to, compareFrom, compareTo, summary, blogPicks, nearPageOneQueries, actionPlan, ai } = body || {};
 
   if (!client || !ALL_CLIENTS.includes(client)) return Response.json({ error: "Unknown property" }, { status: 400 });
-  if (!year || !month) return Response.json({ error: "year and month are required" }, { status: 400 });
+  if (!from || !to) return Response.json({ error: "from and to are required" }, { status: 400 });
   if (role !== "admin" && client !== roleRow?.client_name)
     return Response.json({ error: "Not authorised for this property" }, { status: 403 });
   if (!summary) return Response.json({ error: "summary is required" }, { status: 400 });
 
   try {
     const [organic, geo] = await Promise.all([
-      fetchOrganicReport(client, year, month),
-      fetchGeoSessions(client, year, month),
+      fetchOrganicReport(client, from, to, compareFrom, compareTo),
+      fetchGeoSessions(client, from, to),
     ]);
 
     const bestDay = peakBy(organic.daily, "clicks");
@@ -58,9 +68,7 @@ export async function POST(req) {
 
     const facts = {
       client,
-      year,
-      month,
-      monthLabel: MONTH_FULL[month] || String(month),
+      periodLabel: periodLabel(from, to),
       period: { from: summary.from, to: summary.to, days: summary.days },
       headline: {
         visits: summary.visibility.clicks,
@@ -84,6 +92,7 @@ export async function POST(req) {
       geography: geo,
       aiSearch: ai ? {
         totals: ai.totals,
+        trend: ai.trend,
         bing: ai.bing,
         topEngine: ai.engines?.[0] || null,
         topPage: ai.pages?.[0] || null,

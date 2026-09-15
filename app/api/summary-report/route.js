@@ -1,7 +1,9 @@
-// GET /api/summary-report?client=<name>&year=<y>&month=<m>
+// GET /api/summary-report?client=<name>&from=<yyyy-mm-dd>&to=<yyyy-mm-dd>
+//                         [&compareFrom=<yyyy-mm-dd>&compareTo=<yyyy-mm-dd>]
 // Headline metrics rolled up from GSC + GA4 for the SEO ▸ Summary sub-tab.
 // Auth + role scope mirror the other report routes. Data layer in
-// lib/summary-report.js.
+// lib/summary-report.js. compareFrom/compareTo optional — see
+// lib/date-range.js's prevWindow.
 
 import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
@@ -30,15 +32,17 @@ export async function GET(req) {
 
   const sp = req.nextUrl.searchParams;
   const client = sp.get("client");
-  const year = parseInt(sp.get("year"), 10);
-  const month = parseInt(sp.get("month"), 10);
+  const from = sp.get("from");
+  const to = sp.get("to");
+  const compareFrom = sp.get("compareFrom") || undefined;
+  const compareTo = sp.get("compareTo") || undefined;
   if (!client || !ALL_CLIENTS.includes(client)) return Response.json({ error: "Unknown property" }, { status: 400 });
-  if (!year || !month) return Response.json({ error: "year and month are required" }, { status: 400 });
+  if (!from || !to) return Response.json({ error: "from and to are required" }, { status: 400 });
   if (role !== "admin" && client !== roleRow?.client_name)
     return Response.json({ error: "Not authorised for this property" }, { status: 403 });
 
   try {
-    const report = await fetchSummaryReport(client, year, month);
+    const report = await fetchSummaryReport(client, from, to, compareFrom, compareTo);
     return Response.json({ ok: true, ...report }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (err) {
     console.error("[/api/summary-report]", err);
