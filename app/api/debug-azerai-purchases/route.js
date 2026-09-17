@@ -40,9 +40,10 @@ export async function GET() {
     // Raw account_name values seen, for sanity-checking the split assumption.
     const accountNames = [...new Set(rows.map((r) => r.account_name))];
 
-    const byMonth = {}; // { AZKGB: {month: count}, AZLRH: {month: count} }
-    const unmatchedCampaigns = new Set();
-    const purchaseActionNames = new Set();
+    const byMonthExact = {}; // "purchase" exact match only, by prefix
+    const byMonthBoth = {};  // "purchase" OR "azerai - ga4 (web) purchase", by prefix
+    const byCampaignMonth = {}; // every distinct campaign name -> {month: count}, all purchase-ish actions
+    const azeraiCampaignNames = new Set();
 
     for (const row of rows) {
       const campaign = row.campaign || "";
@@ -50,24 +51,33 @@ export async function GET() {
       let prop = null;
       if (upper.startsWith("AZKGB")) prop = "AZKGB";
       else if (upper.startsWith("AZLRH")) prop = "AZLRH";
-      else {
-        unmatchedCampaigns.add(campaign);
-        continue;
-      }
       const name = (row.conversion_action_name || "").toLowerCase();
-      if (name.includes("purchase")) purchaseActionNames.add(row.conversion_action_name);
-      if (name !== "purchase") continue; // exact match, same as GOOGLE_CONVERSION_ACTION_MATCH
+      const isPurchaseish = name.includes("purchase");
+      const accountIsAzerai = (row.account_name || "").toLowerCase().includes("azerai");
+      if (accountIsAzerai && isPurchaseish) azeraiCampaignNames.add(campaign);
+      if (!prop) continue;
       const month = String(row.date).slice(0, 7);
-      byMonth[prop] ??= {};
-      byMonth[prop][month] = (byMonth[prop][month] || 0) + Math.round(row.all_conversions ?? 0);
+      const count = Math.round(row.all_conversions ?? 0);
+      if (name === "purchase") {
+        byMonthExact[prop] ??= {};
+        byMonthExact[prop][month] = (byMonthExact[prop][month] || 0) + count;
+      }
+      if (isPurchaseish) {
+        byMonthBoth[prop] ??= {};
+        byMonthBoth[prop][month] = (byMonthBoth[prop][month] || 0) + count;
+
+        byCampaignMonth[campaign] ??= {};
+        byCampaignMonth[campaign][month] = (byCampaignMonth[campaign][month] || 0) + count;
+      }
     }
 
     return Response.json({
       dateFrom, dateTo,
       accountNames,
-      unmatchedCampaigns: [...unmatchedCampaigns].slice(0, 20),
-      purchaseActionNames: [...purchaseActionNames],
-      byMonth,
+      azeraiCampaignNames: [...azeraiCampaignNames],
+      byMonthExact,
+      byMonthBoth,
+      byCampaignMonth,
       totalRows: rows.length,
     });
   } catch (err) {
