@@ -10,12 +10,6 @@ export async function middleware(request) {
     return response;
   }
 
-  // TEMPORARY — debug route bypass for the Azerai GA4 direct-revenue
-  // investigation. DELETE alongside app/api/debug-azerai-ga4 once confirmed.
-  if (request.nextUrl.pathname.startsWith("/api/debug-azerai-ga4")) {
-    return response;
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
