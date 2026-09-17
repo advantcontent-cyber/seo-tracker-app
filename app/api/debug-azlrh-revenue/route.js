@@ -18,6 +18,18 @@ async function windsorGet(connector, fields, dateFrom, dateTo) {
 
 export async function GET() {
   try {
+    const EXCHANGE_KEY = process.env.EXCHANGE_RATE_API_KEY;
+    const EXCHANGE_BASE = "https://api.apilayer.com/exchangerates_data";
+    let fxProbe;
+    try {
+      const params = new URLSearchParams({ start_date: "2026-01-01", end_date: "2026-01-05", symbols: "VND", base: "USD" });
+      const res = await fetch(`${EXCHANGE_BASE}/timeseries?${params}`, { headers: { apikey: EXCHANGE_KEY }, cache: "no-store" });
+      const text = await res.text();
+      fxProbe = { status: res.status, hasKey: !!EXCHANGE_KEY, body: text.slice(0, 500) };
+    } catch (err) {
+      fxProbe = { error: err.message };
+    }
+
     const dateFrom = "2026-01-01";
     const t = new Date();
     const dateTo = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
@@ -61,7 +73,7 @@ export async function GET() {
       }
     }
 
-    return Response.json({ rawByMonth: byMonthOut, pipelineByMonth });
+    return Response.json({ fxProbe, rawByMonth: byMonthOut, pipelineByMonth });
   } catch (err) {
     return Response.json({ error: err.message, stack: err.stack }, { status: 500 });
   }
