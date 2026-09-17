@@ -1,9 +1,7 @@
-// TEMPORARY debug route — checking GA4 direct-revenue attribution for both
-// Azerai properties before building the Revenue-from-Ads-vs-Direct(GA4)
-// chart. Same concern as the Purchases routing bug (PR #54): need to know
-// whether GA4 has one shared property covering both, or separate ones, and
-// whether clientForAccount actually attributes it correctly per-property.
-// DELETE this route (and its middleware.js bypass) once confirmed.
+// TEMPORARY debug route — verifying the GA4 hotel-ID split for Azerai's
+// shared "azerai - GA4" property (110349 = La Residence Hue, 110430 = Ke Ga
+// Bay, confirmed live against reservations.azerai.com). DELETE this route
+// (and its middleware.js bypass) once confirmed.
 import { fetchSemData } from "@/lib/sem";
 
 const WINDSOR_KEY = process.env.WINDSOR_API_KEY;
@@ -25,40 +23,32 @@ export async function GET() {
     const t = new Date();
     const dateTo = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 
-    const rawGa4 = await windsorGet("googleanalytics4", ["account_name", "hostname", "page_location", "date", "purchase_revenue", "ecommerce_purchases"], dateFrom, dateTo);
-    const hostnamesByAccount = {};
-    const azeraiPagePaths = new Set();
-    for (const row of rawGa4) {
-      const acc = row.account_name;
-      hostnamesByAccount[acc] ??= {};
-      hostnamesByAccount[acc][row.hostname] = (hostnamesByAccount[acc][row.hostname] || 0) + Number(row.purchase_revenue ?? 0);
-      if (acc === "azerai - GA4" && row.page_location) azeraiPagePaths.add(row.page_location);
-    }
-    const accountNames = [...new Set(rawGa4.map((r) => r.account_name))];
-    const revenueByAccountMonth = {};
-    for (const row of rawGa4) {
-      const acc = row.account_name;
+    const rows = await windsorGet("googleanalytics4", ["account_name", "page_location", "date", "purchase_revenue", "ecommerce_purchases"], dateFrom, dateTo);
+    const azerai = rows.filter((r) => r.account_name === "azerai - GA4");
+
+    const byHotelMonth = { "110349_AZLRH": {}, "110430_AZKGB": {}, unmatched: {} };
+    let unmatchedTotal = 0;
+    let grandTotal = 0;
+    for (const row of azerai) {
+      const rev = Number(row.purchase_revenue ?? 0);
+      grandTotal += rev;
       const month = String(row.date).slice(0, 7);
-      revenueByAccountMonth[acc] ??= {};
-      revenueByAccountMonth[acc][month] = (revenueByAccountMonth[acc][month] || 0) + Number(row.purchase_revenue ?? 0);
+      const m = /^https?:\/\/[^/]+\/(\d+)/.exec(row.page_location || "");
+      const id = m ? m[1] : null;
+      let bucket;
+      if (id === "110349") bucket = "110349_AZLRH";
+      else if (id === "110430") bucket = "110430_AZKGB";
+      else { bucket = "unmatched"; unmatchedTotal += rev; }
+      byHotelMonth[bucket][month] = (byHotelMonth[bucket][month] || 0) + rev;
     }
 
-    // Also run it through the real pipeline to see what actually lands on
-    // each client's daily.directRevenue.
-    const { data } = await fetchSemData();
-    const viaPipeline = {};
-    for (const client of ["Azerai Ke Ga Bay", "Azerai La Residence, Hue"]) {
-      const sem = data[client];
-      if (!sem) { viaPipeline[client] = null; continue; }
-      const byMonth = {};
-      for (const [date, daily] of Object.entries(sem.daily)) {
-        const month = date.slice(0, 7);
-        byMonth[month] = (byMonth[month] || 0) + (daily.directRevenue ?? 0);
-      }
-      viaPipeline[client] = byMonth;
-    }
-
-    return Response.json({ accountNames, hostnamesByAccount, azeraiPagePaths: [...azeraiPagePaths].slice(0, 40), revenueByAccountMonth, viaPipeline });
+    return Response.json({
+      totalRows: azerai.length,
+      grandTotal,
+      unmatchedTotal,
+      unmatchedShare: unmatchedTotal / grandTotal,
+      byHotelMonth,
+    });
   } catch (err) {
     return Response.json({ error: err.message, stack: err.stack }, { status: 500 });
   }
