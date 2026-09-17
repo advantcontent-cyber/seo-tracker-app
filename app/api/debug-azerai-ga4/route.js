@@ -25,7 +25,13 @@ export async function GET() {
     const t = new Date();
     const dateTo = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 
-    const rawGa4 = await windsorGet("googleanalytics4", ["account_name", "date", "purchase_revenue", "ecommerce_purchases"], dateFrom, dateTo);
+    const rawGa4 = await windsorGet("googleanalytics4", ["account_name", "hostname", "date", "purchase_revenue", "ecommerce_purchases"], dateFrom, dateTo);
+    const hostnamesByAccount = {};
+    for (const row of rawGa4) {
+      const acc = row.account_name;
+      hostnamesByAccount[acc] ??= {};
+      hostnamesByAccount[acc][row.hostname] = (hostnamesByAccount[acc][row.hostname] || 0) + Number(row.purchase_revenue ?? 0);
+    }
     const accountNames = [...new Set(rawGa4.map((r) => r.account_name))];
     const revenueByAccountMonth = {};
     for (const row of rawGa4) {
@@ -50,7 +56,7 @@ export async function GET() {
       viaPipeline[client] = byMonth;
     }
 
-    return Response.json({ accountNames, revenueByAccountMonth, viaPipeline });
+    return Response.json({ accountNames, hostnamesByAccount, revenueByAccountMonth, viaPipeline });
   } catch (err) {
     return Response.json({ error: err.message, stack: err.stack }, { status: 500 });
   }
