@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — debug route bypass for the AZLRH revenue-not-showing
+  // investigation. DELETE alongside app/api/debug-azlrh-revenue once
+  // confirmed.
+  if (request.nextUrl.pathname.startsWith("/api/debug-azlrh-revenue")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
