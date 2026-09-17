@@ -10,6 +10,13 @@ export async function middleware(request) {
     return response;
   }
 
+  // TEMPORARY — debug route bypass for the AZLRH purchase-attribution
+  // investigation. DELETE alongside app/api/debug-azerai-purchases once
+  // confirmed (same pattern as every prior debug-route investigation).
+  if (request.nextUrl.pathname.startsWith("/api/debug-azerai-purchases")) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
