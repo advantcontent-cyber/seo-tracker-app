@@ -2528,11 +2528,10 @@ function AzeraiSummaryTab({ client, selectedRange, compareRange, range, semData 
   // monthlyBuckets passes over the same date range (same month keys, same
   // order) zipped into one { month, adsRevenue, directRevenue } array so
   // Recharts can render them as grouped bars per month. directRevenue is
-  // GA4's own ecommerce purchase_revenue (see lib/sem.js's addGa4Direct);
-  // for Azerai specifically this is split off a single shared GA4 property
-  // by the hotel ID embedded in each row's page_location (see
-  // GA4_HOTEL_ID_MATCH in lib/sem.js) — both properties book through the
-  // same reservations engine, so account_name alone can't tell them apart.
+  // GA4's own item-level item_revenue, matched by item_brand (see
+  // lib/sem.js's addGa4Direct) — for Azerai specifically this is what
+  // splits a single shared GA4 property between the two hotels, since
+  // item_brand already carries each property's own distinct name.
   const directRevenueByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.directRevenue ?? 0);
   const adsVsDirectByMonth = revenueByMonth.map((m, i) => ({
     month: m.month,
