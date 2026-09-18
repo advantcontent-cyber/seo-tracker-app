@@ -2015,6 +2015,17 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
   const purchaseByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => soraDayCombined(s, d)?.purchase ?? 0);
   const revenueByMonth  = monthlyBuckets(sem, range?.from, range?.to, (s, d) => soraDayCombined(s, d)?.revenue ?? 0);
 
+  // Revenue from Ads vs Total Direct Revenue (GA4), grouped by month — same
+  // chart as AzeraiSummaryTab's, requested for Sora too Sep 2026.
+  // directRevenue is GA4's own item-level item_revenue, matched by
+  // item_brand (see lib/sem.js's addGa4Direct).
+  const directRevenueByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => s.daily?.[d]?.directRevenue ?? 0);
+  const adsVsDirectByMonth = revenueByMonth.map((m, i) => ({
+    month: m.month,
+    adsRevenue: m.value,
+    directRevenue: directRevenueByMonth[i]?.value ?? 0,
+  }));
+
   return (
     <div>
       {/* Add To Cart Value card removed for now (Aug 2026, client request) —
@@ -2116,6 +2127,28 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      </div>
+
+      {/* Revenue from Ads vs Total Direct Revenue (GA4) — grouped monthly
+          bars, same chart as AzeraiSummaryTab's, added for Sora Sep 2026. */}
+      <div className="rounded-lg overflow-hidden mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+        <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Monthly Revenue: Ads vs Direct (GA4)</h2>
+          <p style={{ color: C.faint, fontSize: 12 }} className="mt-0.5">Comparison of monthly Revenue from Ads and Total Direct Revenue from GA4.</p>
+        </div>
+        <div style={{ height: 280 }} className="px-2 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={adsVsDirectByMonth} margin={{ top: 20, right: 16, left: 4, bottom: 4 }}>
+              <CartesianGrid stroke={C.line} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `฿${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
+              <Tooltip formatter={(v) => fmtTHB(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              <Legend wrapperStyle={{ fontSize: 12.5 }} iconType="circle" />
+              <Bar dataKey="adsRevenue" name="Revenue from Ads" fill={KPI_HUES[0]} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="directRevenue" name="Total Direct Revenue (GA4)" fill={KPI_HUES[2]} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
