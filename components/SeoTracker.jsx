@@ -1626,17 +1626,38 @@ function AnalystNotes({ client, period, facts }) {
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: b.dot }} />
               <h3 style={{ color: C.ink, fontSize: 13 }} className="font-semibold">{b.label}</h3>
             </div>
+            {/* Textarea for on-screen editing — was rows=5 (a couple of
+                bullets before it scrolled), bumped to 12 so a normal
+                4-6-bullet note fits without scrolling. Hidden during print
+                (see .analyst-note-edit below) since a textarea's own
+                internal scroll clips overflow content in a printout/PDF
+                regardless of the parent's overflow setting — the
+                .analyst-note-print block right after it shows the exact
+                same text as plain flowing text instead, so "Download PDF"
+                always includes everything, however long the note is. */}
             <textarea
               value={notes[b.key]}
               onChange={(e) => setNotes((n) => ({ ...n, [b.key]: e.target.value }))}
               placeholder='Click "Generate with AI" to draft, or write your own notes here.'
-              rows={5}
-              className="w-full resize-none rounded-md"
+              rows={12}
+              className="w-full resize-none rounded-md analyst-note-edit"
               style={{ border: `1px solid ${C.line}`, fontSize: 13, color: C.ink, padding: 8, fontFamily: "Inter, system-ui, sans-serif", lineHeight: 1.5 }}
             />
+            <div
+              className="analyst-note-print"
+              style={{ display: "none", fontSize: 13, color: C.ink, fontFamily: "Inter, system-ui, sans-serif", lineHeight: 1.5, whiteSpace: "pre-wrap" }}
+            >
+              {notes[b.key]}
+            </div>
           </div>
         ))}
       </div>
+      <style>{`
+        @media print {
+          .analyst-note-edit { display: none !important; }
+          .analyst-note-print { display: block !important; }
+        }
+      `}</style>
       <p style={{ color: C.faint, fontSize: 11 }} className="mt-2">
         AI-drafted from this period's data — "What We Have Done" is inferred from metric patterns, not actual account access, so review before sharing. Freely editable, but not saved yet — notes reset if you navigate away or change the date range.
       </p>
