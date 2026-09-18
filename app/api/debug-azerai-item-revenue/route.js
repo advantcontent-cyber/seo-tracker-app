@@ -55,6 +55,8 @@ export async function GET() {
   out.methodA_raw_error = a.error ?? null;
   if (a.rows) {
     const byClientMonth = {};
+    const rowsByClientMonth = {};
+    const distinctPageLocByClientMonth = {};
     for (const row of a.rows) {
       const acc = (row.account_name || "").toLowerCase();
       if (!acc.includes("azerai")) continue;
@@ -64,15 +66,27 @@ export async function GET() {
       const month = String(row.date).slice(0, 7);
       byClientMonth[client] ??= {};
       byClientMonth[client][month] = (byClientMonth[client][month] || 0) + Number(row.purchase_revenue ?? 0);
+      rowsByClientMonth[client] ??= {};
+      rowsByClientMonth[client][month] = (rowsByClientMonth[client][month] || 0) + 1;
+      distinctPageLocByClientMonth[client] ??= {};
+      distinctPageLocByClientMonth[client][month] ??= new Set();
+      distinctPageLocByClientMonth[client][month].add(row.page_location);
     }
     out.methodA_purchaseRevenue_byClientMonth = byClientMonth;
+    out.methodA_rowCount_byClientMonth = rowsByClientMonth;
+    out.methodA_distinctPageLocationCount_byClientMonth = Object.fromEntries(
+      Object.entries(distinctPageLocByClientMonth).map(([client, months]) => [
+        client,
+        Object.fromEntries(Object.entries(months).map(([mo, set]) => [mo, set.size])),
+      ])
+    );
     out.methodA_rowCount = a.rows.length;
   }
 
   // Method B: item-level fields, if the connector supports them
   const b = await windsorGet(
     "googleanalytics4",
-    ["account_name", "date", "item_brand", "item_revenue", "item_purchase_quantity"],
+    ["account_name", "date", "item_brand", "item_revenue", "items_purchased"],
     dateFrom,
     dateTo
   );
