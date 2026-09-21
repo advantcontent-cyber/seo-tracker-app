@@ -576,106 +576,29 @@ function StatusDot({ status, size = 8 }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  SEO date-range + compare picker — shared by Portfolio and Detail's  */
-/*  SEO tab. Same shape/styling as the Performance Marketing (SEM) date- */
-/*  range picker (Detail's "Date range"/"Compare" input pairs), just    */
-/*  bound to gscRangeBounds/gscRange/gscCompareRange instead of         */
-/*  semRange/activeSemRange/activeCompareRange. Replaces the old whole- */
-/*  month <select> that used to live in the app's top header.           */
-/* ------------------------------------------------------------------ */
-function SeoRangePicker({ bounds, range, compareRange, setFrom, setTo, setCompareFrom, setCompareTo }) {
-  return (
-    <div className="flex items-start gap-4">
-      <div className="flex flex-col gap-1">
-        <span style={{ color: C.faint, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Date range</span>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            value={range?.from || ""}
-            min={bounds?.dateFrom}
-            max={bounds?.dateTo}
-            disabled={!bounds}
-            onChange={(e) => setFrom(e.target.value)}
-            className="rounded-lg cursor-pointer"
-            style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-            aria-label="Range start"
-          />
-          <span style={{ color: C.faint, fontSize: 13 }}>–</span>
-          <input
-            type="date"
-            value={range?.to || ""}
-            min={bounds?.dateFrom}
-            max={bounds?.dateTo}
-            disabled={!bounds}
-            onChange={(e) => setTo(e.target.value)}
-            className="rounded-lg cursor-pointer"
-            style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-            aria-label="Range end"
-          />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span style={{ color: C.faint, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Compare</span>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            value={compareRange?.from || ""}
-            min={bounds?.dateFrom}
-            max={bounds?.dateTo}
-            disabled={!bounds}
-            onChange={(e) => setCompareFrom(e.target.value)}
-            className="rounded-lg cursor-pointer"
-            style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-            aria-label="Compare range start"
-          />
-          <span style={{ color: C.faint, fontSize: 13 }}>–</span>
-          <input
-            type="date"
-            value={compareRange?.to || ""}
-            min={bounds?.dateFrom}
-            max={bounds?.dateTo}
-            disabled={!bounds}
-            onChange={(e) => setCompareTo(e.target.value)}
-            className="rounded-lg cursor-pointer"
-            style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "6px 10px", fontFamily: "Inter, system-ui, sans-serif" }}
-            aria-label="Compare range end"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
-function Portfolio({ clients, onSelect, gscRangeBounds, gscRange, gscCompareRange, setGscFrom, setGscTo, setGscCompareFrom, setGscCompareTo, gscData }) {
-  // Returns real GSC figures for the selected range when connected, falls
-  // back to the mock gsc() (frozen at its last two synthetic months — mock
-  // clients have no real dated data for the picker to slice) otherwise.
-  const liveCur = (c) => {
-    const live = gscData?.[c.name]?.current;
-    if (!live) return gsc(c, LAST);
-    return { ...gsc(c, LAST), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
+function Portfolio({ clients, onSelect, month, gscData }) {
+  // Returns real GSC figures for the given client+month when connected,
+  // falls back to the mock gsc() for unconnected properties.
+  const liveCur = (c, m) => {
+    const moNum = MO_NUM[MONTHS[m]];
+    const live = gscData?.[c.name]?.[moNum];
+    if (!live) return gsc(c, m);
+    return { ...gsc(c, m), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
   };
-  const livePrev = (c) => {
-    const live = gscData?.[c.name]?.compare;
-    if (!live) return gsc(c, LAST - 1);
-    return { ...gsc(c, LAST - 1), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
-  };
+  const livePrev = (c, m) => m > 0 ? liveCur(c, m - 1) : null;
 
-  // Live sparkline series — real daily clicks for the selected range when
-  // available, mock monthly shape otherwise.
+  // Live sparkline series — real clicks per month when available, mock otherwise
   const liveSeries = (c) => {
-    const daily = gscData?.[c.name]?.daily;
-    if (!daily?.length) return series(c);
-    return daily.map((d) => d.clicks);
+    if (!gscData?.[c.name]) return series(c);
+    return MONTHS.map(mo => gscData[c.name][MO_NUM[mo]]?.clicks ?? 0);
   };
 
-  // Period-over-period % using live figures
-  const liveMoM = (c) => {
-    const cur = liveCur(c);
-    const prev = livePrev(c);
+  // MoM % using live figures
+  const liveMoM = (c, m) => {
+    const cur = liveCur(c, m);
+    const prev = livePrev(c, m);
     if (!prev || prev.clicks === 0) return 0;
     return Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100);
   };
@@ -685,9 +608,9 @@ function Portfolio({ clients, onSelect, gscRangeBounds, gscRange, gscCompareRang
       [...clients].sort((a, b) => {
         const r = STATUS[a.status].rank - STATUS[b.status].rank;
         if (r !== 0) return r;
-        return liveMoM(a) - liveMoM(b);
+        return liveMoM(a, month) - liveMoM(b, month);
       }),
-    [clients, gscData]
+    [clients, month, gscData]
   );
 
   const risk = sorted.filter((c) => c.status === "risk");
@@ -698,15 +621,9 @@ function Portfolio({ clients, onSelect, gscRangeBounds, gscRange, gscCompareRang
       {/* Page title — this landing view had no heading at all before; every
           other page (a selected client's Detail view) has the client name
           as its h1, so this needs its own to match. */}
-      <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
-        <h1 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none">
-          Overview
-        </h1>
-        <SeoRangePicker
-          bounds={gscRangeBounds} range={gscRange} compareRange={gscCompareRange}
-          setFrom={setGscFrom} setTo={setGscTo} setCompareFrom={setGscCompareFrom} setCompareTo={setGscCompareTo}
-        />
-      </div>
+      <h1 style={{ fontFamily: "Spectral, Georgia, serif", color: C.ink, fontSize: 32 }} className="leading-none mb-5">
+        Overview
+      </h1>
 
       {/* Attention strip — the triage signature */}
       <div
@@ -760,8 +677,8 @@ function Portfolio({ clients, onSelect, gscRangeBounds, gscRange, gscCompareRang
       {/* Rows */}
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         {sorted.map((c, i) => {
-          const cur = liveCur(c);
-          const prev = livePrev(c);
+          const cur = liveCur(c, month);
+          const prev = livePrev(c, month);
           return (
             <button
               key={c.name}
@@ -790,12 +707,12 @@ function Portfolio({ clients, onSelect, gscRangeBounds, gscRange, gscCompareRang
 
               {/* Clicks + sparkline (through selected month) */}
               <div className="flex items-center gap-3">
-                <Sparkline series={liveSeries(c)} />
+                <Sparkline series={liveSeries(c).slice(0, month + 1)} />
                 <div>
                   <div style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
                     {fmt(cur.clicks)}
                   </div>
-                  <Delta value={liveMoM(c)} suffix="%" />
+                  <Delta value={liveMoM(c, month)} suffix="%" />
                 </div>
               </div>
 
@@ -4476,24 +4393,22 @@ function ReportPie({ title, subtitle, data, source = "Google Search Console", so
   );
 }
 
-function OrganicVisibility({ client, selectedRange, compareRange, gscData, queryRows }) {
+function OrganicVisibility({ client, month, gscData, queryRows }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
-    if (!selectedRange) return;
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    const params = new URLSearchParams({ client: client.name, from: selectedRange.from, to: selectedRange.to });
-    if (compareRange) { params.set("compareFrom", compareRange.from); params.set("compareTo", compareRange.to); }
-    fetch(`/api/organic-report?${params}`, { cache: "no-store" })
+    fetch(`/api/organic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
       .catch((e) => { if (live) setError(e.message); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [client.name, selectedRange?.from, selectedRange?.to, compareRange?.from, compareRange?.to]);
+  }, [client.name, moNum]);
 
   if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
@@ -4515,8 +4430,7 @@ function OrganicVisibility({ client, selectedRange, compareRange, gscData, query
   // property's real blog-post sitemap (not a guessed URL-path convention;
   // the 4 connected sites organise blog posts very differently — see
   // BLOG_SITEMAP_MAP in lib/gsc.js for what was actually confirmed). Not
-  // scoped to selectedRange, so this doesn't change when the date-range
-  // picker does.
+  // month-scoped, so this doesn't change when the month selector does.
   const blogRows = gscData?.[client.name]?.topBlogPostsAllTime ?? [];
   const blogRange = gscData?.[client.name]?.blogPostsRange;
 
@@ -4754,24 +4668,22 @@ function DailyBars({ title, legend, data, dataKey, color }) {
   );
 }
 
-function OrganicTraffic({ client, selectedRange, compareRange }) {
+function OrganicTraffic({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
-    if (!selectedRange) return;
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    const params = new URLSearchParams({ client: client.name, from: selectedRange.from, to: selectedRange.to });
-    if (compareRange) { params.set("compareFrom", compareRange.from); params.set("compareTo", compareRange.to); }
-    fetch(`/api/traffic-report?${params}`, { cache: "no-store" })
+    fetch(`/api/traffic-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
       .catch((e) => { if (live) setError(e.message); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [client.name, selectedRange?.from, selectedRange?.to, compareRange?.from, compareRange?.to]);
+  }, [client.name, moNum]);
 
   if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
@@ -4905,7 +4817,7 @@ function OrganicTraffic({ client, selectedRange, compareRange }) {
               <span className="uppercase text-right">Engagement rate</span>
             </div>
             {pages.length === 0 ? (
-              <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No page data in this period.</div>
+              <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No page data this month.</div>
             ) : pages.map((p, i) => (
               <div key={p.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: PGRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
                 <span style={{ color: C.accent, fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }} className="truncate pr-3" title={p.page}>{p.page}</span>
@@ -4945,7 +4857,7 @@ function ConvTable({ title, colLabel, rows, mono }) {
             <span className="uppercase text-right">Total revenue</span>
           </div>
           {rows.length === 0 ? (
-            <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No data in this period.</div>
+            <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13 }}>No data this month.</div>
           ) : rows.map((r, i) => (
             <div key={r.label} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: GRID, borderTop: i ? `1px solid ${C.line}` : "none" }}>
               <span className="truncate pr-3" style={{ color: mono ? C.accent : C.ink, fontSize: 12.5, fontFamily: mono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit" }} title={r.label}>{r.label}</span>
@@ -4961,23 +4873,22 @@ function ConvTable({ title, colLabel, rows, mono }) {
   );
 }
 
-function OrganicConversions({ client, selectedRange }) {
+function OrganicConversions({ client, month }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
-    if (!selectedRange) return;
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    const params = new URLSearchParams({ client: client.name, from: selectedRange.from, to: selectedRange.to });
-    fetch(`/api/conversions-report?${params}`, { cache: "no-store" })
+    fetch(`/api/conversions-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load report"); })
       .catch((e) => { if (live) setError(e.message); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [client.name, selectedRange?.from, selectedRange?.to]);
+  }, [client.name, moNum]);
 
   if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading report…</div>;
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
@@ -5224,42 +5135,39 @@ function SummaryMetric({ icon: Icon, label, desc, value, color, source, delta, s
 /* ------------------------------------------------------------------ */
 const MO_NUM_BY_LABEL = MO_NUM; // alias — see the canonical MO_NUM near MONTHS above
 
-// liveGscFor() returns real Windsor data for this client's selected range when
-// connected, falling back to the mock gsc() function (frozen at its last
-// synthetic month — same convention as Portfolio's live/mock split) for
-// unconnected properties.
-function liveGscFor(client, gscData) {
-  const live = gscData?.[client.name]?.current;
-  if (!live) return gsc(client, LAST); // mock fallback
+// liveGscFor() returns real Windsor data for this client/month when connected,
+// falling back to the mock gsc() function for unconnected properties.
+function liveGscFor(client, month, gscData) {
+  const moNum = MO_NUM_BY_LABEL[MONTHS[month]];
+  const live = gscData?.[client.name]?.[moNum];
+  if (!live) return gsc(client, month); // mock fallback
   return {
     clicks: live.clicks,
     impressions: live.impressions,
     ctr: live.ctr,
     avgPos: live.avgPos,
     // Index coverage not in Windsor GSC data — keep mock estimate
-    indexed: gsc(client, LAST).indexed,
-    issues: gsc(client, LAST).issues,
-    buckets: gsc(client, LAST).buckets,
+    indexed: gsc(client, month).indexed,
+    issues: gsc(client, month).issues,
+    buckets: gsc(client, month).buckets,
   };
 }
 
-// Real Windsor daily clicks series (for the selected range) when available,
-// mock monthly-shaped array otherwise.
-function clicksTrendFor(client, gscData) {
-  const daily = gscData?.[client.name]?.daily;
-  const isLive = !!daily?.length;
-  const chartData = isLive
-    ? daily.map((d) => ({ date: d.date, clicks: d.clicks }))
-    : series(client).map((v, i) => ({ date: MONTHS[i], clicks: v }));
-  return { isLive, chartData };
+// Real Windsor clicks series when available, mock traffic array otherwise.
+function clicksTrendFor(client, month, gscData) {
+  const isLive = !!gscData?.[client.name];
+  const cs = isLive
+    ? MONTHS.map((mo) => gscData[client.name][MO_NUM_BY_LABEL[mo]]?.clicks ?? 0)
+    : series(client);
+  const chartData = cs.map((v, i) => ({ month: MONTHS[i], clicks: v }));
+  return { isLive, cs, chartData };
 }
 
 // Content opportunities: queries with proven demand (impressions) leaking
-// clicks because they sit below the top of page 1. Returns the selected
-// range's top 2 blog-intent picks. Uses real GSC queries when connected,
-// else mock keywords.
-function blogPicksFor(client, gscData) {
-  const curQueries = gscData?.[client.name]?.topQueries ?? null;
+// clicks because they sit below the top of page 1. Returns the month's top 2
+// blog-intent picks. Uses real GSC queries when connected, else mock keywords.
+function blogPicksFor(client, month, gscData) {
+  const curQueries = gscData?.[client.name]?.[MO_NUM_BY_LABEL[MONTHS[month]]]?.topQueries ?? null;
   const round1 = (n) => Math.round(n * 10) / 10;
   const opps = (curQueries
     ? curQueries.map((row) => {
@@ -5270,7 +5178,7 @@ function blogPicksFor(client, gscData) {
         return { k, pos, impressions, curClicks, page: row.page ?? null };
       })
     : client.keywords.map((kw) => {
-        const pos = kwPos(kw, LAST);
+        const pos = kwPos(kw, month);
         const impressions = kw.v;
         return { k: kw.k, pos, impressions, curClicks: Math.round(impressions * ctrFor(pos)), page: null };
       })
@@ -5289,8 +5197,8 @@ function blogPicksFor(client, gscData) {
 // 4-20) — "almost there" pages worth an on-page push. Powers the Generate
 // Report feature's "Where the interest is" section. Mirrors blogPicksFor's
 // shape but filtered to intent === "optimise" instead of "blog".
-function nearPageOneFor(client, gscData) {
-  const curQueries = gscData?.[client.name]?.topQueries ?? null;
+function nearPageOneFor(client, month, gscData) {
+  const curQueries = gscData?.[client.name]?.[MO_NUM_BY_LABEL[MONTHS[month]]]?.topQueries ?? null;
   const round1 = (n) => Math.round(n * 10) / 10;
   const rows = (curQueries
     ? curQueries.map((row) => {
@@ -5300,7 +5208,7 @@ function nearPageOneFor(client, gscData) {
         return { k, pos, impressions, page: row.page ?? null };
       })
     : client.keywords.map((kw) => {
-        const pos = kwPos(kw, LAST);
+        const pos = kwPos(kw, month);
         return { k: kw.k, pos, impressions: kw.v, page: null };
       })
   )
@@ -5319,27 +5227,25 @@ function nearPageOneFor(client, gscData) {
   return rows.slice(0, 3);
 }
 
-// Action plan — active tasks plus delivered/upcoming counts, frozen at the
-// last synthetic month (this task-window scheduling is independent of the
-// GSC date-range picker; LAST matches the old month selector's own default).
+// Action plan for one month — active tasks plus delivered/upcoming counts.
 // Off-page work is no longer part of the program — excluded from plans.
 // Live tasks from Supabase (seo_action_items) when available; mock otherwise.
-function actionPlanFor(client, actionData) {
+function actionPlanFor(client, month, actionData) {
   const planSource = actionData?.[client.name] ?? ACTION_PLANS[client.name] ?? [];
   const plan = planSource.filter((t) => t.cat !== "Off-page");
-  const { active, deliveredToDate, upcoming } = monthlyPlan(plan, LAST);
+  const { active, deliveredToDate, upcoming } = monthlyPlan(plan, month);
   return { plan, active, deliveredToDate, upcoming };
 }
 
 // "Organic clicks · GSC" trend card — shared by Overview and Summary.
-function OrganicClicksTrendCard({ chartData, momValue }) {
+function OrganicClicksTrendCard({ chartData, momValue, month }) {
   return (
     <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between mb-4">
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
           Organic clicks · GSC
         </h3>
-        <Delta value={momValue} suffix="% vs prior period" size="lg" />
+        <Delta value={momValue} suffix="% MoM" size="lg" />
       </div>
       <ResponsiveContainer width="100%" height={200}>
         <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
@@ -5350,7 +5256,7 @@ function OrganicClicksTrendCard({ chartData, momValue }) {
             </linearGradient>
           </defs>
           <CartesianGrid stroke={C.line} vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+          <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={48} />
           <Tooltip
             contentStyle={{
@@ -5364,6 +5270,7 @@ function OrganicClicksTrendCard({ chartData, momValue }) {
             formatter={(v) => [fmt(v), "Clicks"]}
           />
           <Area type="monotone" dataKey="clicks" stroke={C.accent} strokeWidth={2} fill="url(#gClicksTrend)" />
+          <ReferenceDot x={MONTHS[month]} y={chartData[month]?.clicks} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -5371,7 +5278,7 @@ function OrganicClicksTrendCard({ chartData, momValue }) {
 }
 
 // "Content opportunities" card — shared by Overview and Summary.
-function ContentOpportunitiesCard({ blogPicks, blogDrafts, client, periodLabel }) {
+function ContentOpportunitiesCard({ blogPicks, blogDrafts, client, month }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -5383,7 +5290,7 @@ function ContentOpportunitiesCard({ blogPicks, blogDrafts, client, periodLabel }
 
       <div className="px-5 py-4" style={{ background: C.bg }}>
         <div style={{ color: C.muted, fontSize: 11.5, letterSpacing: "0.04em" }} className="uppercase font-medium mb-2.5">
-          Suggested posts · {periodLabel} · top 2
+          Suggested posts · {MONTH_FULL[MONTHS[month]]} {YEAR} · 2 / month
         </div>
         {blogPicks.length ? (
           <div className="grid md:grid-cols-2 gap-3">
@@ -5439,15 +5346,13 @@ function ContentOpportunitiesCard({ blogPicks, blogDrafts, client, periodLabel }
   );
 }
 
-// Action-plan card — shared by Overview and Summary. Independent of the GSC
-// date-range picker (see actionPlanFor's comment) — always shows the current
-// snapshot of work.
-function ActionPlanCard({ plan, active, deliveredToDate, upcoming }) {
+// Action-plan card, scoped to the selected month — shared by Overview and Summary.
+function ActionPlanCard({ plan, active, deliveredToDate, upcoming, month }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
         <h3 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">
-          Action plan
+          {MONTH_FULL[MONTHS[month]]} {YEAR} action plan
         </h3>
         <span style={{ color: C.faint, fontSize: 12.5 }}>
           {deliveredToDate} of {plan.length} delivered to date
@@ -5456,8 +5361,8 @@ function ActionPlanCard({ plan, active, deliveredToDate, upcoming }) {
 
       {active.length === 0 && (
         <div className="px-5 py-6" style={{ color: C.muted, fontSize: 13.5 }}>
-          No active work scheduled right now.
-          {upcoming > 0 && ` ${upcoming} ${upcoming === 1 ? "task is" : "tasks are"} queued to begin later.`}
+          No active work scheduled in {MONTHS[month]}.
+          {upcoming > 0 && ` ${upcoming} ${upcoming === 1 ? "task is" : "tasks are"} queued to begin in later months.`}
         </div>
       )}
 
@@ -5528,30 +5433,28 @@ function ActionPlanCard({ plan, active, deliveredToDate, upcoming }) {
   );
 }
 
-function OrganicSummary({ client, selectedRange, compareRange, gscData, actionData, blogDrafts, aiData }) {
+function OrganicSummary({ client, month, gscData, actionData, blogDrafts, aiData }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState(null);
   const [reportView, setReportView] = useState(null);
+  const moNum = MO_NUM[MONTHS[month]];
 
   useEffect(() => {
-    if (!selectedRange) return;
     let live = true;
     setLoading(true); setError(null); setReport(null);
-    const params = new URLSearchParams({ client: client.name, from: selectedRange.from, to: selectedRange.to });
-    if (compareRange) { params.set("compareFrom", compareRange.from); params.set("compareTo", compareRange.to); }
-    fetch(`/api/summary-report?${params}`, { cache: "no-store" })
+    fetch(`/api/summary-report?client=${encodeURIComponent(client.name)}&year=${YEAR}&month=${moNum}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j.ok) setReport(j); else setError(j.error || "Failed to load summary"); })
       .catch((e) => { if (live) setError(e.message); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [client.name, selectedRange?.from, selectedRange?.to, compareRange?.from, compareRange?.to]);
+  }, [client.name, moNum]);
 
-  // Close any open report view when switching client/range underneath it.
-  useEffect(() => { setReportView(null); setGenError(null); }, [client.name, selectedRange?.from, selectedRange?.to]);
+  // Close any open report view when switching client/month underneath it.
+  useEffect(() => { setReportView(null); setGenError(null); }, [client.name, moNum]);
 
   if (loading) return <div className="py-16 text-center" style={{ color: C.muted, fontSize: 13 }}><Loader2 size={18} className="animate-spin inline mr-2" />Loading summary…</div>;
   if (error) return <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.risk}`, background: "rgba(176,48,48,0.06)", color: C.risk, fontSize: 13 }}>{error}</div>;
@@ -5560,14 +5463,14 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
   const { visibility: v, traffic: t, conversions: c, deltas: d, topPages, topDevice, topChannel } = report;
   const GSC = "Google Search Console", GA4 = "Google Analytics 4";
   const card = { border: `1px solid ${C.line}`, background: "#fff" };
-  const periodLabel = `${fmtReportDate(report.from)} – ${fmtReportDate(report.to)}`;
 
   // Same trend/opportunity/action-plan data as the Overview sub-tab — pulled
   // in here so Summary can absorb these cards once Overview is retired.
-  const { chartData } = clicksTrendFor(client, gscData);
-  const blogPicks = blogPicksFor(client, gscData);
-  const nearPageOneQueries = nearPageOneFor(client, gscData);
-  const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, actionData);
+  const { chartData } = clicksTrendFor(client, month, gscData);
+  const blogPicks = blogPicksFor(client, month, gscData);
+  const nearPageOneQueries = nearPageOneFor(client, month, gscData);
+  const { plan, active, deliveredToDate, upcoming } = actionPlanFor(client, month, actionData);
+  const monthLabel = MONTH_FULL[MONTHS[month]];
 
   async function handleGenerateReport() {
     setGenerating(true);
@@ -5578,10 +5481,8 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client: client.name,
-          from: selectedRange.from,
-          to: selectedRange.to,
-          compareFrom: compareRange?.from,
-          compareTo: compareRange?.to,
+          year: YEAR,
+          month: moNum,
           summary: report,
           blogPicks,
           nearPageOneQueries,
@@ -5621,7 +5522,7 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
         <div className="rounded-lg" style={card}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}><h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold">Summary</h3></div>
           <p className="px-5 py-4 leading-relaxed" style={{ color: C.muted, fontSize: 13 }}>
-            In this period the property recorded a conversion rate of <Hi color={C.healthy}>{fmtPct(c.conversionRate)}</Hi> ({fmt(c.conversions)} conversions across {fmt(t.sessions)} sessions), signalling {c.conversionRate >= 0.5 ? "strong" : "steady"} engagement.
+            This month the property recorded a conversion rate of <Hi color={C.healthy}>{fmtPct(c.conversionRate)}</Hi> ({fmt(c.conversions)} conversions across {fmt(t.sessions)} sessions), signalling {c.conversionRate >= 0.5 ? "strong" : "steady"} engagement.
             {c.revenue > 0
               ? <> Total revenue reached <Hi color={C.healthy}>{fmtRevenue(c.revenue)}</Hi> across {fmt(c.transactions)} transactions.</>
               : <> No purchase revenue is tracked for this property, so conversions reflect engagement/lead events.</>}
@@ -5642,7 +5543,7 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
 
       {/* Organic clicks trend — same card as Overview, folded into Summary
           ahead of Overview's removal. */}
-      <OrganicClicksTrendCard chartData={chartData} momValue={d.visibility.clicks ?? 0} />
+      <OrganicClicksTrendCard chartData={chartData} momValue={Math.round(momPct(client, month))} month={month} />
 
       {/* Traffic Metrics */}
       <SectionBanner title="Traffic Metrics" />
@@ -5691,8 +5592,8 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
 
       {/* Content opportunities + action plan — same cards as Overview,
           folded into Summary ahead of Overview's removal. */}
-      <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} periodLabel={periodLabel} />
-      <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} />
+      <ContentOpportunitiesCard blogPicks={blogPicks} blogDrafts={blogDrafts} client={client} month={month} />
+      <ActionPlanCard plan={plan} active={active} deliveredToDate={deliveredToDate} upcoming={upcoming} month={month} />
 
       {/* Generate Report — narrative monthly report, written from this same
           data via an LLM (see lib/report-narrative.js), plus daily GSC and
@@ -5701,7 +5602,7 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
         <div>
           <h3 style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">Generate report</h3>
           <p style={{ color: C.muted, fontSize: 13 }}>
-            A narrative, printable report for {client.name} ({periodLabel}) — written fresh from this period's data.
+            A narrative, printable {monthLabel} {YEAR} report for {client.name} — written fresh from this month's data.
           </p>
           {genError && <p style={{ color: C.risk, fontSize: 12.5 }} className="mt-1.5">{genError}</p>}
         </div>
@@ -5717,7 +5618,7 @@ function OrganicSummary({ client, selectedRange, compareRange, gscData, actionDa
       </div>
 
       {reportView && (
-        <ReportView client={client} periodLabel={periodLabel} report={reportView} onClose={() => setReportView(null)} />
+        <ReportView client={client} monthLabel={monthLabel} report={reportView} onClose={() => setReportView(null)} />
       )}
     </div>
   );
@@ -5755,12 +5656,12 @@ function ReportSection({ no, title, alt, children }) {
   );
 }
 
-function ReportView({ client, periodLabel, report, onClose }) {
+function ReportView({ client, monthLabel, report, onClose }) {
   const { facts, daily, geo, narrative } = report;
   const h = facts.headline;
 
   const dailyData = daily.map((d) => ({ date: d.date.slice(8, 10), clicks: d.clicks, impressions: d.impressions }));
-  const aiTrend = facts.aiSearch?.trend?.map((d) => ({ date: d.date.slice(5), sessions: d.sessions })) ?? [];
+  const aiTrend = facts.aiSearch ? MONTHS.map((m, i) => ({ month: m, sessions: facts.aiSearch.totals?.series?.[i] ?? 0 })) : [];
 
   return (
     <div
@@ -5780,7 +5681,7 @@ function ReportView({ client, periodLabel, report, onClose }) {
       {/* Controls — hidden on print */}
       <div className="no-print sticky top-0 z-10 flex items-center justify-between px-6 py-3" style={{ background: C.ink, color: "#fff" }}>
         <span className="flex items-center gap-2" style={{ fontSize: 13.5 }}>
-          <FileText size={15} /> {client.name} · {periodLabel} report
+          <FileText size={15} /> {client.name} · {monthLabel} {facts.year} report
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -5805,9 +5706,9 @@ function ReportView({ client, periodLabel, report, onClose }) {
         <div className="flex items-center gap-2 mb-6" style={{ fontSize: 13, opacity: 0.85 }}>
           <GoogleG size={14} /> {client.domain} · Organic Search · Google
         </div>
-        <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 40 }} className="leading-none mb-3">Search Report</h1>
+        <h1 style={{ fontFamily: "Spectral, Georgia, serif", fontSize: 40 }} className="leading-none mb-3">{monthLabel} Search Report</h1>
         <p style={{ fontSize: 14.5, opacity: 0.85 }}>
-          Organic search performance for {periodLabel}, measured against the comparison period. Prepared by the AMN.
+          Organic search performance for {monthLabel} {facts.year}, measured against the prior month. Prepared by the AMN.
         </p>
       </header>
 
@@ -5825,7 +5726,7 @@ function ReportView({ client, periodLabel, report, onClose }) {
       </ReportSection>
 
       {/* 01 — Daily performance */}
-      <ReportSection no="01 — Daily performance" title="How the period unfolded day by day" alt>
+      <ReportSection no="01 — Daily performance" title="How the month unfolded day by day" alt>
         <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }} className="max-w-3xl mb-5">{narrative.dailyPerformance}</p>
         <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <ResponsiveContainer width="100%" height={260}>
@@ -5912,7 +5813,7 @@ function ReportView({ client, periodLabel, report, onClose }) {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={aiTrend} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
                 <CartesianGrid stroke={C.line} vertical={false} />
-                <XAxis dataKey="date" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
                 <Tooltip contentStyle={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, fontSize: 12 }} />
                 <Line type="monotone" dataKey="sessions" name="Sessions from AI tools" stroke={C.ink} strokeWidth={2} dot={{ r: 3 }} />
@@ -5952,7 +5853,7 @@ function ReportView({ client, periodLabel, report, onClose }) {
 
       <footer className="flex flex-wrap items-center justify-between gap-2 px-8 py-6 md:px-14" style={{ borderTop: `1px solid ${C.line}`, color: C.faint, fontSize: 12 }}>
         <span>Prepared by the AMN</span>
-        <span>{client.name} · {periodLabel}</span>
+        <span>{client.name} · {monthLabel} {facts.year}</span>
         <span>Source: Google Search Console + Google Analytics 4 (Windsor.ai)</span>
       </footer>
     </div>
@@ -6124,29 +6025,32 @@ function AiKpi({ label, value, sub }) {
   );
 }
 
-function AiSearch({ client, aiData, selectedRange }) {
+function AiSearch({ client, aiData, month }) {
   const ai = aiData?.[client.name] || null;
-  const periodLabel = selectedRange ? `${fmtReportDate(selectedRange.from)} – ${fmtReportDate(selectedRange.to)}` : "";
+  const moNum = MO_NUM[MONTHS[month]];
+  const monthLabel = MONTH_FULL[MONTHS[month]];
 
   if (aiData == null)
     return <div className="py-12 text-center" style={{ color: C.muted, fontSize: 13 }}>Loading AI referral data…</div>;
 
-  if (!ai || ai.totals.sessions === 0)
+  const mo = ai?.byMonth?.[moNum] || null;
+
+  if (!ai || !mo || mo.totals.sessions === 0)
     return (
       <div className="rounded-lg p-8 text-center" style={{ border: `1px dashed ${C.line}`, background: "#fff" }}>
         <Sparkles size={22} color={C.faint} className="mx-auto mb-2" />
-        <div style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">No AI-engine referrals in this period</div>
-        <div style={{ color: C.muted, fontSize: 13 }}>No sessions from ChatGPT, Gemini, Claude, Perplexity or Copilot landed on this property in {periodLabel}.</div>
+        <div style={{ color: C.ink, fontSize: 15 }} className="font-semibold mb-1">No AI-engine referrals this month</div>
+        <div style={{ color: C.muted, fontSize: 13 }}>No sessions from ChatGPT, Gemini, Claude, Perplexity or Copilot landed on this property in {monthLabel} {YEAR}.</div>
       </div>
     );
 
-  const mom = ai.compareTotals?.sessions
-    ? Math.round(((ai.totals.sessions - ai.compareTotals.sessions) / ai.compareTotals.sessions) * 100)
-    : 0;
-  const activeEngines = ai.engines.filter((e) => e.sessions > 0 || e.conversions > 0);
-  const top = ai.engines[0];
-  const trend = ai.trend.map((d) => ({ date: d.date, sessions: d.sessions }));
-  const share = (n) => (ai.totals.sessions ? Math.round((n / ai.totals.sessions) * 100) : 0);
+  const t = ai.totals; // full Mar–Jul series, kept for the trend chart only
+  const prevSessions = month > 0 ? t.series[month - 1] : null;
+  const mom = prevSessions ? Math.round(((t.series[month] - prevSessions) / prevSessions) * 100) : 0;
+  const activeEngines = mo.engines.filter((e) => e.sessions > 0 || e.conversions > 0);
+  const top = mo.engines[0];
+  const trend = MONTHS.map((label, i) => ({ month: label, sessions: t.series[i] }));
+  const share = (n) => (mo.totals.sessions ? Math.round((n / mo.totals.sessions) * 100) : 0);
   const GRID = "1.5fr 0.8fr 0.9fr 1.4fr 108px";
 
   const EngineRow = ({ e }) => (
@@ -6179,17 +6083,17 @@ function AiSearch({ client, aiData, selectedRange }) {
 
       {/* KPI tiles */}
       <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-        <AiKpi label="AI sessions" value={fmt(ai.totals.sessions)} sub={<Delta value={mom} suffix="% vs prior period" size="lg" />} />
-        <AiKpi label="AI conversions" value={fmt(ai.totals.conversions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>GA4 key events</span>} />
+        <AiKpi label={`AI sessions · ${monthLabel}`} value={fmt(mo.totals.sessions)} sub={<Delta value={mom} suffix="%" size="lg" />} />
+        <AiKpi label={`AI conversions · ${monthLabel}`} value={fmt(mo.totals.conversions)} sub={<span style={{ color: C.faint, fontSize: 12 }}>GA4 key events</span>} />
         <AiKpi label="Top engine" value={top.label} sub={<span style={{ color: C.faint, fontSize: 12 }}>{share(top.sessions)}% of AI sessions</span>} />
-        <AiKpi label="Engines active" value={activeEngines.length} sub={<span style={{ color: C.faint, fontSize: 12 }}>with referrals in this period</span>} />
+        <AiKpi label="Engines active" value={activeEngines.length} sub={<span style={{ color: C.faint, fontSize: 12 }}>with referrals in {monthLabel}</span>} />
       </div>
 
       {/* Trend */}
       <div className="rounded-lg mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">AI referral sessions</h2>
-          <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · daily trend, {periodLabel}</span>
+          <span style={{ color: C.faint, fontSize: 12.5 }}>chat engines · monthly trend, Mar–{MONTHS[LAST]}</span>
         </div>
         <div style={{ height: 200 }} className="px-2 py-3">
           <ResponsiveContainer width="100%" height="100%">
@@ -6201,10 +6105,11 @@ function AiSearch({ client, aiData, selectedRange }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
               <Tooltip formatter={(v) => [fmt(v), "Sessions"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
               <Area type="monotone" dataKey="sessions" stroke={C.accent} strokeWidth={2} fill="url(#aiSessions)" />
+              <ReferenceDot x={MONTHS[month]} y={trend[month]?.sessions} r={4.5} fill={C.accent} stroke="#fff" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -6214,21 +6119,21 @@ function AiSearch({ client, aiData, selectedRange }) {
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: GRID, color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
           <span className="uppercase">Engine</span>
-          <span className="uppercase text-right">Sessions</span>
+          <span className="uppercase text-right">Sessions · {monthLabel}</span>
           <span className="uppercase text-right">Conv.</span>
           <span className="uppercase pl-3">Share</span>
-          <span className="uppercase text-right">Trend</span>
+          <span className="uppercase text-right">Mar–{MONTHS[LAST]} trend</span>
         </div>
         {activeEngines.map((e) => <EngineRow key={e.key} e={e} />)}
       </div>
 
       {/* Top landing pages from AI — combined across engines, with the per-engine
           split shown as chips (the prompt itself is never passed by AI engines). */}
-      {ai.pages?.length > 0 && (
+      {mo.pages?.length > 0 && (
         <div className="rounded-lg overflow-hidden mt-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Top pages from AI</h2>
-            <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it · {periodLabel}</span>
+            <span style={{ color: C.faint, fontSize: 12.5 }}>landing page · which engines sent it · {monthLabel}</span>
           </div>
           <div className="grid items-center px-5 py-2.5" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", color: C.faint, fontSize: 11, letterSpacing: "0.04em", borderBottom: `1px solid ${C.line}` }}>
             <span className="uppercase">Page</span>
@@ -6236,7 +6141,7 @@ function AiSearch({ client, aiData, selectedRange }) {
             <span className="uppercase text-right">Sess.</span>
             <span className="uppercase text-right">Conv.</span>
           </div>
-          {ai.pages.map((p) => (
+          {mo.pages.map((p) => (
             <div key={p.page} className="grid items-center px-5 py-3" style={{ gridTemplateColumns: "2.2fr 2fr 0.7fr 0.7fr", borderTop: `1px solid ${C.line}` }}>
               <span style={{ color: C.accent, fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }} className="truncate pr-3" title={p.page}>{p.page}</span>
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pr-3">
@@ -6256,7 +6161,7 @@ function AiSearch({ client, aiData, selectedRange }) {
       )}
 
       {/* Bing — surfaced separately (search surface, not pure chat AI) */}
-      {ai.bing && (
+      {mo.bing && (
         <div className="rounded-lg overflow-hidden mt-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <span style={{ color: C.muted, fontSize: 12 }}>Shown separately — Bing is a search surface (and Copilot’s engine), not counted in the AI totals above.</span>
@@ -6266,8 +6171,8 @@ function AiSearch({ client, aiData, selectedRange }) {
               <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: ENGINE_COLOR.bing }} />
               <span style={{ color: C.ink, fontSize: 13.5 }} className="truncate">Bing</span>
             </span>
-            <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.sessions)}</span>
-            <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(ai.bing.conversions)}</span>
+            <span className="text-right" style={{ color: C.ink, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(mo.bing.sessions)}</span>
+            <span className="text-right" style={{ color: C.muted, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(mo.bing.conversions)}</span>
             <span className="pl-3" />
             <span className="flex justify-end">{ai.bing && <Sparkline series={ai.bing.series} w={96} h={26} />}</span>
           </div>
@@ -6348,7 +6253,7 @@ function NomadLeadsTab({ data }) {
   );
 }
 
-function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, setGscFrom, setGscTo, setGscCompareFrom, setGscCompareTo, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, semRange, aiData }) {
+function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, semRange, aiData }) {
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
   const [seoSub, setSeoSub] = useState("summary"); // sub-tab within SEO
@@ -6361,10 +6266,10 @@ function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, set
     setSemSub((client.name === "Six Senses Fort Barwara" || client.name === "Six Senses Shaharut") ? "overall" : "summary");
   }, [client.name]); // Song Saa's single tab also uses the "summary" id — see the nav pills below.
 
-  // Date-range picker for the SEM tabs (Summary/Meta/Google) — independent of
-  // the SEO tab's own gscRange/gscCompareRange picker above (see App).
-  // Defaults to the last 7 days of the available range once it loads (like
-  // Search Console's picker).
+  // Date-range picker for the SEM tabs (Summary/Meta/Google) — these are the
+  // only tabs backed by daily-granularity data (lib/sem.js); everything else
+  // still filters by the month dropdown above. Defaults to the last 7 days
+  // of the available range once it loads (like Search Console's picker).
   const [semRangeSel, setSemRangeSel] = useState(null); // { from, to }
   useEffect(() => {
     if (semRange?.to && !semRangeSel) {
@@ -6523,7 +6428,11 @@ function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, set
   // Live GSC top queries (from Windsor's searchconsole feed) for this property,
   // when connected. Each row is { q/k, clicks, impressions, position }. Used by
   // the tracked-keyword table in Organic Visibility (branded vs non-branded queries).
-  const curQueries = gscData?.[client.name]?.topQueries ?? null;
+  const queriesFor = (m) => {
+    if (m < 0) return null;
+    return gscData?.[client.name]?.[MO_NUM[MONTHS[m]]]?.topQueries ?? null;
+  };
+  const curQueries = queriesFor(month);
 
   const queryRows = curQueries
     ? [...curQueries]
@@ -6534,10 +6443,7 @@ function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, set
           clicks: Math.round(row.clicks ?? 0),
         }))
     : client.keywords.map((kw) => {
-        // Mock fallback (unconnected clients) — frozen at the last synthetic
-        // month, same as Portfolio's live/mock split; there's no real dated
-        // data here for the picker to slice.
-        const pos = kwPos(kw, LAST);
+        const pos = kwPos(kw, month);
         return { k: kw.k, impressions: kw.v, clicks: Math.round(kw.v * ctrFor(pos)) };
       });
 
@@ -6600,34 +6506,24 @@ function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, set
         ))}
       </div>
 
-      {/* SEO sub-tabs — the date-range/compare picker only applies to the 5
-          month-dependent sub-tabs (Summary/Visibility/Traffic/Conversions/AI
-          Search), not Keyword Explorer or Blog plan, so it's hidden for those. */}
+      {/* SEO sub-tabs */}
       {service === "seo" ? (
-        <div className="flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            {[["summary", "Summary"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setSeoSub(id)}
-                className="px-3 py-1.5 rounded-full transition-colors"
-                style={{
-                  fontSize: 13,
-                  fontWeight: seoSub === id ? 600 : 500,
-                  color: seoSub === id ? C.accent : C.muted,
-                  background: seoSub === id ? "rgba(0,119,200,0.10)" : "transparent",
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {["summary", "visibility", "traffic", "conversions", "ai"].includes(seoSub) && (
-            <SeoRangePicker
-              bounds={gscRangeBounds} range={gscRange} compareRange={gscCompareRange}
-              setFrom={setGscFrom} setTo={setGscTo} setCompareFrom={setGscCompareFrom} setCompareTo={setGscCompareTo}
-            />
-          )}
+        <div className="flex items-center gap-1.5 mt-4 mb-6">
+          {[["summary", "Summary"], ["visibility", "Organic Visibility"], ["traffic", "Organic Traffic"], ["conversions", "Organic Conversions"], ["ai", "AI Search"], ["explorer", "Keyword Explorer"], ["blog", "Blog plan"]].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setSeoSub(id)}
+              className="px-3 py-1.5 rounded-full transition-colors"
+              style={{
+                fontSize: 13,
+                fontWeight: seoSub === id ? 600 : 500,
+                color: seoSub === id ? C.accent : C.muted,
+                background: seoSub === id ? "rgba(0,119,200,0.10)" : "transparent",
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       ) : service === "sem" ? (
         <div className="no-print flex items-start justify-between gap-3 mt-4 mb-6 flex-wrap">
@@ -6826,15 +6722,15 @@ function Detail({ client, onBack, gscRangeBounds, gscRange, gscCompareRange, set
         </div>
       )}
 
-      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${gscRange?.from}-${gscRange?.to}`} client={client} selectedRange={gscRange} compareRange={gscCompareRange} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
+      {service === "seo" && seoSub === "summary" && <OrganicSummary key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} actionData={actionData} blogDrafts={blogDrafts} aiData={aiData} />}
 
-      {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${gscRange?.from}-${gscRange?.to}`} client={client} selectedRange={gscRange} compareRange={gscCompareRange} gscData={gscData} queryRows={queryRows} />}
+      {service === "seo" && seoSub === "visibility" && <OrganicVisibility key={`${client.name}-${month}`} client={client} month={month} gscData={gscData} queryRows={queryRows} />}
 
-      {service === "seo" && seoSub === "traffic" && <OrganicTraffic key={`${client.name}-${gscRange?.from}-${gscRange?.to}`} client={client} selectedRange={gscRange} compareRange={gscCompareRange} />}
+      {service === "seo" && seoSub === "traffic" && <OrganicTraffic key={`${client.name}-${month}`} client={client} month={month} />}
 
-      {service === "seo" && seoSub === "conversions" && <OrganicConversions key={`${client.name}-${gscRange?.from}-${gscRange?.to}`} client={client} selectedRange={gscRange} />}
+      {service === "seo" && seoSub === "conversions" && <OrganicConversions key={`${client.name}-${month}`} client={client} month={month} />}
 
-      {service === "seo" && seoSub === "ai" && <AiSearch key={`${client.name}-${gscRange?.from}-${gscRange?.to}`} client={client} aiData={aiData} selectedRange={gscRange} />}
+      {service === "seo" && seoSub === "ai" && <AiSearch key={`${client.name}-${month}`} client={client} aiData={aiData} month={month} />}
 
       {service === "seo" && seoSub === "explorer" && <KeywordExplorer client={client} />}
 
@@ -6910,10 +6806,10 @@ export default function App() {
   const [user, setUser] = useState(null);       // { email, role, clients }
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [month, setMonth] = useState(MONTHS.length - 1);
   const [importedPlan, setImportedPlan] = useState(null);
   const [gscData, setGscData] = useState(null);
   const [gscError, setGscError] = useState(null);
-  const [gscBoundsState, setGscBoundsState] = useState(null); // { dateFrom, dateTo } — the SEO date-range picker's outer clamp
   const [actionData, setActionData] = useState(null); // live action-plan tasks per client
   const [blogDrafts, setBlogDrafts] = useState(null); // blog draft links per client/keyword
   const [keywordIdeas, setKeywordIdeas] = useState(null); // SEMrush content-keyword ideas per client
@@ -6923,86 +6819,13 @@ export default function App() {
   const [semrushData, setSemrushData] = useState(null); // cached SEMrush metrics per client
   const [aiData, setAiData] = useState(null); // live AI-engine referral traffic per client (GA4)
 
-  // SEO date-range + compare picker — replaces the old whole-month selector.
-  // Mirrors the Performance Marketing (SEM) date-range picker's state shape
-  // (gscRangeSel/activeGscRange, compareRangeSel/activeGscCompareRange,
-  // compareTouched, prevWindow auto-follow) but the bounds and default come
-  // from /api/gsc itself (gscBounds()) rather than a separately-fetched
-  // always-daily payload — GSC/AI data is fetched on demand per range instead
-  // (see the combined fetch effect below), since Windsor aggregates each
-  // range for us server-side rather than needing client-side day-slicing.
-  const [gscRangeSel, setGscRangeSel] = useState(null); // { from, to } | null until the initial fetch below sets it
-  const activeGscRange = gscRangeSel;
-  const setGscFrom = (v) => {
-    if (!v || !gscBoundsState) return;
-    const from = v < gscBoundsState.dateFrom ? gscBoundsState.dateFrom : v > gscBoundsState.dateTo ? gscBoundsState.dateTo : v;
-    setGscRangeSel((r) => { const to = r?.to ?? gscBoundsState.dateTo; return { from, to: from > to ? from : to }; });
-  };
-  const setGscTo = (v) => {
-    if (!v || !gscBoundsState) return;
-    const to = v < gscBoundsState.dateFrom ? gscBoundsState.dateFrom : v > gscBoundsState.dateTo ? gscBoundsState.dateTo : v;
-    setGscRangeSel((r) => { const from = r?.from ?? gscBoundsState.dateFrom; return { from, to: to < from ? to : from }; });
-  };
-
-  const [gscCompareRangeSel, setGscCompareRangeSel] = useState(null); // { from, to } | null
-  const [gscCompareTouched, setGscCompareTouched] = useState(false);
-  useEffect(() => {
-    if (activeGscRange && !gscCompareTouched) {
-      setGscCompareRangeSel(prevWindow(activeGscRange.from, activeGscRange.to));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGscRange?.from, activeGscRange?.to, gscCompareTouched]);
-  const activeGscCompareRange = gscCompareRangeSel;
-  const setGscCompareFrom = (v) => {
-    if (!v || !gscBoundsState) return;
-    setGscCompareTouched(true);
-    const from = v < gscBoundsState.dateFrom ? gscBoundsState.dateFrom : v > gscBoundsState.dateTo ? gscBoundsState.dateTo : v;
-    setGscCompareRangeSel((r) => { const to = r?.to ?? from; return { from, to: from > to ? from : to }; });
-  };
-  const setGscCompareTo = (v) => {
-    if (!v || !gscBoundsState) return;
-    setGscCompareTouched(true);
-    const to = v < gscBoundsState.dateFrom ? gscBoundsState.dateFrom : v > gscBoundsState.dateTo ? gscBoundsState.dateTo : v;
-    setGscCompareRangeSel((r) => { const from = r?.from ?? to; return { from: to < from ? to : from, to }; });
-  };
-
-  // Initial fetch: bounds + the default (last 30 days) range + data, once on
-  // mount — also seeds gscRangeSel/gscCompareRangeSel so the picker inputs
-  // start populated with exactly the range this first fetch used.
+  // Fetch live GSC data once on mount.
   useEffect(() => {
     fetch("/api/gsc")
       .then((r) => r.json())
-      .then((json) => {
-        if (!json.ok) { setGscError(json.error); return; }
-        setGscData(json.data);
-        setGscBoundsState(json.bounds);
-        setGscRangeSel({ from: json.range.from, to: json.range.to });
-        setGscCompareRangeSel({ from: json.range.compareFrom, to: json.range.compareTo });
-      })
-      .catch((e) => setGscError(e.message));
-  }, []);
-
-  // Refetch GSC + AI data together whenever the user changes the range or
-  // compare range (skips the very first render, since the mount effect above
-  // already fetched that exact default range).
-  const gscFetchedOnce = useRef(false);
-  useEffect(() => {
-    if (!activeGscRange || !activeGscCompareRange) return;
-    if (!gscFetchedOnce.current) { gscFetchedOnce.current = true; return; }
-    const params = new URLSearchParams({
-      from: activeGscRange.from, to: activeGscRange.to,
-      compareFrom: activeGscCompareRange.from, compareTo: activeGscCompareRange.to,
-    });
-    fetch(`/api/gsc?${params}`)
-      .then((r) => r.json())
       .then((json) => { if (json.ok) setGscData(json.data); else setGscError(json.error); })
       .catch((e) => setGscError(e.message));
-    fetch(`/api/ai?${params}`)
-      .then((r) => r.json())
-      .then((json) => { if (json.ok) setAiData(json.data); })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGscRange?.from, activeGscRange?.to, activeGscCompareRange?.from, activeGscCompareRange?.to]);
+  }, []);
 
   // Fetch the live action plan (team task list) once on mount.
   useEffect(() => {
@@ -7053,8 +6876,13 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // AI-engine referral traffic (GA4) is now fetched together with GSC data,
-  // range-scoped — see the combined fetch effect above.
+  // Fetch live AI-engine referral traffic (GA4) once on mount.
+  useEffect(() => {
+    fetch("/api/ai")
+      .then((r) => r.json())
+      .then((json) => { if (json.ok) setAiData(json.data); })
+      .catch(() => {});
+  }, []);
 
   // Fetch current user + role from /api/me (set by Supabase middleware).
   useEffect(() => {
@@ -7087,11 +6915,7 @@ export default function App() {
       {ready && <Sidebar clients={visibleClients} selected={selected} onSelect={setSelected} />}
 
       <div className="flex-1 min-w-0">
-        {/* Top bar — breadcrumb + sign out. The SEO date-range/compare picker
-            now lives inside the SEO tab itself (Detail's own toolbar) and on
-            the Overview/Portfolio page — it isn't a service-agnostic control,
-            so it doesn't belong up here (see the old whole-month <select>
-            this replaced). */}
+        {/* Top bar — breadcrumb + month + sign out */}
         <header
           className="flex items-center justify-between gap-4 px-6 md:px-8"
           style={{ height: 60, borderBottom: `1px solid ${C.line}`, background: "#fff", position: "sticky", top: 0, zIndex: 10 }}
@@ -7104,6 +6928,19 @@ export default function App() {
             </span>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <div className="relative">
+              <select
+                value={month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+                className="appearance-none rounded-lg cursor-pointer"
+                style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "7px 32px 7px 11px", fontFamily: "Inter, system-ui, sans-serif" }}
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={i}>{MONTH_FULL[m]} {YEAR}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, pointerEvents: "none" }} />
+            </div>
             <button onClick={signOut} className="transition-colors hover:opacity-70" style={{ color: C.muted, fontSize: 13 }}>
               Sign out
             </button>
@@ -7117,13 +6954,7 @@ export default function App() {
             <Detail
               client={selected}
               onBack={() => setSelected(null)}
-              gscRangeBounds={gscBoundsState}
-              gscRange={activeGscRange}
-              gscCompareRange={activeGscCompareRange}
-              setGscFrom={setGscFrom}
-              setGscTo={setGscTo}
-              setGscCompareFrom={setGscCompareFrom}
-              setGscCompareTo={setGscCompareTo}
+              month={month}
               importedPlan={importedPlan}
               onImportPlan={setImportedPlan}
               gscData={gscData}
@@ -7138,18 +6969,7 @@ export default function App() {
               aiData={aiData}
             />
           ) : (
-            <Portfolio
-              clients={visibleClients.filter((c) => hasService(c.name, "seo"))}
-              onSelect={setSelected}
-              gscRangeBounds={gscBoundsState}
-              gscRange={activeGscRange}
-              gscCompareRange={activeGscCompareRange}
-              setGscFrom={setGscFrom}
-              setGscTo={setGscTo}
-              setGscCompareFrom={setGscCompareFrom}
-              setGscCompareTo={setGscCompareTo}
-              gscData={gscData}
-            />
+            <Portfolio clients={visibleClients.filter((c) => hasService(c.name, "seo"))} onSelect={setSelected} month={month} gscData={gscData} />
           )}
         </main>
       </div>
