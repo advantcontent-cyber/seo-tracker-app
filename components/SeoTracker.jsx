@@ -578,6 +578,22 @@ function StatusDot({ status, size = 8 }) {
 /* ------------------------------------------------------------------ */
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
+// Combined-spend currency per PM client — mirrors NATIVE_CURRENCY_CLIENTS +
+// MIXED_CURRENCY_TARGET in lib/sem.js. daily.currency itself isn't a
+// reliable per-day source for this: it's only set to the real currency on
+// days with a matching Windsor row (defaulting to "USD" on every other
+// day, including zero-spend days), and MIXED_CURRENCY_TARGET clients
+// (Azerai) never get it set at all despite spend genuinely being VND —
+// every other tab in this file hardcodes its client's real currency for
+// the same reason (see fmtVND usage in AzeraiSummaryTab).
+const PM_SPEND_CURRENCY = {
+  "Sora Sukhumvit": "THB",
+  "Six Senses Fort Barwara": "INR",
+  "Le Cercle": "VND",
+  "Azerai Ke Ga Bay": "VND",
+  "Azerai La Residence, Hue": "VND",
+};
+
 function Portfolio({ clients, onSelect, month, semData }) {
   // Combined (Meta+Google) spend/clicks/impressions for one client+month,
   // summed from semData's daily rows — 0s until semData loads or for a
@@ -586,15 +602,15 @@ function Portfolio({ clients, onSelect, month, semData }) {
   const pmCur = (c, m) => {
     const sem = semData?.[c.name];
     const prefix = `${YEAR}-${String(MO_NUM[MONTHS[m]]).padStart(2, "0")}`;
-    let spend = 0, clicks = 0, impressions = 0, currency = "USD";
+    let spend = 0, clicks = 0, impressions = 0;
     for (const date of Object.keys(sem?.daily ?? {})) {
       if (!date.startsWith(prefix)) continue;
       const d = sem.daily[date];
       spend += d.spend ?? 0;
       clicks += d.clicks ?? 0;
       impressions += d.impressions ?? 0;
-      if (d.currency) currency = d.currency;
     }
+    const currency = PM_SPEND_CURRENCY[c.name] || "USD";
     return { spend, clicks, impressions, currency, ctr: impressions ? clicks / impressions : 0 };
   };
   const pmPrev = (c, m) => m > 0 ? pmCur(c, m - 1) : null;
