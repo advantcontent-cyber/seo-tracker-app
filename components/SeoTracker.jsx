@@ -6436,7 +6436,13 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
   const queryRows = curQueries
     ? [...curQueries]
-        .filter((row) => isReadableQuery(row.q ?? row.k)) // legible English terms only
+        // Legible English terms only — except brand/navigational queries, which are
+        // often typed as a single token (e.g. "sorahotels") and would otherwise be
+        // dropped before ever reaching the branded/non-branded split below.
+        .filter((row) => {
+          const k = row.q ?? row.k;
+          return isBrandQuery(client.name, k) || isReadableQuery(k);
+        })
         .map((row) => ({
           k: row.k ?? row.q,
           impressions: Math.round(row.impressions ?? 0),
