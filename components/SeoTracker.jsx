@@ -578,29 +578,38 @@ function StatusDot({ status, size = 8 }) {
 /* ------------------------------------------------------------------ */
 /*  Portfolio view                                                     */
 /* ------------------------------------------------------------------ */
-function Portfolio({ clients, onSelect, month, gscData }) {
-  // Returns real GSC figures for the given client+month when connected,
-  // falls back to the mock gsc() for unconnected properties.
-  const liveCur = (c, m) => {
-    const moNum = MO_NUM[MONTHS[m]];
-    const live = gscData?.[c.name]?.[moNum];
-    if (!live) return gsc(c, m);
-    return { ...gsc(c, m), clicks: live.clicks, impressions: live.impressions, ctr: live.ctr, avgPos: live.avgPos };
+function Portfolio({ clients, onSelect, month, semData }) {
+  // Combined (Meta+Google) spend/clicks/impressions for one client+month,
+  // summed from semData's daily rows — 0s until semData loads or for a
+  // month with no spend yet (a paused/not-yet-started campaign), never mock
+  // data, since every Performance Marketing client is Windsor-connected.
+  const pmCur = (c, m) => {
+    const sem = semData?.[c.name];
+    const prefix = `${YEAR}-${String(MO_NUM[MONTHS[m]]).padStart(2, "0")}`;
+    let spend = 0, clicks = 0, impressions = 0, currency = "USD";
+    for (const date of Object.keys(sem?.daily ?? {})) {
+      if (!date.startsWith(prefix)) continue;
+      const d = sem.daily[date];
+      spend += d.spend ?? 0;
+      clicks += d.clicks ?? 0;
+      impressions += d.impressions ?? 0;
+      if (d.currency) currency = d.currency;
+    }
+    return { spend, clicks, impressions, currency, ctr: impressions ? clicks / impressions : 0 };
   };
-  const livePrev = (c, m) => m > 0 ? liveCur(c, m - 1) : null;
+  const pmPrev = (c, m) => m > 0 ? pmCur(c, m - 1) : null;
 
-  // Live sparkline series — real clicks per month when available, mock otherwise
-  const liveSeries = (c) => {
-    if (!gscData?.[c.name]) return series(c);
-    return MONTHS.map(mo => gscData[c.name][MO_NUM[mo]]?.clicks ?? 0);
-  };
+  // Spend sparkline series across the whole reporting window (MONTHS).
+  const pmSeries = (c) => MONTHS.map((_, i) => pmCur(c, i).spend);
 
-  // MoM % using live figures
-  const liveMoM = (c, m) => {
-    const cur = liveCur(c, m);
-    const prev = livePrev(c, m);
-    if (!prev || prev.clicks === 0) return 0;
-    return Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100);
+  // MoM % using live spend figures — the first thing to check across a
+  // mixed portfolio (a spend cliff flags a paused/broken campaign
+  // regardless of what that client's own report otherwise optimizes for).
+  const pmMoM = (c, m) => {
+    const cur = pmCur(c, m);
+    const prev = pmPrev(c, m);
+    if (!prev || prev.spend === 0) return 0;
+    return Math.round(((cur.spend - prev.spend) / prev.spend) * 100);
   };
 
   const sorted = useMemo(
@@ -608,9 +617,9 @@ function Portfolio({ clients, onSelect, month, gscData }) {
       [...clients].sort((a, b) => {
         const r = STATUS[a.status].rank - STATUS[b.status].rank;
         if (r !== 0) return r;
-        return liveMoM(a, month) - liveMoM(b, month);
+        return pmMoM(a, month) - pmMoM(b, month);
       }),
-    [clients, month, gscData]
+    [clients, month, semData]
   );
 
   const risk = sorted.filter((c) => c.status === "risk");
@@ -668,17 +677,17 @@ function Portfolio({ clients, onSelect, month, gscData }) {
         }}
       >
         <span>Property</span>
-        <span>Clicks · MoM</span>
+        <span>Amount spent · MoM</span>
         <span>Impressions</span>
-        <span>Avg position</span>
+        <span>Clicks</span>
         <span className="text-right">CTR</span>
       </div>
 
       {/* Rows */}
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
         {sorted.map((c, i) => {
-          const cur = liveCur(c, month);
-          const prev = livePrev(c, month);
+          const cur = pmCur(c, month);
+          const prev = pmPrev(c, month);
           return (
             <button
               key={c.name}
@@ -705,14 +714,14 @@ function Portfolio({ clients, onSelect, month, gscData }) {
                 </div>
               </div>
 
-              {/* Clicks + sparkline (through selected month) */}
+              {/* Amount spent + sparkline (through selected month) */}
               <div className="flex items-center gap-3">
-                <Sparkline series={liveSeries(c).slice(0, month + 1)} />
+                <Sparkline series={pmSeries(c).slice(0, month + 1)} />
                 <div>
                   <div style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-                    {fmt(cur.clicks)}
+                    {fmtByCurrency(cur.spend, cur.currency)}
                   </div>
-                  <Delta value={liveMoM(c, month)} suffix="%" />
+                  <Delta value={pmMoM(c, month)} suffix="%" />
                 </div>
               </div>
 
@@ -721,15 +730,15 @@ function Portfolio({ clients, onSelect, month, gscData }) {
                 <span style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
                   {fmt(cur.impressions)}
                 </span>
-                <Delta value={prev ? Math.round(((cur.impressions - prev.impressions) / prev.impressions) * 100) : 0} suffix="%" />
+                <Delta value={prev && prev.impressions ? Math.round(((cur.impressions - prev.impressions) / prev.impressions) * 100) : 0} suffix="%" />
               </div>
 
-              {/* Avg position (lower is better) */}
+              {/* Clicks */}
               <div className="flex items-baseline gap-2">
                 <span style={{ color: C.ink, fontSize: 15, fontVariantNumeric: "tabular-nums" }} className="font-semibold">
-                  {r1(cur.avgPos)}
+                  {fmt(cur.clicks)}
                 </span>
-                <Delta value={prev ? r1(cur.avgPos - prev.avgPos) : 0} invert />
+                <Delta value={prev && prev.clicks ? Math.round(((cur.clicks - prev.clicks) / prev.clicks) * 100) : 0} suffix="%" />
               </div>
 
               {/* CTR */}
@@ -6975,7 +6984,7 @@ export default function App() {
               aiData={aiData}
             />
           ) : (
-            <Portfolio clients={visibleClients.filter((c) => hasService(c.name, "seo"))} onSelect={setSelected} month={month} gscData={gscData} />
+            <Portfolio clients={visibleClients.filter((c) => hasService(c.name, "sem"))} onSelect={setSelected} month={month} semData={semData} />
           )}
         </main>
       </div>
