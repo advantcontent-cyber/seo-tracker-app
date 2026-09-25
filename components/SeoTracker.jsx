@@ -6348,7 +6348,7 @@ function SocialStatTile({ label, value, delta }) {
 // this DOM node, so it can't stomp on text still being edited. Mirrors the
 // sample reports' own setSectionEditing()/saveEditableContent() split,
 // persisting server-side instead of localStorage.
-function SocialEditablePanel({ title, html, placeholder, resetToken, onSave }) {
+function SocialEditablePanel({ title, html, placeholder, resetToken, draftHtml, draftToken, onSave }) {
   const ref = useRef(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -6357,6 +6357,15 @@ function SocialEditablePanel({ title, html, placeholder, resetToken, onSave }) {
     if (ref.current) ref.current.innerHTML = html || "";
     setEditing(false);
   }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A fresh AI draft (see SocialReportTab's "Generate with AI") drops
+  // straight into edit mode pre-filled, so the analyst reviews/tweaks it
+  // before Done persists it — same as a manual edit, just pre-seeded.
+  useEffect(() => {
+    if (draftToken == null) return;
+    if (ref.current) ref.current.innerHTML = draftHtml || "";
+    setEditing(true);
+  }, [draftToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = async () => {
     if (editing) {
@@ -6502,6 +6511,15 @@ function SocialReportTab({ client }) {
   const [platform, setPlatform] = useState("overall");
   const [report, setReport] = useState(null); // API response
   const [loadError, setLoadError] = useState(null);
+  // AI-drafted Content Highlights/AI Insights/Recommendations — ephemeral,
+  // same pattern as AnalystNotes' "Generate with AI" (see lib/social-narrative.js):
+  // draftToken bumps on each generation so the three editable panels below
+  // pick up a fresh draft into edit mode for review, but nothing here is
+  // persisted until the analyst clicks each panel's own Done.
+  const [draft, setDraft] = useState(null); // { contentHighlight, aiInsights, recommendations } HTML strings
+  const [draftToken, setDraftToken] = useState(0);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -6541,6 +6559,43 @@ function SocialReportTab({ client }) {
 
   const d = report.data[platform];
   const resetToken = `${client.name}|${report.weekStart}|${platform}`;
+
+  const toBullets = (arr) => `<ul>${(arr || []).map((b) => `<li>${b}</li>`).join("")}</ul>`;
+
+  const generateNotes = async () => {
+    setGenLoading(true);
+    setGenError(null);
+    try {
+      const facts = {
+        platform,
+        period: report.weeks,
+        metrics: d.metrics,
+        account: d.account,
+        health: d.health,
+        posts: d.posts.slice(0, 12).map((p) => ({
+          title: p.title, type: p.type, pillar: p.pillar, date: p.date,
+          reach: p.reach, views: p.views, eng: Math.round(p.eng * 100) / 100,
+          likes: p.likes, comments: p.comments, shares: p.shares, saves: p.saves,
+        })),
+      };
+      const res = await fetch("/api/generate-social-notes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client: client.name, facts }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Generation failed");
+      setDraft({
+        contentHighlight: toBullets(json.notes.contentHighlight),
+        aiInsights: toBullets(json.notes.aiInsights),
+        recommendations: toBullets(json.notes.recommendations),
+      });
+      setDraftToken((t) => t + 1);
+    } catch (e) {
+      setGenError(e.message);
+    } finally {
+      setGenLoading(false);
+    }
+  };
 
   const pillarLocal = (postLink, value) => {
     setReport((r) => {
@@ -6711,9 +6766,21 @@ function SocialReportTab({ client }) {
               <div className="text-sm" style={{ color: C.muted }}>Top post this week: <b style={{ color: C.ink }}>{d.highlightPost.title}</b></div>
             </div>
           )}
-          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} onSave={(value) => save({ platform, field: "highlight", value })} />
-          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} onSave={(value) => save({ platform, field: "aiOverview", value })} />
-          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} onSave={(value) => save({ platform, field: "recommendations", value })} />
+          <div className="flex items-center justify-between mb-4 mt-1">
+            <span style={{ color: C.faint, fontSize: 11.5 }}>Drafts all three panels below from this week's real numbers — review before saving.</span>
+            <button
+              onClick={generateNotes}
+              disabled={genLoading || d.posts.length === 0}
+              className="rounded-lg shrink-0 ml-3"
+              style={{ border: `1px solid ${C.line}`, background: genLoading ? "#f5f5f5" : "#fff", color: C.accent, fontSize: 12, fontWeight: 600, padding: "6px 11px", cursor: genLoading || d.posts.length === 0 ? "default" : "pointer", opacity: d.posts.length === 0 ? 0.5 : 1, whiteSpace: "nowrap" }}
+            >
+              {genLoading ? "Generating…" : "Generate with AI"}
+            </button>
+          </div>
+          {genError && <div style={{ color: C.risk, fontSize: 12 }} className="mb-3">{genError}</div>}
+          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} draftHtml={draft?.contentHighlight} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "highlight", value })} />
+          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} draftHtml={draft?.aiInsights} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "aiOverview", value })} />
+          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} draftHtml={draft?.recommendations} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "recommendations", value })} />
         </div>
       </div>
 
