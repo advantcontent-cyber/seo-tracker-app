@@ -6551,8 +6551,17 @@ function SocialReportTab({ client }) {
     });
   };
 
+  const hasUnmatched = (report.unmatched?.facebook?.length || 0) + (report.unmatched?.instagram?.length || 0) > 0;
+
   return (
     <div>
+      {hasUnmatched && (
+        <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
+          <b>Data source mismatch:</b> Windsor returned posts for account name(s) not mapped to IC Khao Yai in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code> — the numbers above are likely incomplete or zero because of this, not a real quiet week.
+          {report.unmatched.facebook.length > 0 && <> Facebook <code>page_name</code>: {report.unmatched.facebook.map((n) => `"${n}"`).join(", ")}.</>}
+          {report.unmatched.instagram.length > 0 && <> Instagram <code>account_name</code>: {report.unmatched.instagram.map((n) => `"${n}"`).join(", ")}.</>}
+        </div>
+      )}
       {/* Header: week nav + health badge */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>

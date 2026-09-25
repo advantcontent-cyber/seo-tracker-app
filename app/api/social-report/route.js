@@ -54,7 +54,7 @@ export async function GET(req) {
     const { current } = weekWindows(week);
     const weekStart = current.from;
 
-    const [pillarRows, editableRows, msRow, report] = await Promise.all([
+    const [pillarRows, editableRows, msRow] = await Promise.all([
       admin.from("seo_social_post_pillars").select("post_link, pillar").eq("client_name", client),
       admin.from("seo_social_editable")
         .select("platform, content_highlight_html, ai_overview_html, recommendations_html")
@@ -62,12 +62,10 @@ export async function GET(req) {
       admin.from("seo_social_milestones")
         .select("milestones_text, next_steps_text")
         .eq("client_name", client).eq("week_start", weekStart).maybeSingle(),
-      // fetched after pillar rows so overrides can be passed in — reordered below
-      Promise.resolve(null),
     ]);
 
     const pillarOverrides = Object.fromEntries((pillarRows.data ?? []).map((r) => [r.post_link, r.pillar]));
-    const { weeks, data } = await fetchSocialReport(client, week, pillarOverrides);
+    const { weeks, data, unmatched } = await fetchSocialReport(client, week, pillarOverrides);
 
     const editableByPlatform = Object.fromEntries((editableRows.data ?? []).map((r) => [r.platform, r]));
     for (const platform of PLATFORMS) {
@@ -83,6 +81,7 @@ export async function GET(req) {
       weekStart,
       weeks,
       data,
+      unmatched, // { facebook: [...page_name values Windsor returned but ACCOUNT_MAP doesn't know], instagram: [...] } — non-empty means the report came back empty because of a mapping mismatch, not a real zero-post week
       milestones: {
         milestonesText: msRow.data?.milestones_text ?? "",
         nextStepsText:  msRow.data?.next_steps_text ?? "",
