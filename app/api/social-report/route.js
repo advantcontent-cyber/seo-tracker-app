@@ -1,7 +1,8 @@
 // GET  /api/social-report?client=IC%20Khao%20Yai&week=2026-09-04
 // POST /api/social-report  { client, week, platform?, field, value, postLink? }
 //
-// The Social tab (IC Khao Yai only for now — see lib/social.js). GET merges
+// The Social tab (clients listed in lib/social.js's ACCOUNT_MAP — currently
+// IC Khao Yai + both Azerai properties). GET merges
 // the live Windsor pull (metrics/posts/health, recomputed every request) with
 // the analyst-written narrative + milestones + post pillar tags stored in
 // Supabase (seo_social_editable / seo_social_milestones /

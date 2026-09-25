@@ -340,8 +340,10 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const SERVICES = {
   // "social" — the weekly Facebook/Instagram "Client Health" report (Sep
   // 2026 request, built from real sample reports the client's agency
-  // already produces manually). IC Khao Yai-only for now — see lib/social.js
-  // for why this is its own Windsor data domain, not folded into "sem".
+  // already produces manually). See lib/social.js for why this is its own
+  // Windsor data domain, not folded into "sem" — only clients whose
+  // page_name/account_name are in lib/social.js's ACCOUNT_MAP should get
+  // this tab (IC Khao Yai + both Azerai properties, confirmed live so far).
   "IC Khao Yai": ["seo", "sem", "social"],
   // "leads" — Nomad's Aug 2026 feedback ("Add a Leads Analysis tab"). Its
   // own top-level service tab rather than nested under sem/"Paid", since
@@ -350,8 +352,8 @@ const SERVICES = {
   // Marketing. Nomad-only — see lib/leads.js for why this can't safely
   // generalize to other clients yet.
   "Nomad Greenland": ["seo", "sem", "leads"],
-  "Azerai Ke Ga Bay": ["sem"],
-  "Azerai La Residence, Hue": ["sem"],
+  "Azerai Ke Ga Bay": ["sem", "social"],
+  "Azerai La Residence, Hue": ["sem", "social"],
   "Sora Sukhumvit": ["seo", "sem"],
   "Six Senses Fort Barwara": ["sem"],
   "Song Saa Private Island": ["sem"],
@@ -6284,8 +6286,8 @@ function NomadLeadsTab({ data }) {
 
 /* ------------------------------------------------------------------ */
 /*  Social — weekly Facebook/Instagram "Client Health" report            */
-/*  (IC Khao Yai only, see lib/social.js). Live Windsor pull merged with  */
-/*  analyst-edited narrative/milestones/post-pillar tags from Supabase.   */
+/*  (per-client ACCOUNT_MAP in lib/social.js). Live Windsor pull merged   */
+/*  with analyst-edited narrative/milestones/post-pillar tags in Supabase.*/
 /* ------------------------------------------------------------------ */
 
 const SOCIAL_CONTENT_PILLARS = [
@@ -6557,7 +6559,7 @@ function SocialReportTab({ client }) {
     <div>
       {hasUnmatched && (
         <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
-          <b>Data source mismatch:</b> Windsor returned posts for account name(s) not mapped to IC Khao Yai in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code> — the numbers above are likely incomplete or zero because of this, not a real quiet week.
+          <b>Data source mismatch:</b> Windsor returned posts for account name(s) not mapped to {client.name} in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code> — the numbers above are likely incomplete or zero because of this, not a real quiet week.
           {report.unmatched.facebook.length > 0 && <> Facebook <code>page_name</code>: {report.unmatched.facebook.map((n) => `"${n}"`).join(", ")}.</>}
           {report.unmatched.instagram.length > 0 && <> Instagram <code>account_name</code>: {report.unmatched.instagram.map((n) => `"${n}"`).join(", ")}.</>}
         </div>
