@@ -6553,13 +6553,21 @@ function SocialReportTab({ client }) {
     });
   };
 
+  // Both Windsor connectors are pooled across every agency client (see
+  // lib/social.js), so the "unmatched" list is normally just every OTHER
+  // client's account name that hasn't been added to ACCOUNT_MAP yet — noise,
+  // not a problem for THIS client's own numbers, which are already filtered
+  // down to its own account name regardless. Only worth surfacing when this
+  // client's own report is empty, which is the one case an unmatched name
+  // might actually mean "our own account is under an unexpected spelling".
   const hasUnmatched = (report.unmatched?.facebook?.length || 0) + (report.unmatched?.instagram?.length || 0) > 0;
+  const clientHasNoPosts = report.data.overall.posts.length === 0;
 
   return (
     <div>
-      {hasUnmatched && (
+      {hasUnmatched && clientHasNoPosts && (
         <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
-          <b>Data source mismatch:</b> Windsor returned posts for account name(s) not mapped to {client.name} in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code> — the numbers above are likely incomplete or zero because of this, not a real quiet week.
+          <b>{client.name} has zero posts this window, and other account names showed up unmapped in the same pooled Windsor pull</b> — worth checking whether one of these is actually {client.name} under a different spelling in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code>, rather than a real quiet week.
           {report.unmatched.facebook.length > 0 && <> Facebook <code>page_name</code>: {report.unmatched.facebook.map((n) => `"${n}"`).join(", ")}.</>}
           {report.unmatched.instagram.length > 0 && <> Instagram <code>account_name</code>: {report.unmatched.instagram.map((n) => `"${n}"`).join(", ")}.</>}
         </div>
