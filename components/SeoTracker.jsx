@@ -6576,12 +6576,25 @@ function SocialReportTab({ client }) {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>
           <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.1em" }} className="uppercase font-semibold mb-1">Weekly Account Health</div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, -7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }}>‹</button>
-            <span style={{ color: C.ink, fontSize: 14 }} className="font-medium">
-              Current: {report.weeks.current.from} – {report.weeks.current.to} · Previous: {report.weeks.previous.from} – {report.weeks.previous.to}
-            </span>
-            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, 7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }}>›</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, -7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }} aria-label="Previous week">‹</button>
+            <span style={{ color: C.faint, fontSize: 12 }}>Week ending</span>
+            <input
+              type="date"
+              value={report.weeks.current.to}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => e.target.value && setWeekEnd(e.target.value)}
+              className="rounded-lg cursor-pointer"
+              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "5px 9px", fontFamily: "Inter, system-ui, sans-serif" }}
+              aria-label="Week ending"
+            />
+            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, 7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }} aria-label="Next week">›</button>
+            {weekEnd && (
+              <button onClick={() => setWeekEnd(null)} style={{ color: C.accent, fontSize: 12, fontWeight: 600 }}>Latest week</button>
+            )}
+          </div>
+          <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
+            Current: {report.weeks.current.from} – {report.weeks.current.to} · Previous: {report.weeks.previous.from} – {report.weeks.previous.to}
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-lg px-4 py-2" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
