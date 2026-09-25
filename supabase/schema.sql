@@ -411,3 +411,103 @@ values
   ('IC Khao Yai', 'khao yai tour', 1290, 30, '2026-06-29')
 on conflict (client_name, keyword) do update set
   global_volume = excluded.global_volume, kd = excluded.kd, snapshot_date = excluded.snapshot_date;
+
+-- ==================================================================
+-- SECTION 8 · Social tab (IC Khao Yai only) — editable content for the
+-- weekly Facebook/Instagram "Client Health" report. Metrics/posts/health
+-- score are computed live from Windsor on every load (lib/social.js) and
+-- never stored; only the analyst-written narrative + milestones + post
+-- content-pillar tags are persisted here. Edited in-page (Edit/Done toggle
+-- on the Social tab), unlike seo_action_items/seo_plan_keywords which are
+-- edited directly in the Supabase Table editor — see app/api/social-report.
+-- ==================================================================
+
+-- One row per client + reporting week + platform tab. The three rich-text
+-- sections shown on each platform tab (Overall/Facebook/Instagram).
+create table if not exists public.seo_social_editable (
+  id                      uuid primary key default gen_random_uuid(),
+  client_name             text not null,
+  week_start              date not null,
+  platform                text not null check (platform in ('overall', 'facebook', 'instagram')),
+  content_highlight_html  text,
+  ai_overview_html        text,
+  recommendations_html    text,
+  updated_at              timestamptz default now(),
+  unique (client_name, week_start, platform)
+);
+
+alter table public.seo_social_editable enable row level security;
+
+drop policy if exists "Read social editable content for allowed clients" on public.seo_social_editable;
+create policy "Read social editable content for allowed clients"
+  on public.seo_social_editable for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_social_editable.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage social editable content" on public.seo_social_editable;
+create policy "Service role can manage social editable content"
+  on public.seo_social_editable for all using (true) with check (true);
+
+-- One row per client + reporting week — the shared Milestones & Next Steps
+-- panel (not platform-scoped, matches the sample reports).
+create table if not exists public.seo_social_milestones (
+  id              uuid primary key default gen_random_uuid(),
+  client_name     text not null,
+  week_start      date not null,
+  milestones_text text,
+  next_steps_text text,
+  updated_at      timestamptz default now(),
+  unique (client_name, week_start)
+);
+
+alter table public.seo_social_milestones enable row level security;
+
+drop policy if exists "Read social milestones for allowed clients" on public.seo_social_milestones;
+create policy "Read social milestones for allowed clients"
+  on public.seo_social_milestones for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_social_milestones.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage social milestones" on public.seo_social_milestones;
+create policy "Service role can manage social milestones"
+  on public.seo_social_milestones for all using (true) with check (true);
+
+-- One row per client + post link — a post keeps its assigned content pillar
+-- regardless of which week's report re-surfaces it (a post published this
+-- week is still "This Week"; next week it reappears as a "previous period"
+-- comparison post and should keep the same tag).
+create table if not exists public.seo_social_post_pillars (
+  id          uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  post_link   text not null,
+  pillar      text not null,
+  updated_at  timestamptz default now(),
+  unique (client_name, post_link)
+);
+
+alter table public.seo_social_post_pillars enable row level security;
+
+drop policy if exists "Read social post pillars for allowed clients" on public.seo_social_post_pillars;
+create policy "Read social post pillars for allowed clients"
+  on public.seo_social_post_pillars for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_social_post_pillars.client_name)
+    )
+  );
+
+drop policy if exists "Service role can manage social post pillars" on public.seo_social_post_pillars;
+create policy "Service role can manage social post pillars"
+  on public.seo_social_post_pillars for all using (true) with check (true);

@@ -338,7 +338,11 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // Which services each client subscribes to. Drives sidebar badges + which
 // detail tabs render. Default is SEO-only.
 const SERVICES = {
-  "IC Khao Yai": ["seo", "sem"],
+  // "social" — the weekly Facebook/Instagram "Client Health" report (Sep
+  // 2026 request, built from real sample reports the client's agency
+  // already produces manually). IC Khao Yai-only for now — see lib/social.js
+  // for why this is its own Windsor data domain, not folded into "sem".
+  "IC Khao Yai": ["seo", "sem", "social"],
   // "leads" — Nomad's Aug 2026 feedback ("Add a Leads Analysis tab"). Its
   // own top-level service tab rather than nested under sem/"Paid", since
   // the feedback item describes it as sitting next to the (still-pending,
@@ -354,7 +358,7 @@ const SERVICES = {
   "Six Senses Shaharut": ["sem"],
   "Le Cercle": ["sem"],
 };
-const SVC_LABEL = { seo: "SEO", sem: "Performance Marketing", leads: "Leads Analysis" };
+const SVC_LABEL = { seo: "SEO", sem: "Performance Marketing", leads: "Leads Analysis", social: "Social" };
 // Compact form for the sidebar's per-property pill badges, which have no
 // room for the full "Performance Marketing" label (see SVC_LABEL above) —
 // client asked to drop the bare "SEM" wording dashboard-wide, so this can't
@@ -6278,6 +6282,423 @@ function NomadLeadsTab({ data }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Social — weekly Facebook/Instagram "Client Health" report            */
+/*  (IC Khao Yai only, see lib/social.js). Live Windsor pull merged with  */
+/*  analyst-edited narrative/milestones/post-pillar tags from Supabase.   */
+/* ------------------------------------------------------------------ */
+
+const SOCIAL_CONTENT_PILLARS = [
+  "The Heritage Stay",
+  "For the Curious Traveller",
+  "Design for Disconnection",
+  "Memory-Making in Motion",
+  "Client Post",
+];
+
+const SOCIAL_HEALTH_COLOR = { green: C.healthy, amber: C.watch, red: C.risk };
+const SOCIAL_HEALTH_LABEL = { green: "Doing Well", amber: "Needs Attention", red: "Danger" };
+
+const socialPctChange = (value, prev) => (!prev ? (value ? 100 : 0) : ((value - prev) / prev) * 100);
+
+function SocialHealthRing({ status }) {
+  const r = 18, circumference = 2 * Math.PI * r;
+  const p = { green: 0.85, amber: 0.5, red: 0.2 }[status] ?? 0.5;
+  const color = SOCIAL_HEALTH_COLOR[status] || C.faint;
+  return (
+    <svg width={40} height={40} viewBox="0 0 44 44">
+      <circle cx="22" cy="22" r={r} fill="none" stroke={C.line} strokeWidth="5" />
+      <circle
+        cx="22" cy="22" r={r} fill="none" stroke={color} strokeWidth="5"
+        strokeDasharray={circumference} strokeDashoffset={circumference * (1 - p)}
+        strokeLinecap="round" transform="rotate(-90 22 22)"
+      />
+    </svg>
+  );
+}
+
+function SocialMetricCard({ label, value, format, delta }) {
+  return (
+    <div className="rounded-lg px-5 py-4" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.06em" }} className="uppercase font-semibold">{label}</div>
+      <div style={{ color: C.ink, fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} className="mt-2">
+        {format === "pct" ? `${Number(value).toFixed(2)}%` : fmt(Math.round(value))}
+      </div>
+      <div className="mt-1.5"><Delta value={Math.round(delta * 10) / 10} suffix="%" /></div>
+    </div>
+  );
+}
+
+function SocialStatTile({ label, value, delta }) {
+  return (
+    <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.05em" }} className="uppercase font-semibold">{label}</div>
+      <div style={{ color: C.ink, fontSize: 17, fontWeight: 700 }} className="mt-1">{value}</div>
+      {delta != null && <div className="mt-1"><Delta value={Math.round(delta * 10) / 10} suffix="%" /></div>}
+    </div>
+  );
+}
+
+// In-page editable rich-text block (Content Highlight / AI Insights /
+// Recommendations). The contentEditable div's DOM is only ever re-seeded by
+// React when `resetToken` changes (a new week/platform/client loaded) — a
+// successful save updates the parent's cached value but never re-touches
+// this DOM node, so it can't stomp on text still being edited. Mirrors the
+// sample reports' own setSectionEditing()/saveEditableContent() split,
+// persisting server-side instead of localStorage.
+function SocialEditablePanel({ title, html, placeholder, resetToken, onSave }) {
+  const ref = useRef(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (ref.current) ref.current.innerHTML = html || "";
+    setEditing(false);
+  }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = async () => {
+    if (editing) {
+      const value = ref.current?.innerHTML ?? "";
+      setSaving(true);
+      try { await onSave(value); } finally { setSaving(false); }
+    }
+    setEditing((e) => !e);
+  };
+
+  return (
+    <div className="mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold">{title}</h3>
+        <button
+          onClick={toggle}
+          disabled={saving}
+          className="rounded-md px-2.5 py-1"
+          style={{ fontSize: 11, fontWeight: 600, color: editing ? C.healthy : C.muted, background: editing ? `${C.healthy}14` : "#fff", border: `1px solid ${editing ? C.healthy : C.line}` }}
+        >
+          {saving ? "Saving…" : editing ? "Done" : "Edit"}
+        </button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable={editing}
+        suppressContentEditableWarning
+        data-placeholder={placeholder}
+        style={{
+          fontSize: 13, lineHeight: 1.6, color: C.ink, minHeight: 34, borderRadius: 8, padding: "7px 9px",
+          border: editing ? `1px dashed ${C.line}` : "1px solid transparent",
+          background: editing ? C.bg : "transparent",
+        }}
+      />
+    </div>
+  );
+}
+
+function parseMsLines(raw) {
+  return (raw || "").split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const dateMatch = line.match(/^(\d{1,2}\/\d{1,2}(?:–\d{1,2}\/\d{1,2})?|\d{1,2}(?:–\d{1,2})?\/\d{1,2})\s+(.*)$/);
+    let date = "", rest = line;
+    if (dateMatch) { date = dateMatch[1]; rest = dateMatch[2]; }
+    let note = null, isBlocker = false, task = rest;
+    const noteMatch = rest.match(/\(Note:(.*)\)\s*$/i);
+    if (noteMatch) {
+      note = noteMatch[1].trim();
+      task = rest.slice(0, noteMatch.index).trim();
+      isBlocker = /blocker/i.test(note);
+    }
+    const isGroup = !date && !note && /:$/.test(task);
+    return { date, task: isGroup ? task.replace(/:$/, "") : task, note, isBlocker, isGroup };
+  });
+}
+
+function SocialMsTimeline({ raw }) {
+  const items = parseMsLines(raw);
+  if (!items.length) return <div style={{ color: C.faint, fontSize: 12.5, fontStyle: "italic", padding: "6px 0" }}>Nothing logged yet.</div>;
+  return (
+    <ul className="list-none p-0 m-0">
+      {items.map((it, i) => it.isGroup ? (
+        <li key={i} style={{ color: C.muted, fontSize: 10.5, letterSpacing: "0.06em", fontWeight: 700, padding: "12px 0 4px" }} className="uppercase">{it.task}</li>
+      ) : (
+        <li key={i} className="flex gap-3" style={{ padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
+          {it.date && <div style={{ flexShrink: 0, minWidth: 52, fontSize: 11, fontWeight: 600, color: C.ink, background: C.bg, borderRadius: 6, padding: "4px 6px", textAlign: "center", height: "fit-content" }}>{it.date}</div>}
+          <div className="flex-1">
+            <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{it.task}</div>
+            {it.note && (
+              <div className="inline-flex items-start gap-1 mt-1" style={{ fontSize: 11.5, lineHeight: 1.45, borderRadius: 6, padding: "4px 8px", color: it.isBlocker ? C.risk : C.watch, background: it.isBlocker ? `${C.risk}12` : `${C.watch}12` }}>
+                {it.isBlocker ? "⚠" : "📝"} {it.note}
+              </div>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SocialMilestonesPanel({ milestonesText, nextStepsText, resetToken, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [milestones, setMilestones] = useState(milestonesText || "");
+  const [nextSteps, setNextSteps] = useState(nextStepsText || "");
+
+  useEffect(() => {
+    setMilestones(milestonesText || "");
+    setNextSteps(nextStepsText || "");
+    setEditing(false);
+  }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = async () => {
+    if (editing) {
+      setSaving(true);
+      try { await onSave(milestones, nextSteps); } finally { setSaving(false); }
+    }
+    setEditing((e) => !e);
+  };
+
+  return (
+    <div className="rounded-lg p-5 mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <div className="flex items-center justify-between mb-3.5">
+        <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold">Milestones &amp; Next Steps</h3>
+        <button
+          onClick={toggle} disabled={saving}
+          className="rounded-md px-2.5 py-1"
+          style={{ fontSize: 11, fontWeight: 600, color: editing ? C.healthy : C.muted, background: editing ? `${C.healthy}14` : "#fff", border: `1px solid ${editing ? C.healthy : C.line}` }}
+        >
+          {saving ? "Saving…" : editing ? "Done" : "Edit"}
+        </button>
+      </div>
+      {editing ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Milestones</div>
+            <textarea value={milestones} onChange={(e) => setMilestones(e.target.value)} rows={7} className="w-full rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.6, background: C.bg, color: C.ink }} />
+            <div style={{ color: C.faint, fontSize: 10.5 }} className="mt-1.5">One per line: <code>DD/MM task description</code>. Add context with <code>(Note: ...)</code>.</div>
+          </div>
+          <div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Next Steps</div>
+            <textarea value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} rows={7} className="w-full rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.6, background: C.bg, color: C.ink }} />
+            <div style={{ color: C.faint, fontSize: 10.5 }} className="mt-1.5">Add <code>(Note: Blocker: ...)</code> to flag a blocker.</div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Milestones</div>
+            <SocialMsTimeline raw={milestones} />
+          </div>
+          <div>
+            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Next Steps</div>
+            <SocialMsTimeline raw={nextSteps} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SocialReportTab({ client }) {
+  const [weekEnd, setWeekEnd] = useState(null); // yyyy-mm-dd | null = most recent complete week
+  const [platform, setPlatform] = useState("overall");
+  const [report, setReport] = useState(null); // API response
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
+    const qs = new URLSearchParams({ client: client.name, ...(weekEnd ? { week: weekEnd } : {}) });
+    fetch(`/api/social-report?${qs}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (!json.ok) { setLoadError(json.error || "Failed to load"); return; }
+        setReport(json);
+      })
+      .catch((err) => { if (!cancelled) setLoadError(err.message); });
+    return () => { cancelled = true; };
+  }, [client.name, weekEnd]);
+
+  const save = async (body) => {
+    const res = await fetch("/api/social-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, week: weekEnd, ...body }) });
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) throw new Error(json.error || "Save failed");
+  };
+
+  if (loadError) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.risk}`, background: "#fff", color: C.risk, fontSize: 13.5 }}>
+        Couldn't load the Social report: {loadError}
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 13.5 }}>
+        Loading Social report…
+      </div>
+    );
+  }
+
+  const d = report.data[platform];
+  const resetToken = `${client.name}|${report.weekStart}|${platform}`;
+
+  const pillarLocal = (postLink, value) => {
+    setReport((r) => {
+      if (!r) return r;
+      const next = structuredClone(r);
+      for (const p of ["overall", "facebook", "instagram"]) {
+        for (const post of next.data[p].posts) if (post.link === postLink) post.pillar = value;
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      {/* Header: week nav + health badge */}
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.1em" }} className="uppercase font-semibold mb-1">Weekly Account Health</div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, -7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }}>‹</button>
+            <span style={{ color: C.ink, fontSize: 14 }} className="font-medium">
+              Current: {report.weeks.current.from} – {report.weeks.current.to} · Previous: {report.weeks.previous.from} – {report.weeks.previous.to}
+            </span>
+            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, 7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }}>›</button>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 rounded-lg px-4 py-2" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <SocialHealthRing status={d.health} />
+          <div>
+            <div style={{ color: C.faint, fontSize: 10, letterSpacing: "0.1em" }} className="uppercase font-semibold">Feed Health</div>
+            <div style={{ color: SOCIAL_HEALTH_COLOR[d.health], fontSize: 15, fontWeight: 700 }}>{SOCIAL_HEALTH_LABEL[d.health]}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Platform tabs */}
+      <div className="flex items-center gap-1 mb-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        {["overall", "facebook", "instagram"].map((p) => (
+          <button
+            key={p} onClick={() => setPlatform(p)}
+            className="px-4 py-2.5 capitalize transition-colors"
+            style={{ fontSize: 13.5, fontWeight: platform === p ? 700 : 500, color: platform === p ? C.ink : C.muted, borderBottom: platform === p ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: -1 }}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
+      {/* Feed Performance metric cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+        {d.metrics.map((m) => (
+          <SocialMetricCard key={m.key} label={m.label} value={m.value} format={m.format} delta={socialPctChange(m.value, m.prev)} />
+        ))}
+      </div>
+
+      {/* Normalized Performance */}
+      <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Normalized Performance</div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2">
+        {d.account.map((s) => <SocialStatTile key={s.label} label={s.label} value={s.value} delta={s.delta} />)}
+      </div>
+      <p style={{ color: C.muted, fontSize: 11.5 }} className="mb-5 leading-relaxed">{d.accountCaption}</p>
+
+      <details className="rounded-lg mb-6 px-5 py-4" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 12.5 }}>
+        <summary style={{ color: C.ink, fontWeight: 600, cursor: "pointer" }}>Methodology &amp; health calculation</summary>
+        <div className="mt-2.5 leading-relaxed">
+          <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business post data via Windsor.ai, current 7 days vs. the previous 7 days.<br /><br />
+          <b style={{ color: C.ink }}>Engagement rate</b> — total interactions (likes + comments + shares, plus saves on Instagram) ÷ reach.<br /><br />
+          <b style={{ color: C.ink }}>Health status</b> — Doing Well / Needs Attention / Danger, based on how many headline metrics declined vs. the previous week and how steep any engagement-rate or reach decline is.
+        </div>
+      </details>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-6 items-start">
+        {/* Posts table */}
+        <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">
+            All Posts This Week <span style={{ color: C.faint, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({d.posts.length})</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Post</th>
+                  <th style={{ textAlign: "right", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Reach</th>
+                  <th style={{ textAlign: "right", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Eng. Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.posts.map((p, i) => (
+                  <tr key={p.link || i}>
+                    <td style={{ padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
+                      <div className="flex gap-3 items-start">
+                        <a href={p.link || "#"} target="_blank" rel="noopener noreferrer" className="rounded-lg shrink-0 block overflow-hidden" style={{ width: 56, height: 56, background: C.bg, border: `1px solid ${C.line}` }}>
+                          {p.img && <img src={p.img} alt={p.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+                        </a>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <span className="rounded px-1.5 py-0.5" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.05em", background: C.bg, color: C.muted, border: `1px solid ${C.line}` }}>{p.type}</span>
+                            <select
+                              value={p.pillar}
+                              onChange={(e) => { pillarLocal(p.link, e.target.value); save({ field: "pillar", postLink: p.link, value: e.target.value }).catch(() => {}); }}
+                              className="rounded"
+                              style={{ fontSize: 9.5, fontWeight: 650, color: C.ink, background: "#fff", border: `1px solid ${C.line}`, padding: "2px 4px" }}
+                            >
+                              {SOCIAL_CONTENT_PILLARS.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ fontSize: 13.5, fontWeight: 650, color: C.ink, lineHeight: 1.35 }}>{p.title}</div>
+                          <div style={{ fontSize: 12.5, lineHeight: 1.45, color: C.muted }} className="mt-0.5">{p.copy}</div>
+                          <div style={{ fontSize: 11, color: C.faint }} className="mt-1">{p.date} {p.link && <>· <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>View post →</a></>}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: "right", padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
+                      <div style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmt(p.reach)}</div>
+                      <div style={{ fontSize: 10.5, color: C.faint }}>{fmt(p.views)} views</div>
+                    </td>
+                    <td style={{ textAlign: "right", padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
+                      <div style={{ fontWeight: 600, color: C.ink }}>{p.eng.toFixed(2)}%</div>
+                      {p.clicks != null && <div style={{ fontSize: 10.5, color: C.faint }}>{p.clicks} clicks</div>}
+                    </td>
+                  </tr>
+                ))}
+                {d.posts.length === 0 && (
+                  <tr><td colSpan={3} style={{ textAlign: "center", color: C.faint, fontStyle: "italic", padding: "30px 16px" }}>No posts in this window.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Content Highlight / AI Insights / Recommendations */}
+        <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff", position: "sticky", top: 16 }}>
+          {d.highlightPost && (
+            <div className="flex gap-3 items-start mb-1">
+              <a href={d.highlightPost.link || "#"} target="_blank" rel="noopener noreferrer" className="rounded-lg shrink-0 block overflow-hidden" style={{ width: 64, height: 64, background: C.bg, border: `1px solid ${C.line}` }}>
+                {d.highlightPost.img && <img src={d.highlightPost.img} alt="" className="w-full h-full object-cover" />}
+              </a>
+              <div className="text-sm" style={{ color: C.muted }}>Top post this week: <b style={{ color: C.ink }}>{d.highlightPost.title}</b></div>
+            </div>
+          )}
+          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} onSave={(value) => save({ platform, field: "highlight", value })} />
+          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} onSave={(value) => save({ platform, field: "aiOverview", value })} />
+          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} onSave={(value) => save({ platform, field: "recommendations", value })} />
+        </div>
+      </div>
+
+      <SocialMilestonesPanel
+        milestonesText={report.milestones.milestonesText}
+        nextStepsText={report.milestones.nextStepsText}
+        resetToken={`${client.name}|${report.weekStart}`}
+        onSave={async (milestones, nextSteps) => {
+          await save({ field: "milestones", value: milestones });
+          await save({ field: "nextSteps", value: nextSteps });
+          setReport((r) => r && ({ ...r, milestones: { milestonesText: milestones, nextStepsText: nextSteps } }));
+        }}
+      />
+    </div>
+  );
+}
+
 function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gscError, actionData, blogDrafts, semrushData, keywordIdeas, planKeywords, semData, semRange, aiData }) {
   const isLive = !!gscData?.[client.name];
   const [service, setService] = useState(servicesOf(client.name)[0] || "seo"); // main service tab
@@ -6767,6 +7188,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
       {service === "leads" && <NomadLeadsTab data={leadsData} />}
+      {service === "social" && <SocialReportTab client={client} />}
     </div>
   );
 }
