@@ -1218,7 +1218,7 @@ const campaignMarket = (name) => {
     .trim();
   // Regions with no 2-letter code are spelled out (ICKY's "Middle East_…",
   // Sep 2026) — would otherwise fall under "Other".
-  if (/^Middle East\b/i.test(cleaned)) return "Middle East";
+  if (/^Middle[ _]?East/i.test(cleaned)) return "Middle East";
   const m = /^([A-Z]{2}(?:\+[A-Z]{2})*)/.exec(cleaned);
   return m ? m[1] : "Other";
 };
