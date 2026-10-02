@@ -1216,6 +1216,9 @@ const campaignMarket = (name) => {
     // the property-code prefix so the market code below it is what's matched.
     .replace(/^AZ(?:KGB|LRH)[\s_/]+/, "")
     .trim();
+  // Regions with no 2-letter code are spelled out (ICKY's "Middle East_…",
+  // Sep 2026) — would otherwise fall under "Other".
+  if (/^Middle East\b/i.test(cleaned)) return "Middle East";
   const m = /^([A-Z]{2}(?:\+[A-Z]{2})*)/.exec(cleaned);
   return m ? m[1] : "Other";
 };
