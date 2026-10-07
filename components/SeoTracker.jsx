@@ -1320,7 +1320,7 @@ function campaignsInRange(sem, from, to, platform) {
   for (const d of dateRange(from, to)) {
     for (const c of (sem.campaigns?.[d] || [])) {
       if (c.platform !== platform) continue;
-      const row = agg[c.name] ??= { name: c.name, platform, spend: 0, clicks: 0, impressions: 0, conversions: 0, allConversions: 0, clickBook: 0, outboundClickConversions: 0, reach: 0, messagingConversations: 0, spendPending: false, currency: c.currency };
+      const row = agg[c.name] ??= { name: c.name, platform, spend: 0, clicks: 0, impressions: 0, conversions: 0, allConversions: 0, clickBook: 0, outboundClickConversions: 0, contact: 0, reach: 0, messagingConversations: 0, spendPending: false, currency: c.currency };
       if (c.spend == null) row.spendPending = true;
       else row.spend += c.spend;
       row.clicks += c.clicks ?? 0;
@@ -1328,6 +1328,7 @@ function campaignsInRange(sem, from, to, platform) {
       row.conversions += c.conversions ?? 0;
       row.allConversions += c.allConversions ?? 0;
       row.clickBook += c.clickBook ?? 0;
+      row.contact += c.contact ?? 0; // CONTACT_CLIENTS' "Contact by Market"
       // outboundClickConversions — OUTBOUND_CLICK_CATEGORY_CLIENTS' (IC Khao
       // Yai) Click Book by Market, see lib/sem.js. 0/undefined for every
       // other client's campaigns.
@@ -1375,9 +1376,19 @@ function marketSpendInRange(sem, from, to) {
 // given this feedback, so it deliberately stays on the original
 // google.allConversions formula — do not widen `isIcky` to cover it
 // without the same confirmation.
-function dayCombined(sem, date, isIcky = false) {
+//
+// UPDATE (Oct 2026): for CONTACT_CLIENTS (Nomad Greenland) the headline
+// metric is Contact, not Click Book — `clickBook` here then carries
+// google.contact + meta.contact (see CONTACT_CLIENTS in lib/sem.js), and
+// SummaryTab relabels every Click Book card/chart as "Contact".
+const CONTACT_CLIENTS = new Set(["Nomad Greenland"]); // mirrors lib/sem.js
+function dayCombined(sem, date, isIcky = false, isContact = false) {
   const d = date && sem.daily?.[date];
   if (!d) return null;
+  if (isContact) {
+    const { clickBook: _unused, ...rest } = dayCombined(sem, date, false, false);
+    return { ...rest, clickBook: (d.google?.contact ?? 0) + (d.meta?.contact ?? 0) };
+  }
   const googleClickBook = isIcky ? (d.google?.outboundClickConversions ?? 0) : (d.google?.allConversions ?? 0);
   return {
     spend: d.spend ?? 0,
@@ -3708,9 +3719,13 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // Click Book source (Outbound Click category vs. the blanket bucket — see
   // dayCombined's comment) — moved above cur/prev so both call sites use it.
   const isIcky = client.name === "IC Khao Yai";
+  // Nomad Greenland: Contact replaces Click Book everywhere on this tab —
+  // the combined `clickBook` field then carries Contact (see dayCombined).
+  const isContact = CONTACT_CLIENTS.has(client.name);
+  const cbLabel = isContact ? "Contact" : "Click Book";
   const prevWin = compareRange;
-  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, (s, d) => dayCombined(s, d, isIcky)) : null;
-  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, (s, d) => dayCombined(s, d, isIcky)) : null;
+  const cur  = selectedRange ? aggregateRange(sem, selectedRange.from, selectedRange.to, (s, d) => dayCombined(s, d, isIcky, isContact)) : null;
+  const prev = prevWin ? aggregateRange(sem, prevWin.from, prevWin.to, (s, d) => dayCombined(s, d, isIcky, isContact)) : null;
   const dPct = (key) => (prev && prev[key] ? Math.round(((cur[key] - prev[key]) / prev[key]) * 100) : null);
 
   // Derived ratios — computed from the combined totals above (not summed/averaged
@@ -3753,9 +3768,9 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // curGoogle.currency, which stay the RAW pre-conversion currency and would
   // mislabel these already-converted figures.
   const notesFacts = cur ? {
-    combined: { spend: cur.spendPending ? null : cur.spend, currency: cur.spendPending ? null : "USD", clicks: cur.clicks, impressions: cur.impressions, clickBook: cur.clickBook, cpa, cpm, ctr },
-    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, currency: "USD", clicks: curMeta.clicks, impressions: curMeta.impressions, clickBook: curMeta.clickBook, reach } : null,
-    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, currency: "USD", clicks: curGoogle.clicks, impressions: curGoogle.impressions, clickBook: curGoogle.clickBook, allConversions: curGoogle.allConversions } : null,
+    combined: { spend: cur.spendPending ? null : cur.spend, currency: cur.spendPending ? null : "USD", clicks: cur.clicks, impressions: cur.impressions, ...(isContact ? { contact: cur.clickBook } : { clickBook: cur.clickBook }), cpa, cpm, ctr },
+    meta: curMeta ? { spend: curMeta.spendPending ? null : curMeta.spend, currency: "USD", clicks: curMeta.clicks, impressions: curMeta.impressions, ...(isContact ? { contact: curMeta.contact } : { clickBook: curMeta.clickBook }), reach } : null,
+    google: curGoogle ? { spend: curGoogle.spendPending ? null : curGoogle.spend, currency: "USD", clicks: curGoogle.clicks, impressions: curGoogle.impressions, ...(isContact ? { contact: curGoogle.contact } : { clickBook: curGoogle.clickBook }), allConversions: curGoogle.allConversions } : null,
   } : null;
 
   // Combined Amount Spent/CPA/CPM only mean something when Meta and Google
@@ -3771,7 +3786,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // see KPI_HUES above SemMetricCard; trialed on Sora first, then approved).
   const kpis = cur ? [
     { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote, icon: DollarSign },
-    { label: "Click Book",    value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
+    { label: cbLabel,         value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
     { label: "CPA",           value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
@@ -3809,7 +3824,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
-  const clickBookTrend = days.map((d) => ({ day: fmtDayShort(d), clickBook: dayCombined(sem, d, isIcky)?.clickBook ?? 0 }));
+  const clickBookTrend = days.map((d) => ({ day: fmtDayShort(d), clickBook: dayCombined(sem, d, isIcky, isContact)?.clickBook ?? 0 }));
   const clicksTrend    = days.map((d) => ({ day: fmtDayShort(d), clicks: sem.daily?.[d]?.clicks ?? 0 }));
   const tickInterval = dayTickInterval(days.length);
   const rangeLabel = range?.from && range?.to ? `${fmtDayShort(range.from)}–${fmtDayShort(range.to)} ${YEAR}` : "";
@@ -3818,7 +3833,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // `range` (the full available date range), not `selectedRange` — same
   // "always show the whole trend regardless of the KPI cards' date filter"
   // convention as every other client's identical monthly charts.
-  const clickBookByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d, isIcky)?.clickBook ?? 0, { markPartial: true });
+  const clickBookByMonth = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d, isIcky, isContact)?.clickBook ?? 0, { markPartial: true });
   const clicksByMonth    = monthlyBuckets(sem, range?.from, range?.to, (s, d) => dayCombined(s, d)?.clicks ?? 0, { markPartial: true });
   const monthlyChartsHavePartialMonth = clickBookByMonth.some((m) => m.partial) || clicksByMonth.some((m) => m.partial);
 
@@ -3840,7 +3855,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
     campaignsAll.forEach((c) => {
       const k = campaignMarket(c.name);
       const googleValue = isIcky ? (c.outboundClickConversions ?? 0) : (c.allConversions ?? 0);
-      agg[k] = (agg[k] || 0) + (c.platform === "meta" ? (c.clickBook ?? 0) : googleValue);
+      agg[k] = (agg[k] || 0) + (isContact ? (c.contact ?? 0) : c.platform === "meta" ? (c.clickBook ?? 0) : googleValue);
     });
     return Object.entries(agg).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   })();
@@ -3902,7 +3917,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Click Book Per Day</h2>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">{cbLabel} Per Day</h2>
             <span style={{ color: C.faint, fontSize: 12.5 }}>{rangeLabel}</span>
           </div>
           <div style={{ height: 220 }} className="px-2 py-3">
@@ -3912,7 +3927,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} interval={tickInterval} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Line type="monotone" dataKey="clickBook" name="Click Book" stroke={KPI_HUES[0]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="clickBook" name={cbLabel} stroke={KPI_HUES[0]} strokeWidth={2} dot={false} />
                 <SelectionBand selectedRange={selectedRange} color={KPI_HUES[0]} />
               </LineChart>
             </ResponsiveContainer>
@@ -3942,7 +3957,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
         <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total Click Book By Month</h2>
+            <h2 style={{ color: C.ink, fontSize: 14 }} className="font-semibold">Total {cbLabel} By Month</h2>
           </div>
           <div style={{ height: 240 }} className="px-2 py-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -3951,7 +3966,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
                 <XAxis dataKey="month" tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.faint, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
                 <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Bar dataKey="value" name="Click Book" fill={KPI_HUES[2]} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="value" name={cbLabel} fill={KPI_HUES[2]} radius={[4, 4, 0, 0]}>
                   <LabelList dataKey="value" position="top" formatter={(v) => fmt(v)} style={{ fill: KPI_HUES[2], fontSize: 11, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
@@ -3985,14 +4000,16 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
 
       {/* Click Book by Market / Cost per Click Book by Market */}
       <div className="grid lg:grid-cols-2 gap-5 mt-5">
-        <BarBreakdown title="Click Book by Market" rows={clickBookByMarket} fmtVal={fmt} color={KPI_HUES[3]} />
-        <BarBreakdown title="Cost per Click Book by Market" rows={costPerClickBookByMarket.rows} fmtVal={(v) => fmtByCurrency(v, costPerClickBookByMarket.currency)} color={KPI_HUES[4]} />
+        <BarBreakdown title={`${cbLabel} by Market`} rows={clickBookByMarket} fmtVal={fmt} color={KPI_HUES[3]} />
+        <BarBreakdown title={`Cost per ${cbLabel} by Market`} rows={costPerClickBookByMarket.rows} fmtVal={(v) => fmtByCurrency(v, costPerClickBookByMarket.currency)} color={KPI_HUES[4]} />
       </div>
 
       <AnalystNotes key={`${client.name}-${selectedRange?.from}-${selectedRange?.to}`} client={client} period={selectedRange} facts={notesFacts} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs, always in that platform's own real currency. Reach is the true deduplicated Meta figure for this exact range (fetched live, not summed from daily rows). Market is parsed from each campaign's name prefix (e.g. "HK_High intent…") — campaigns that don't match this pattern fall under "Other". {isIcky && 'Every Google Ads figure here is scoped to Advant-managed campaigns only ("[Advant]"-named — this account also runs other agencies\' or legacy campaigns not shown). '}Click Book by Market combines both platforms (Meta's own Click Book action, Google's {isIcky ? "conversions in the Outbound Click category" : "All Conversions"}) — a real count, safe to combine regardless of currency. Cost per Click Book by Market drops any market where Meta and Google spend don't share one currency, rather than show a blended figure that mixes two currencies into one number.
+        Combined Google Ads + Meta (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Per-platform breakdowns live under the Meta and Google tabs, always in that platform's own real currency. Reach is the true deduplicated Meta figure for this exact range (fetched live, not summed from daily rows). Market is parsed from each campaign's name prefix (e.g. "HK_High intent…") — campaigns that don't match this pattern fall under "Other". {isIcky && 'Every Google Ads figure here is scoped to Advant-managed campaigns only ("[Advant]"-named — this account also runs other agencies\' or legacy campaigns not shown). '}{isContact
+          ? "Contact combines both platforms (Meta's Contact conversions, Google's conversion actions named or categorised as Contact) — a real count, safe to combine regardless of currency. CPA is cost per Contact. Cost per Contact by Market drops"
+          : <>Click Book by Market combines both platforms (Meta&apos;s own Click Book action, Google&apos;s {isIcky ? "conversions in the Outbound Click category" : "All Conversions"}) — a real count, safe to combine regardless of currency. Cost per Click Book by Market drops</>} any market where Meta and Google spend don't share one currency, rather than show a blended figure that mixes two currencies into one number.
       </p>
     </div>
   );
@@ -4037,8 +4054,12 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
   // spendPending can't happen for this tab anymore (no cross-currency
   // mismatch within a single platform) — kept as a defensive fallback, not
   // a live code path.
-  const cpcb     = cur && !cur.spendPending && cur.clickBook ? cur.spend / cur.clickBook : null;
-  const prevCpcb = prev && !prev.spendPending && prev.clickBook ? prev.spend / prev.clickBook : null;
+  // Nomad Greenland reads Meta's Contact conversions in place of Click Book
+  // (see CONTACT_CLIENTS).
+  const cbKey   = CONTACT_CLIENTS.has(client.name) ? "contact" : "clickBook";
+  const cbLabel = cbKey === "contact" ? "Contact" : "Click Book";
+  const cpcb     = cur && !cur.spendPending && cur[cbKey] ? cur.spend / cur[cbKey] : null;
+  const prevCpcb = prev && !prev.spendPending && prev[cbKey] ? prev.spend / prev[cbKey] : null;
   // True (deduplicated) reach for this exact range, via the liveReach prop
   // (see fetchMetaReach in lib/sem.js) — falls back to semData's summed
   // daily reach (a real overcount, see that comment) while the live fetch
@@ -4058,8 +4079,8 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
     { label: "Reach",       value: fmt(reach),        delta: reachDPct, icon: Users },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "Click Book",  value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
-    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
+    { label: cbLabel,       value: fmt(cur[cbKey] ?? 0), delta: dPct(cbKey), icon: Target },
+    { label: `Cost per ${cbLabel}`, value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
     { label: "Frequency",   value: freq.toFixed(2), icon: Activity },
   ] : [];
 
@@ -4120,7 +4141,7 @@ function MetaTab({ client, selectedRange, compareRange, range, semData, liveReac
       <CampaignPerformanceTable campaigns={campaigns} rangeLabel={selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""} fmtSpend={fmtSpend} fmtCpc={fmtSpend} />
 
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
-        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site). Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
+        Meta Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. Reach is the true deduplicated figure for this exact range (fetched live, not summed from daily rows — see lib/sem.js), and Frequency is derived from it. {cbKey === "contact" ? "Contact counts Meta's Contact conversions (website, app and offline Contact events)." : 'Click Book counts the Meta Pixel "Search" event (booking-intent searches on the site).'} Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
       </p>
     </div>
   );
@@ -4165,8 +4186,12 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
   const pctDelta = (v, p) => (v != null && p ? Math.round(((v - p) / p) * 100) : null);
   const ctr     = cur && cur.impressions ? (cur.clicks / cur.impressions) * 100 : 0;
   const prevCtr = prev && prev.impressions ? (prev.clicks / prev.impressions) * 100 : null;
-  const clickBook     = isIcky ? (cur?.outboundClickConversions ?? 0) : (cur?.clickBook ?? 0);
-  const prevClickBook = isIcky ? (prev?.outboundClickConversions ?? 0) : (prev?.clickBook ?? 0);
+  // Nomad Greenland reads Google's Contact conversion actions in place of
+  // Click Book (see CONTACT_CLIENTS).
+  const isContact = CONTACT_CLIENTS.has(client.name);
+  const cbLabel = isContact ? "Contact" : "Click Book";
+  const clickBook     = isContact ? (cur?.contact ?? 0) : isIcky ? (cur?.outboundClickConversions ?? 0) : (cur?.clickBook ?? 0);
+  const prevClickBook = isContact ? (prev?.contact ?? 0) : isIcky ? (prev?.outboundClickConversions ?? 0) : (prev?.clickBook ?? 0);
   const dClickBookPct = prevClickBook ? Math.round(((clickBook - prevClickBook) / prevClickBook) * 100) : null;
   // spendPending can't happen for this tab anymore (no cross-currency
   // mismatch within a single platform) — kept as a defensive fallback, not
@@ -4181,8 +4206,8 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
     { label: "Impressions", value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "Clicks",      value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
     { label: "CTR",         value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "Click Book",  value: fmt(clickBook),   delta: dClickBookPct, icon: Target },
-    { label: "Cost per Click Book", value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
+    { label: cbLabel,       value: fmt(clickBook),   delta: dClickBookPct, icon: Target },
+    { label: `Cost per ${cbLabel}`, value: cpcb != null ? fmtSpend(cpcb) : "—", delta: pctDelta(cpcb, prevCpcb), icon: Banknote },
   ] : [];
 
   const days = dateRange(range?.from, range?.to);
@@ -4244,6 +4269,8 @@ function GoogleTab({ client, selectedRange, compareRange, range, semData }) {
       <p style={{ color: C.faint, fontSize: 11.5 }} className="mt-4">
         Google Ads (via Windsor), {selectedRange ? `${fmtDayLong(selectedRange.from)} – ${fmtDayLong(selectedRange.to)}` : ""}. {isIcky
           ? 'Every figure here is scoped to Advant-managed campaigns only ("[Advant]"-named — this account also runs other agencies\' or legacy campaigns not shown). Click Book counts conversions in the "Outbound Click" category (Check Availability, Offer Book Now Click, Offer Click) — distinct from this account\'s broader All Conversions figure.'
+          : isContact
+          ? 'Contact counts conversion actions whose name contains "contact" or whose category is Contact (e.g. Contact Form Submit).'
           : 'Click Book counts the "Offer Book Now Click" conversion action specifically — distinct from this account\'s broader Conversions/All conv. figures.'} Figures converted to USD from this account's real billing currency using a fixed rate (not a live one) — see FIXED_USD_RATES in lib/sem.js.
       </p>
     </div>
