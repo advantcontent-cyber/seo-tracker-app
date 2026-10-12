@@ -66,7 +66,7 @@ export async function GET(req) {
     ]);
 
     const pillarOverrides = Object.fromEntries((pillarRows.data ?? []).map((r) => [r.post_link, r.pillar]));
-    const { weeks, data, unmatched } = await fetchSocialReport(client, week, pillarOverrides);
+    const { weeks, data, unmatched, viewsSource } = await fetchSocialReport(client, week, pillarOverrides);
 
     const editableByPlatform = Object.fromEntries((editableRows.data ?? []).map((r) => [r.platform, r]));
     for (const platform of PLATFORMS) {
@@ -82,6 +82,7 @@ export async function GET(req) {
       weekStart,
       weeks,
       data,
+      viewsSource, // { facebook: "page_organic" | "post_sum" } — which figure the Facebook Views headline is
       unmatched, // { facebook: [...page_name values Windsor returned but ACCOUNT_MAP doesn't know], instagram: [...] } — non-empty means the report came back empty because of a mapping mismatch, not a real zero-post week
       milestones: {
         milestonesText: msRow.data?.milestones_text ?? "",
