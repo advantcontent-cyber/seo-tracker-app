@@ -6651,6 +6651,11 @@ function SocialReportTab({ client }) {
   const hasUnmatched = (report.unmatched?.facebook?.length || 0) + (report.unmatched?.instagram?.length || 0) > 0;
   const clientHasNoPosts = report.data.overall.posts.length === 0;
 
+  // lib/social.js falls back to summing the week's own posts when the
+  // account-level views pull fails — that figure undercounts vs Meta Business
+  // Suite (it misses views of older posts/stories), so never show it silently.
+  const fallbackViews = ["facebook", "instagram"].filter((p) => report.viewsSource?.[p] === "post_sum");
+
   return (
     <div>
       {hasUnmatched && clientHasNoPosts && (
@@ -6658,6 +6663,11 @@ function SocialReportTab({ client }) {
           <b>{client.name} has zero posts this window, and other account names showed up unmapped in the same pooled Windsor pull</b> — worth checking whether one of these is actually {client.name} under a different spelling in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code>, rather than a real quiet week.
           {report.unmatched.facebook.length > 0 && <> Facebook <code>page_name</code>: {report.unmatched.facebook.map((n) => `"${n}"`).join(", ")}.</>}
           {report.unmatched.instagram.length > 0 && <> Instagram <code>account_name</code>: {report.unmatched.instagram.map((n) => `"${n}"`).join(", ")}.</>}
+        </div>
+      )}
+      {fallbackViews.length > 0 && (
+        <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
+          <b>{fallbackViews.map((p) => p[0].toUpperCase() + p.slice(1)).join(" and ")} Views {fallbackViews.length > 1 ? "are" : "is"} incomplete this week</b> — the account-level views figure couldn't be loaded from Windsor, so {fallbackViews.length > 1 ? "they only count" : "it only counts"} views of posts published this week and will read lower than Meta Business Suite. Reload later before reporting this number.
         </div>
       )}
       {/* Header: week nav + health badge */}
@@ -6725,6 +6735,8 @@ function SocialReportTab({ client }) {
         <summary style={{ color: C.ink, fontWeight: 600, cursor: "pointer" }}>Methodology &amp; health calculation</summary>
         <div className="mt-2.5 leading-relaxed">
           <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business post data via Windsor.ai, current 7 days vs. the previous 7 days.<br /><br />
+          <b style={{ color: C.ink }}>Views</b> — every organic view of the account's content during the week, including posts published earlier (and stories on Instagram). Facebook matches Meta Business Suite's <i>Views › From organic</i>; Instagram is the account's <i>Views</i>. Paid/ad views are not included.<br /><br />
+          <b style={{ color: C.ink }}>Reach, interactions &amp; per-post averages</b> — counted from the posts published during the week only, so they won't equal Meta Business Suite's account-wide <i>Viewers</i> or <i>Content interactions</i> (which also include older posts and ads).<br /><br />
           <b style={{ color: C.ink }}>Engagement rate</b> — total interactions (likes + comments + shares, plus saves on Instagram) ÷ reach.<br /><br />
           <b style={{ color: C.ink }}>Health status</b> — Doing Well / Needs Attention / Danger, based on how many headline metrics declined vs. the previous week and how steep any engagement-rate or reach decline is.
         </div>
