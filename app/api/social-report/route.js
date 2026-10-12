@@ -82,7 +82,7 @@ export async function GET(req) {
       weekStart,
       weeks,
       data,
-      viewsSource, // { facebook: "page_organic" | "post_sum" } — which figure the Facebook Views headline is
+      viewsSource, // { facebook: "page_organic" | "post_sum", instagram: "account" | "post_sum" } — which figure each Views headline is
       unmatched, // { facebook: [...page_name values Windsor returned but ACCOUNT_MAP doesn't know], instagram: [...] } — non-empty means the report came back empty because of a mapping mismatch, not a real zero-post week
       milestones: {
         milestonesText: msRow.data?.milestones_text ?? "",
