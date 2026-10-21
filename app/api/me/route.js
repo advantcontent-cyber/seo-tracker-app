@@ -14,6 +14,11 @@ const ALL_CLIENTS = [
   "Song Saa Private Island",
   "Six Senses Shaharut",
   "Le Cercle",
+  "Dr. Miriam A",
+  "IC Manza",
+  "IC Ishigaki",
+  "Tiger Mountain Pokhara Lodge",
+  "Cottar's Safaris",
 ];
 
 export async function GET() {

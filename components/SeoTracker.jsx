@@ -247,6 +247,13 @@ const CLIENTS = [
     status: "healthy",
     keywords: [],
   },
+  // Social-only clients — no GSC property, no ads connection here. Appear only
+  // via their Social tab (see SERVICES + lib/social.js ACCOUNT_MAP).
+  { name: "Dr. Miriam A", domain: "drmiriama.com", market: "UK · EN", status: "healthy", keywords: [] },
+  { name: "IC Manza", domain: "instagram.com/anaintercontinentalmanzabeach", market: "Japan · EN/JP", status: "healthy", keywords: [] },
+  { name: "IC Ishigaki", domain: "instagram.com/ana_ic_ishigaki_resort", market: "Japan · EN/JP", status: "healthy", keywords: [] },
+  { name: "Tiger Mountain Pokhara Lodge", domain: "Social only", market: "Nepal · EN", status: "healthy", keywords: [] },
+  { name: "Cottar's Safaris", domain: "instagram.com/cottars.safaris", market: "Kenya · EN", status: "healthy", keywords: [] },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -351,14 +358,20 @@ const SERVICES = {
   // chatbot-platform-unknown) Chatbot Summary tab, not inside Performance
   // Marketing. Nomad-only — see lib/leads.js for why this can't safely
   // generalize to other clients yet.
-  "Nomad Greenland": ["seo", "sem", "leads"],
+  "Nomad Greenland": ["seo", "sem", "leads", "social"],
   "Azerai Ke Ga Bay": ["sem", "social"],
   "Azerai La Residence, Hue": ["sem", "social"],
-  "Sora Sukhumvit": ["seo", "sem"],
-  "Six Senses Fort Barwara": ["sem"],
-  "Song Saa Private Island": ["sem"],
-  "Six Senses Shaharut": ["sem"],
-  "Le Cercle": ["sem"],
+  "Sora Sukhumvit": ["seo", "sem", "social"],
+  "Six Senses Fort Barwara": ["sem", "social"],
+  "Song Saa Private Island": ["sem", "social"],
+  "Six Senses Shaharut": ["sem", "social"],
+  "Le Cercle": ["sem", "social"],
+  // Social-only clients (no SEO/SEM data in this app) — Social tab roll-out, Oct 2026.
+  "Dr. Miriam A": ["social"],
+  "IC Manza": ["social"],
+  "IC Ishigaki": ["social"],
+  "Tiger Mountain Pokhara Lodge": ["social"], // no Facebook/Instagram account in the pooled Windsor pull yet — tab stays empty until one is connected + added to ACCOUNT_MAP
+  "Cottar's Safaris": ["social"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "Performance Marketing", leads: "Leads Analysis", social: "Social" };
 // Compact form for the sidebar's per-property pill badges, which have no
