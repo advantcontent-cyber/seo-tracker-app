@@ -6560,10 +6560,11 @@ function SocialReportTab({ client }) {
   // AI-drafted Content Highlights/AI Insights/Recommendations — ephemeral,
   // same pattern as AnalystNotes' "Generate with AI" (see lib/social-narrative.js):
   // draftToken bumps on each generation so the three editable panels below
-  // pick up a fresh draft into edit mode for review, but nothing here is
-  // persisted until the analyst clicks each panel's own Done.
+  // pick up a fresh draft into edit mode for review, but the generated text is now
+  // saved immediately (see generateNotes), no per-panel Done needed.
   const [draft, setDraft] = useState(null); // { contentHighlight, aiInsights, recommendations } HTML strings
   const [draftToken, setDraftToken] = useState(0);
+  const [savedRev, setSavedRev] = useState(0); // bumps after an AI draft is auto-saved, so the panels re-seed from the saved text
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState(null);
 
@@ -6582,11 +6583,26 @@ function SocialReportTab({ client }) {
     return () => { cancelled = true; };
   }, [client.name, weekEnd]);
 
+  // Saves are keyed to the week actually on screen (report.weeks.current.to),
+  // NOT to weekEnd — weekEnd is null for "Latest week", which the server
+  // resolves as "yesterday", so a note saved today under null would be filed
+  // under a week_start that no longer matches tomorrow's "latest" window.
   const save = async (body) => {
-    const res = await fetch("/api/social-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, week: weekEnd, ...body }) });
+    const res = await fetch("/api/social-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, week: report?.weeks?.current?.to ?? weekEnd, ...body }) });
     const json = await res.json().catch(() => ({}));
     if (!json.ok) throw new Error(json.error || "Save failed");
   };
+
+  // Mirrors a successful save into the cached report, so flipping platform
+  // tabs or weeks and back re-seeds the panels with what was just saved
+  // rather than the stale pre-save text the first GET returned.
+  const HTML_KEY = { highlight: "highlightHtml", aiOverview: "aiOverviewHtml", recommendations: "recommendationsHtml" };
+  const applySaved = (plat, field, value) => setReport((r) => {
+    if (!r) return r;
+    const next = structuredClone(r);
+    next.data[plat][HTML_KEY[field]] = value;
+    return next;
+  });
 
   if (loadError) {
     return (
@@ -6604,11 +6620,12 @@ function SocialReportTab({ client }) {
   }
 
   const d = report.data[platform];
-  const resetToken = `${client.name}|${report.weekStart}|${platform}`;
+  const resetToken = `${client.name}|${report.weekStart}|${platform}|${savedRev}`;
 
   const toBullets = (arr) => `<ul>${(arr || []).map((b) => `<li>${b}</li>`).join("")}</ul>`;
 
   const generateNotes = async () => {
+    if ((d.highlightHtml || d.aiOverviewHtml || d.recommendationsHtml) && !window.confirm("This week already has saved text for this platform. Generate with AI and replace it?")) return;
     setGenLoading(true);
     setGenError(null);
     try {
@@ -6630,12 +6647,19 @@ function SocialReportTab({ client }) {
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Generation failed");
-      setDraft({
-        contentHighlight: toBullets(json.notes.contentHighlight),
-        aiInsights: toBullets(json.notes.aiInsights),
+      // Saved straight away for this client + week + platform (no separate
+      // Done click per panel), so the text survives a date/tab change or
+      // reload. Edit any panel afterwards to adjust it.
+      const generated = {
+        highlight: toBullets(json.notes.contentHighlight),
+        aiOverview: toBullets(json.notes.aiInsights),
         recommendations: toBullets(json.notes.recommendations),
-      });
-      setDraftToken((t) => t + 1);
+      };
+      for (const [field, value] of Object.entries(generated)) {
+        await save({ platform, field, value });
+        applySaved(platform, field, value);
+      }
+      setSavedRev((n) => n + 1);
     } catch (e) {
       setGenError(e.message);
     } finally {
@@ -6825,7 +6849,7 @@ function SocialReportTab({ client }) {
             </div>
           )}
           <div className="flex items-center justify-between mb-4 mt-1">
-            <span style={{ color: C.faint, fontSize: 11.5 }}>Drafts all three panels below from this week's real numbers — review before saving.</span>
+            <span style={{ color: C.faint, fontSize: 11.5 }}>Drafts all three panels below from this week's real numbers and saves them for this week — edit any panel to adjust.</span>
             <button
               onClick={generateNotes}
               disabled={genLoading || d.posts.length === 0}
@@ -6836,9 +6860,9 @@ function SocialReportTab({ client }) {
             </button>
           </div>
           {genError && <div style={{ color: C.risk, fontSize: 12 }} className="mb-3">{genError}</div>}
-          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} draftHtml={draft?.contentHighlight} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "highlight", value })} />
-          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} draftHtml={draft?.aiInsights} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "aiOverview", value })} />
-          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} draftHtml={draft?.recommendations} draftToken={draftToken || null} onSave={(value) => save({ platform, field: "recommendations", value })} />
+          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} draftHtml={draft?.contentHighlight} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "highlight", value }); applySaved(platform, "highlight", value); }} />
+          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} draftHtml={draft?.aiInsights} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "aiOverview", value }); applySaved(platform, "aiOverview", value); }} />
+          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} draftHtml={draft?.recommendations} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "recommendations", value }); applySaved(platform, "recommendations", value); }} />
         </div>
       </div>
 
