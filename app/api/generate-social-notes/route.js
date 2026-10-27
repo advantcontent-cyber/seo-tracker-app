@@ -1,14 +1,12 @@
 // POST /api/generate-social-notes
-// Drafts the Social tab's Content Highlights / AI Insights / Recommendations
-// panels via an LLM. Auth + role scope mirror /api/generate-sem-notes. The
+// Drafts the Social tab's Content Highlights / AI Insights / Content Pillar
+// Insights / Quick wins / Next-month ideas panels via an LLM. Auth + role scope mirror /api/generate-sem-notes. The
 // caller (SocialReportTab) already has the selected platform's metrics/
 // account stats/posts computed client-side (from /api/social-report) — this
 // route doesn't re-fetch Windsor, it just drafts from those facts.
 //
-// Ephemeral, same as /api/generate-sem-notes: nothing is persisted here. The
-// caller drops the draft into each editable panel's edit mode so the analyst
-// can review/tweak before saving through the existing /api/social-report
-// POST path.
+// Nothing is persisted here — the caller saves the draft through the
+// /api/social-report POST path, keyed to the date range on screen.
 
 import { createServerSupabase } from "../../../lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";

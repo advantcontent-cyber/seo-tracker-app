@@ -511,3 +511,87 @@ create policy "Read social post pillars for allowed clients"
 drop policy if exists "Service role can manage social post pillars" on public.seo_social_post_pillars;
 create policy "Service role can manage social post pillars"
   on public.seo_social_post_pillars for all using (true) with check (true);
+
+-- ==================================================================
+-- Social tab refinements (Oct 2026): any date range, split recommendations,
+-- pillar insights, post summaries, content-calendar pillar sheets, and
+-- comment-style milestones. Safe to re-run.
+-- ==================================================================
+
+-- Panels are now saved per client + date range + platform (was week + platform).
+alter table public.seo_social_editable add column if not exists range_end date;
+update public.seo_social_editable set range_end = week_start + 6 where range_end is null;
+alter table public.seo_social_editable alter column range_end set not null;
+alter table public.seo_social_editable add column if not exists pillar_insights_html text;
+alter table public.seo_social_editable add column if not exists quick_wins_html text;
+alter table public.seo_social_editable add column if not exists next_month_html text;
+alter table public.seo_social_editable drop constraint if exists seo_social_editable_client_name_week_start_platform_key;
+alter table public.seo_social_editable drop constraint if exists seo_social_editable_range_key;
+alter table public.seo_social_editable
+  add constraint seo_social_editable_range_key unique (client_name, week_start, range_end, platform);
+
+-- Cached one-line summary of each post (what it was about, not the caption).
+create table if not exists public.seo_social_post_summaries (
+  id          uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  post_key    text not null,
+  summary     text not null,
+  updated_at  timestamptz default now(),
+  unique (client_name, post_key)
+);
+alter table public.seo_social_post_summaries enable row level security;
+drop policy if exists "Read social post summaries for allowed clients" on public.seo_social_post_summaries;
+create policy "Read social post summaries for allowed clients"
+  on public.seo_social_post_summaries for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_social_post_summaries.client_name)
+    )
+  );
+drop policy if exists "Service role can manage social post summaries" on public.seo_social_post_summaries;
+create policy "Service role can manage social post summaries"
+  on public.seo_social_post_summaries for all using (true) with check (true);
+
+-- One content-calendar Google Sheet per client; post pillars are read from it.
+-- Edit directly in the Table editor. The sheet must be shared "anyone with
+-- the link can view" and have a Pillar column plus a post link or date+caption.
+create table if not exists public.seo_social_pillar_sources (
+  client_name text primary key,
+  sheet_url   text not null,
+  updated_at  timestamptz default now()
+);
+alter table public.seo_social_pillar_sources enable row level security;
+drop policy if exists "Service role can manage social pillar sources" on public.seo_social_pillar_sources;
+create policy "Service role can manage social pillar sources"
+  on public.seo_social_pillar_sources for all using (true) with check (true);
+
+-- Milestones & Next Steps as individual comments, anchored to a date (the last
+-- date of the range they were written in). Replaces the single free-text
+-- seo_social_milestones blob, which is kept read-only for older notes.
+create table if not exists public.seo_social_comments (
+  id          uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  kind        text not null check (kind in ('milestone', 'next_step')),
+  anchor_date date not null,
+  body        text not null,
+  author      text,
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+create index if not exists seo_social_comments_lookup on public.seo_social_comments (client_name, anchor_date);
+alter table public.seo_social_comments enable row level security;
+drop policy if exists "Read social comments for allowed clients" on public.seo_social_comments;
+create policy "Read social comments for allowed clients"
+  on public.seo_social_comments for select to authenticated
+  using (
+    exists (
+      select 1 from public.seo_user_roles r
+      where r.user_id = auth.uid()
+        and (r.role = 'admin' or r.client_name = seo_social_comments.client_name)
+    )
+  );
+drop policy if exists "Service role can manage social comments" on public.seo_social_comments;
+create policy "Service role can manage social comments"
+  on public.seo_social_comments for all using (true) with check (true);
