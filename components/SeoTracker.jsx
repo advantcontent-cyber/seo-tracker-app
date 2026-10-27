@@ -6331,23 +6331,51 @@ function NomadLeadsTab({ data }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Social — weekly Facebook/Instagram "Client Health" report            */
+/*  Social — Facebook/Instagram "Client Health" report for any date range */
 /*  (per-client ACCOUNT_MAP in lib/social.js). Live Windsor pull merged   */
 /*  with analyst-edited narrative/milestones/post-pillar tags in Supabase.*/
 /* ------------------------------------------------------------------ */
-
-const SOCIAL_CONTENT_PILLARS = [
-  "The Heritage Stay",
-  "For the Curious Traveller",
-  "Design for Disconnection",
-  "Memory-Making in Motion",
-  "Client Post",
-];
 
 const SOCIAL_HEALTH_COLOR = { green: C.healthy, amber: C.watch, red: C.risk };
 const SOCIAL_HEALTH_LABEL = { green: "Doing Well", amber: "Needs Attention", red: "Danger" };
 
 const socialPctChange = (value, prev) => (!prev ? (value ? 100 : 0) : ((value - prev) / prev) * 100);
+
+// Date-range presets, same set as Meta Business Suite's picker. Ranges end no
+// later than yesterday so every day in them is complete.
+const SOCIAL_PRESETS = [
+  { id: "yesterday", label: "Yesterday" },
+  { id: "last7", label: "Last 7 days" },
+  { id: "last28", label: "Last 28 days" },
+  { id: "last90", label: "Last 90 days" },
+  { id: "thisWeek", label: "This week" },
+  { id: "thisMonth", label: "This month" },
+  { id: "thisYear", label: "This year" },
+  { id: "lastWeek", label: "Last week" },
+  { id: "lastMonth", label: "Last month" },
+  { id: "custom", label: "Custom" },
+];
+
+function socialPresetRange(id) {
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  const back = (n) => { const d = new Date(yest); d.setDate(d.getDate() - (n - 1)); return d; };
+  const mondayOf = (d) => { const m = new Date(d); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); return m; };
+  let from, to = yest;
+  if (id === "yesterday") from = yest;
+  else if (id === "last7") from = back(7);
+  else if (id === "last28") from = back(28);
+  else if (id === "last90") from = back(90);
+  else if (id === "thisWeek") from = mondayOf(today);
+  else if (id === "thisMonth") from = new Date(today.getFullYear(), today.getMonth(), 1);
+  else if (id === "thisYear") from = new Date(today.getFullYear(), 0, 1);
+  else if (id === "lastWeek") { const m = mondayOf(today); to = new Date(m); to.setDate(to.getDate() - 1); from = new Date(to); from.setDate(from.getDate() - 6); }
+  else if (id === "lastMonth") { from = new Date(today.getFullYear(), today.getMonth() - 1, 1); to = new Date(today.getFullYear(), today.getMonth(), 0); }
+  else return null;
+  if (from > to) from = to; // e.g. "This week" on a Monday
+  return { from: ymd(from), to: ymd(to) };
+}
 
 function SocialHealthRing({ status }) {
   const r = 18, circumference = 2 * Math.PI * r;
@@ -6382,54 +6410,55 @@ function SocialStatTile({ label, value, delta }) {
     <div className="rounded-lg px-4 py-3" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
       <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.05em" }} className="uppercase font-semibold">{label}</div>
       <div style={{ color: C.ink, fontSize: 17, fontWeight: 700 }} className="mt-1">{value}</div>
-      {delta != null && <div className="mt-1"><Delta value={Math.round(delta * 10) / 10} suffix="%" /></div>}
+      {delta != null
+        ? <div className="mt-1"><Delta value={Math.round(delta * 10) / 10} suffix="%" /></div>
+        : <div style={{ color: C.faint, fontSize: 11 }} className="mt-1">no 6-month baseline</div>}
     </div>
   );
 }
 
-// In-page editable rich-text block (Content Highlight / AI Insights /
-// Recommendations). The contentEditable div's DOM is only ever re-seeded by
-// React when `resetToken` changes (a new week/platform/client loaded) — a
-// successful save updates the parent's cached value but never re-touches
-// this DOM node, so it can't stomp on text still being edited. Mirrors the
-// sample reports' own setSectionEditing()/saveEditableContent() split,
-// persisting server-side instead of localStorage.
-function SocialEditablePanel({ title, html, placeholder, resetToken, draftHtml, draftToken, onSave }) {
+// In-page editable rich-text block (Content Highlight / AI Insights / Content
+// Pillar Insights / Quick wins / Next-month ideation). The contentEditable
+// div's DOM is only ever re-seeded by React when `resetToken` changes (a new
+// range/platform/client loaded) — a successful save updates the parent's
+// cached value but never re-touches this DOM node, so it can't stomp on text
+// still being edited. Mirrors the sample reports' own setSectionEditing()/
+// saveEditableContent() split, persisting server-side instead of localStorage.
+function SocialEditablePanel({ title, subtitle, html, placeholder, resetToken, onSave }) {
   const ref = useRef(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => {
     if (ref.current) ref.current.innerHTML = html || "";
     setEditing(false);
+    setSaveError(null);
   }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A fresh AI draft (see SocialReportTab's "Generate with AI") drops
-  // straight into edit mode pre-filled, so the analyst reviews/tweaks it
-  // before Done persists it — same as a manual edit, just pre-seeded.
-  useEffect(() => {
-    if (draftToken == null) return;
-    if (ref.current) ref.current.innerHTML = draftHtml || "";
-    setEditing(true);
-  }, [draftToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = async () => {
     if (editing) {
       const value = ref.current?.innerHTML ?? "";
       setSaving(true);
-      try { await onSave(value); } finally { setSaving(false); }
+      setSaveError(null);
+      try { await onSave(value); }
+      catch (e) { setSaveError(e.message); setSaving(false); return; } // stay in edit mode, text kept
+      setSaving(false);
     }
     setEditing((e) => !e);
   };
 
   return (
     <div className="mb-5">
-      <div className="flex items-center justify-between mb-2">
-        <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold">{title}</h3>
+      <div className="flex items-start justify-between mb-2 gap-3">
+        <div>
+          <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold">{title}</h3>
+          {subtitle && <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-0.5">{subtitle}</div>}
+        </div>
         <button
           onClick={toggle}
           disabled={saving}
-          className="rounded-md px-2.5 py-1"
+          className="rounded-md px-2.5 py-1 shrink-0"
           style={{ fontSize: 11, fontWeight: 600, color: editing ? C.healthy : C.muted, background: editing ? `${C.healthy}14` : "#fff", border: `1px solid ${editing ? C.healthy : C.line}` }}
         >
           {saving ? "Saving…" : editing ? "Done" : "Edit"}
@@ -6446,132 +6475,150 @@ function SocialEditablePanel({ title, html, placeholder, resetToken, draftHtml, 
           background: editing ? C.bg : "transparent",
         }}
       />
+      {saveError && <div style={{ color: C.risk, fontSize: 12 }} className="mt-1">Couldn't save: {saveError}</div>}
     </div>
   );
 }
 
-function parseMsLines(raw) {
-  return (raw || "").split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
-    const dateMatch = line.match(/^(\d{1,2}\/\d{1,2}(?:–\d{1,2}\/\d{1,2})?|\d{1,2}(?:–\d{1,2})?\/\d{1,2})\s+(.*)$/);
-    let date = "", rest = line;
-    if (dateMatch) { date = dateMatch[1]; rest = dateMatch[2]; }
-    let note = null, isBlocker = false, task = rest;
-    const noteMatch = rest.match(/\(Note:(.*)\)\s*$/i);
-    if (noteMatch) {
-      note = noteMatch[1].trim();
-      task = rest.slice(0, noteMatch.index).trim();
-      isBlocker = /blocker/i.test(note);
-    }
-    const isGroup = !date && !note && /:$/.test(task);
-    return { date, task: isGroup ? task.replace(/:$/, "") : task, note, isBlocker, isGroup };
-  });
-}
+// Milestones & Next Steps as comments: every entry is its own saved row,
+// dated to the last day of the range it was written in, so adding one can't
+// overwrite another and nothing is lost by accident. Editing/deleting an entry
+// is explicit and per-entry. Shows the comments dated inside the current range.
+function SocialCommentColumn({ title, kind, comments, anchor, onAdd, onEdit, onDelete }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [error, setError] = useState(null);
 
-function SocialMsTimeline({ raw }) {
-  const items = parseMsLines(raw);
-  if (!items.length) return <div style={{ color: C.faint, fontSize: 12.5, fontStyle: "italic", padding: "6px 0" }}>Nothing logged yet.</div>;
-  return (
-    <ul className="list-none p-0 m-0">
-      {items.map((it, i) => it.isGroup ? (
-        <li key={i} style={{ color: C.muted, fontSize: 10.5, letterSpacing: "0.06em", fontWeight: 700, padding: "12px 0 4px" }} className="uppercase">{it.task}</li>
-      ) : (
-        <li key={i} className="flex gap-3" style={{ padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
-          {it.date && <div style={{ flexShrink: 0, minWidth: 52, fontSize: 11, fontWeight: 600, color: C.ink, background: C.bg, borderRadius: 6, padding: "4px 6px", textAlign: "center", height: "fit-content" }}>{it.date}</div>}
-          <div className="flex-1">
-            <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{it.task}</div>
-            {it.note && (
-              <div className="inline-flex items-start gap-1 mt-1" style={{ fontSize: 11.5, lineHeight: 1.45, borderRadius: 6, padding: "4px 8px", color: it.isBlocker ? C.risk : C.watch, background: it.isBlocker ? `${C.risk}12` : `${C.watch}12` }}>
-                {it.isBlocker ? "⚠" : "📝"} {it.note}
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function SocialMilestonesPanel({ milestonesText, nextStepsText, resetToken, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [milestones, setMilestones] = useState(milestonesText || "");
-  const [nextSteps, setNextSteps] = useState(nextStepsText || "");
-
-  useEffect(() => {
-    setMilestones(milestonesText || "");
-    setNextSteps(nextStepsText || "");
-    setEditing(false);
-  }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggle = async () => {
-    if (editing) {
-      setSaving(true);
-      try { await onSave(milestones, nextSteps); } finally { setSaving(false); }
-    }
-    setEditing((e) => !e);
+  const run = async (fn) => {
+    setBusy(true); setError(null);
+    try { await fn(); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
   return (
-    <div className="rounded-lg p-5 mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
-      <div className="flex items-center justify-between mb-3.5">
-        <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold">Milestones &amp; Next Steps</h3>
-        <button
-          onClick={toggle} disabled={saving}
-          className="rounded-md px-2.5 py-1"
-          style={{ fontSize: 11, fontWeight: 600, color: editing ? C.healthy : C.muted, background: editing ? `${C.healthy}14` : "#fff", border: `1px solid ${editing ? C.healthy : C.line}` }}
-        >
-          {saving ? "Saving…" : editing ? "Done" : "Edit"}
-        </button>
+    <div>
+      <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">{title}</div>
+      {comments.length === 0 && <div style={{ color: C.faint, fontSize: 12.5, fontStyle: "italic", padding: "6px 0" }}>Nothing logged for this range.</div>}
+      <ul className="list-none p-0 m-0">
+        {comments.map((c) => (
+          <li key={c.id} className="flex gap-3" style={{ padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ flexShrink: 0, minWidth: 64, fontSize: 11, fontWeight: 600, color: C.ink, background: C.bg, borderRadius: 6, padding: "4px 6px", textAlign: "center", height: "fit-content" }}>{c.anchor_date.slice(5).split("-").reverse().join("/")}</div>
+            <div className="flex-1 min-w-0">
+              {editId === c.id ? (
+                <>
+                  <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} className="w-full rounded-lg p-2" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.5, background: C.bg, color: C.ink }} />
+                  <div className="flex gap-2 mt-1.5">
+                    <button disabled={busy || !editText.trim()} onClick={() => run(async () => { await onEdit(c.id, editText.trim()); setEditId(null); })} style={{ fontSize: 11, fontWeight: 600, color: C.healthy }}>Save</button>
+                    <button disabled={busy} onClick={() => setEditId(null)} style={{ fontSize: 11, color: C.muted }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.body}</div>
+                  <div className="flex items-center gap-3 mt-1" style={{ fontSize: 10.5, color: C.faint }}>
+                    <span>{c.author ? `${c.author.split("@")[0]} · ` : ""}{(c.updated_at || c.created_at || "").slice(0, 10)}{c.updated_at && c.created_at && c.updated_at.slice(0, 19) !== c.created_at.slice(0, 19) ? " (edited)" : ""}</span>
+                    <button disabled={busy} onClick={() => { setEditId(c.id); setEditText(c.body); }} style={{ color: C.muted, fontWeight: 600 }}>Edit</button>
+                    <button disabled={busy} onClick={() => { if (window.confirm("Delete this comment?")) run(() => onDelete(c.id)); }} style={{ color: C.risk, fontWeight: 600 }}>Delete</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3">
+        <textarea
+          value={text} onChange={(e) => setText(e.target.value)} rows={2}
+          placeholder={kind === "milestone" ? "Add a milestone…" : "Add a next step…"}
+          className="w-full rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.5, background: "#fff", color: C.ink }}
+        />
+        <div className="flex items-center justify-between mt-1.5">
+          <span style={{ color: C.faint, fontSize: 10.5 }}>Dated {anchor} (last day of the range)</span>
+          <button
+            disabled={busy || !text.trim()}
+            onClick={() => run(async () => { await onAdd(kind, text.trim()); setText(""); })}
+            className="rounded-md px-2.5 py-1"
+            style={{ fontSize: 11, fontWeight: 600, color: text.trim() ? C.accent : C.faint, border: `1px solid ${C.line}`, background: "#fff" }}
+          >
+            {busy ? "Saving…" : "Add comment"}
+          </button>
+        </div>
+        {error && <div style={{ color: C.risk, fontSize: 12 }} className="mt-1">{error}</div>}
       </div>
-      {editing ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div>
-            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Milestones</div>
-            <textarea value={milestones} onChange={(e) => setMilestones(e.target.value)} rows={7} className="w-full rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.6, background: C.bg, color: C.ink }} />
-            <div style={{ color: C.faint, fontSize: 10.5 }} className="mt-1.5">One per line: <code>DD/MM task description</code>. Add context with <code>(Note: ...)</code>.</div>
-          </div>
-          <div>
-            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Next Steps</div>
-            <textarea value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} rows={7} className="w-full rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, fontSize: 12.5, lineHeight: 1.6, background: C.bg, color: C.ink }} />
-            <div style={{ color: C.faint, fontSize: 10.5 }} className="mt-1.5">Add <code>(Note: Blocker: ...)</code> to flag a blocker.</div>
-          </div>
+    </div>
+  );
+}
+
+function SocialCommentsPanel({ comments, anchor, setupNeeded, legacy, onAdd, onEdit, onDelete }) {
+  return (
+    <div className="rounded-lg p-5 mt-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+      <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3.5">Milestones &amp; Next Steps</h3>
+      {setupNeeded && (
+        <div className="rounded-lg px-3 py-2 mb-3" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12 }}>
+          Comments aren't set up yet — run the latest <code>supabase/schema.sql</code> migration (seo_social_comments) first.
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div>
-            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Milestones</div>
-            <SocialMsTimeline raw={milestones} />
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <SocialCommentColumn title="Milestones" kind="milestone" anchor={anchor} comments={comments.filter((c) => c.kind === "milestone")} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+        <SocialCommentColumn title="Next Steps" kind="next_step" anchor={anchor} comments={comments.filter((c) => c.kind === "next_step")} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+      </div>
+      {legacy && (legacy.milestonesText || legacy.nextStepsText) && (
+        <details className="mt-4" style={{ color: C.muted, fontSize: 12 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Earlier notes (before comments)</summary>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-2" style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+            <div>{legacy.milestonesText || "—"}</div>
+            <div>{legacy.nextStepsText || "—"}</div>
           </div>
-          <div>
-            <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.06em" }} className="uppercase font-semibold mb-2">Next Steps</div>
-            <SocialMsTimeline raw={nextSteps} />
-          </div>
-        </div>
+        </details>
       )}
     </div>
   );
 }
 
+const SOCIAL_SORTS = {
+  date: (p) => p.date || "",
+  views: (p) => p.views,
+  interactions: (p) => p.interactions,
+  eng: (p) => p.eng,
+};
+
+function SocialSortHeader({ label, sortKey, sort, setSort, align = "right" }) {
+  const active = sort.key === sortKey;
+  return (
+    <th style={{ textAlign: align, fontSize: 10.5, color: active ? C.ink : C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px", whiteSpace: "nowrap" }}>
+      <button
+        onClick={() => setSort(active ? { key: sortKey, dir: sort.dir === "desc" ? "asc" : "desc" } : { key: sortKey, dir: "desc" })}
+        style={{ fontWeight: active ? 700 : 500 }}
+        aria-label={`Sort by ${label}`}
+      >
+        {label} {active ? (sort.dir === "desc" ? "↓" : "↑") : "↕"}
+      </button>
+    </th>
+  );
+}
+
 function SocialReportTab({ client }) {
-  const [weekEnd, setWeekEnd] = useState(null); // yyyy-mm-dd | null = most recent complete week
+  const [preset, setPreset] = useState("last7");
+  const [range, setRange] = useState(() => socialPresetRange("last7")); // { from, to }
   const [platform, setPlatform] = useState("overall");
   const [report, setReport] = useState(null); // API response
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
-  // AI-drafted Content Highlights/AI Insights/Recommendations — ephemeral,
-  // same pattern as AnalystNotes' "Generate with AI" (see lib/social-narrative.js):
-  // draftToken bumps on each generation so the three editable panels below
-  // pick up a fresh draft into edit mode for review, but the generated text is now
-  // saved immediately (see generateNotes), no per-panel Done needed.
-  const [draft, setDraft] = useState(null); // { contentHighlight, aiInsights, recommendations } HTML strings
-  const [draftToken, setDraftToken] = useState(0);
-  const [savedRev, setSavedRev] = useState(0); // bumps after an AI draft is auto-saved, so the panels re-seed from the saved text
+  const [savedRev, setSavedRev] = useState(0); // bumps after an AI generation is saved, so the panels re-seed from the saved text
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState(null);
+  const [pillarError, setPillarError] = useState(null);
+  const [sort, setSort] = useState({ key: "date", dir: "desc" });
+  const summaryTried = useRef(new Set());
 
+  // The parent keys this component by client, so switching client mounts a
+  // fresh instance (no previous client's report/comments can linger).
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    const qs = new URLSearchParams({ client: client.name, ...(weekEnd ? { week: weekEnd } : {}) });
+    setLoading(true);
+    const qs = new URLSearchParams({ client: client.name, from: range.from, to: range.to });
     fetch(`/api/social-report?${qs}`)
       .then((r) => r.json())
       .then((json) => {
@@ -6579,32 +6626,80 @@ function SocialReportTab({ client }) {
         if (!json.ok) { setLoadError(json.error || "Failed to load"); return; }
         setReport(json);
       })
-      .catch((err) => { if (!cancelled) setLoadError(err.message); });
+      .catch((err) => { if (!cancelled) setLoadError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [client.name, weekEnd]);
+  }, [client.name, range.from, range.to]);
 
-  // Saves are keyed to the week actually on screen (report.weeks.current.to),
-  // NOT to weekEnd — weekEnd is null for "Latest week", which the server
-  // resolves as "yesterday", so a note saved today under null would be filed
-  // under a week_start that no longer matches tomorrow's "latest" window.
+  // Posts that came back without a descriptive summary get one generated (and
+  // cached server-side) so the table shows what each post was about instead of
+  // the full caption. Each post key is only attempted once per mount.
+  useEffect(() => {
+    if (!report) return;
+    const seen = new Map();
+    for (const plat of ["facebook", "instagram"]) {
+      for (const p of report.data[plat].posts) {
+        if (!p.summary && p.copy && !summaryTried.current.has(p.key) && !seen.has(p.key)) seen.set(p.key, { key: p.key, type: p.type, text: p.copy });
+      }
+    }
+    const batch = [...seen.values()].slice(0, 20);
+    if (!batch.length) return;
+    batch.forEach((b) => summaryTried.current.add(b.key));
+    fetch("/api/social-post-summaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, posts: batch }) })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.ok || !Object.keys(json.summaries || {}).length) return;
+        setReport((r) => {
+          if (!r) return r;
+          const next = structuredClone(r);
+          for (const plat of ["overall", "facebook", "instagram"]) for (const post of next.data[plat].posts) if (json.summaries[post.key]) post.summary = json.summaries[post.key];
+          return next;
+        });
+      })
+      .catch(() => {});
+  }, [report?.range?.from, report?.range?.to, report?.client]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saves are keyed to the range the loaded report covers (report.range), so a
+  // note always lands on the dates it is shown under.
   const save = async (body) => {
-    const res = await fetch("/api/social-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, week: report?.weeks?.current?.to ?? weekEnd, ...body }) });
+    const res = await fetch("/api/social-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client: client.name, from: report.range.from, to: report.range.to, ...body }) });
     const json = await res.json().catch(() => ({}));
     if (!json.ok) throw new Error(json.error || "Save failed");
+    return json;
   };
 
   // Mirrors a successful save into the cached report, so flipping platform
-  // tabs or weeks and back re-seeds the panels with what was just saved
+  // tabs or ranges and back re-seeds the panels with what was just saved
   // rather than the stale pre-save text the first GET returned.
-  const HTML_KEY = { highlight: "highlightHtml", aiOverview: "aiOverviewHtml", recommendations: "recommendationsHtml" };
+  const HTML_KEY = { highlight: "highlightHtml", aiOverview: "aiOverviewHtml", pillarInsights: "pillarInsightsHtml", quickWins: "quickWinsHtml", nextMonth: "nextMonthHtml" };
   const applySaved = (plat, field, value) => setReport((r) => {
     if (!r) return r;
     const next = structuredClone(r);
     next.data[plat][HTML_KEY[field]] = value;
     return next;
   });
+  const savePanel = (field) => async (value) => { await save({ platform, field, value }); applySaved(platform, field, value); };
 
-  if (loadError) {
+  const pickPreset = (id) => {
+    setPreset(id);
+    const r = socialPresetRange(id);
+    if (r) setRange(r);
+  };
+  const setCustom = (patch) => {
+    setPreset("custom");
+    setRange((cur) => {
+      const next = { ...cur, ...patch };
+      if (next.from > next.to) { if (patch.from) next.to = next.from; else next.from = next.to; }
+      return next;
+    });
+  };
+  const shiftRange = (dir) => {
+    const days = Math.round((new Date(`${range.to}T00:00:00`) - new Date(`${range.from}T00:00:00`)) / 86400000) + 1;
+    setPreset("custom");
+    setRange({ from: addDays(range.from, dir * days), to: addDays(range.to, dir * days) });
+  };
+
+  if (loadError && !report) {
     return (
       <div className="rounded-lg p-6" style={{ border: `1px dashed ${C.risk}`, background: "#fff", color: C.risk, fontSize: 13.5 }}>
         Couldn't load the Social report: {loadError}
@@ -6620,25 +6715,32 @@ function SocialReportTab({ client }) {
   }
 
   const d = report.data[platform];
-  const resetToken = `${client.name}|${report.weekStart}|${platform}|${savedRev}`;
+  const resetToken = `${report.client}|${report.range.from}|${report.range.to}|${platform}|${savedRev}`;
+  const yesterday = addDays(new Date().toISOString().slice(0, 10), -1);
 
   const toBullets = (arr) => `<ul>${(arr || []).map((b) => `<li>${b}</li>`).join("")}</ul>`;
 
   const generateNotes = async () => {
-    if ((d.highlightHtml || d.aiOverviewHtml || d.recommendationsHtml) && !window.confirm("This week already has saved text for this platform. Generate with AI and replace it?")) return;
+    if ((d.highlightHtml || d.aiOverviewHtml || d.pillarInsightsHtml || d.quickWinsHtml || d.nextMonthHtml) && !window.confirm("This range already has saved text for this platform. Generate with AI and replace it?")) return;
     setGenLoading(true);
     setGenError(null);
     try {
       const facts = {
         platform,
-        period: report.weeks,
+        scope: { overall: "overall account health across Facebook and Instagram", facebook: "Facebook only", instagram: "Instagram only" }[platform],
+        period: report.windows.current,
+        previousPeriod: report.windows.previous,
+        baselinePeriod: report.windows.baseline,
+        days: report.windows.days,
         metrics: d.metrics,
-        account: d.account,
+        normalizedVsSixMonthAverage: d.account,
         health: d.health,
-        posts: d.posts.slice(0, 12).map((p) => ({
-          title: p.title, type: p.type, pillar: p.pillar, date: p.date,
-          reach: p.reach, views: p.views, eng: Math.round(p.eng * 100) / 100,
-          likes: p.likes, comments: p.comments, shares: p.shares, saves: p.saves,
+        pillarStats: d.pillarStats.map((g) => ({ pillar: g.pillar, posts: g.posts, avgViews: Math.round(g.avgViews), avgInteractions: Math.round(g.avgInteractions), engagementRate: Math.round(g.eng * 100) / 100 })),
+        posts: [...d.posts].sort((a, b) => b.views - a.views).slice(0, 15).map((p) => ({
+          platform: p.platform, type: p.type, pillar: p.pillar, date: p.date,
+          summary: p.summary, captionExcerpt: (p.copy || "").slice(0, 300),
+          views: p.views, interactions: p.interactions, engagementRate: Math.round(p.eng * 100) / 100,
+          likes: p.likes, comments: p.comments, shares: p.shares, saves: p.saves, clicks: p.clicks,
         })),
       };
       const res = await fetch("/api/generate-social-notes", {
@@ -6647,13 +6749,15 @@ function SocialReportTab({ client }) {
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Generation failed");
-      // Saved straight away for this client + week + platform (no separate
-      // Done click per panel), so the text survives a date/tab change or
+      // Saved straight away for this client + range + platform (no separate
+      // Done click per panel), so the text survives a range/tab change or
       // reload. Edit any panel afterwards to adjust it.
       const generated = {
         highlight: toBullets(json.notes.contentHighlight),
         aiOverview: toBullets(json.notes.aiInsights),
-        recommendations: toBullets(json.notes.recommendations),
+        pillarInsights: toBullets(json.notes.pillarInsights),
+        quickWins: toBullets(json.notes.quickWins),
+        nextMonth: toBullets(json.notes.nextMonthIdeas),
       };
       for (const [field, value] of Object.entries(generated)) {
         await save({ platform, field, value });
@@ -6667,15 +6771,42 @@ function SocialReportTab({ client }) {
     }
   };
 
-  const pillarLocal = (postLink, value) => {
-    setReport((r) => {
+  // A pillar change is remembered per post (saved server-side), so it sticks
+  // across refreshes and every range that includes the post. If the save
+  // fails the previous pillar is restored and the error shown.
+  const setPostPillar = (post, value) => {
+    const apply = (pillar, source) => setReport((r) => {
       if (!r) return r;
       const next = structuredClone(r);
       for (const p of ["overall", "facebook", "instagram"]) {
-        for (const post of next.data[p].posts) if (post.link === postLink) post.pillar = value;
+        for (const x of next.data[p].posts) if (x.key === post.key) { x.pillar = pillar; x.pillarSource = source; }
+        // keep the per-pillar table in step
+        const byPillar = new Map();
+        for (const x of next.data[p].posts) {
+          const g = byPillar.get(x.pillar) || { pillar: x.pillar, posts: 0, views: 0, interactions: 0 };
+          g.posts++; g.views += x.views; g.interactions += x.interactions; byPillar.set(x.pillar, g);
+        }
+        next.data[p].pillarStats = [...byPillar.values()].map((g) => ({ ...g, avgViews: g.views / g.posts, avgInteractions: g.interactions / g.posts, eng: g.views ? (g.interactions / g.views) * 100 : 0 })).sort((a, b) => b.avgViews - a.avgViews);
       }
       return next;
     });
+    const before = { pillar: post.pillar, source: post.pillarSource };
+    setPillarError(null);
+    apply(value, "manual");
+    save({ field: "pillar", postLink: post.key, value }).catch((e) => { apply(before.pillar, before.source); setPillarError(`Couldn't save the pillar: ${e.message}`); });
+  };
+
+  const addComment = async (kind, text) => {
+    const json = await save({ field: "comment_add", kind, anchor: report.range.to, value: text });
+    setReport((r) => r && ({ ...r, comments: [...r.comments, json.comment] }));
+  };
+  const editComment = async (id, text) => {
+    const json = await save({ field: "comment_edit", id, value: text });
+    setReport((r) => r && ({ ...r, comments: r.comments.map((c) => (c.id === id ? json.comment : c)) }));
+  };
+  const deleteComment = async (id) => {
+    await save({ field: "comment_delete", id });
+    setReport((r) => r && ({ ...r, comments: r.comments.filter((c) => c.id !== id) }));
   };
 
   // Both Windsor connectors are pooled across every agency client (see
@@ -6688,48 +6819,70 @@ function SocialReportTab({ client }) {
   const hasUnmatched = (report.unmatched?.facebook?.length || 0) + (report.unmatched?.instagram?.length || 0) > 0;
   const clientHasNoPosts = report.data.overall.posts.length === 0;
 
-  // lib/social.js falls back to summing the week's own posts when the
+  // lib/social.js falls back to summing the range's own posts when the
   // account-level views pull fails — that figure undercounts vs Meta Business
   // Suite (it misses views of older posts/stories), so never show it silently.
   const fallbackViews = ["facebook", "instagram"].filter((p) => report.viewsSource?.[p] === "post_sum");
 
+  const sortedPosts = [...d.posts].sort((a, b) => {
+    const f = SOCIAL_SORTS[sort.key];
+    const x = f(a), y = f(b);
+    const cmp = typeof x === "string" ? x.localeCompare(y) : x - y;
+    return sort.dir === "desc" ? -cmp : cmp;
+  });
+  const captionFallback = (p) => ((p.copy || "").replace(/\s+/g, " ").trim().slice(0, 110) + ((p.copy || "").length > 110 ? "…" : "")) || "No caption";
+
   return (
-    <div>
+    <div style={{ opacity: loading ? 0.6 : 1, transition: "opacity .15s" }}>
+      {loadError && (
+        <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.risk}`, background: `${C.risk}10`, color: C.risk, fontSize: 12.5 }}>Couldn't load that range: {loadError}</div>
+      )}
       {hasUnmatched && clientHasNoPosts && (
         <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
-          <b>{client.name} has zero posts this window, and other account names showed up unmapped in the same pooled Windsor pull</b> — worth checking whether one of these is actually {client.name} under a different spelling in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code>, rather than a real quiet week.
+          <b>{client.name} has zero posts this window, and other account names showed up unmapped in the same pooled Windsor pull</b> — worth checking whether one of these is actually {client.name} under a different spelling in <code>lib/social.js</code>'s <code>ACCOUNT_MAP</code>, rather than a real quiet period.
           {report.unmatched.facebook.length > 0 && <> Facebook <code>page_name</code>: {report.unmatched.facebook.map((n) => `"${n}"`).join(", ")}.</>}
           {report.unmatched.instagram.length > 0 && <> Instagram <code>account_name</code>: {report.unmatched.instagram.map((n) => `"${n}"`).join(", ")}.</>}
         </div>
       )}
       {fallbackViews.length > 0 && (
         <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
-          <b>{fallbackViews.map((p) => p[0].toUpperCase() + p.slice(1)).join(" and ")} Views {fallbackViews.length > 1 ? "are" : "is"} incomplete this week</b> — the account-level views figure couldn't be loaded from Windsor, so {fallbackViews.length > 1 ? "they only count" : "it only counts"} views of posts published this week and will read lower than Meta Business Suite. Reload later before reporting this number.
+          <b>{fallbackViews.map((p) => p[0].toUpperCase() + p.slice(1)).join(" and ")} Views {fallbackViews.length > 1 ? "are" : "is"} incomplete for this range</b> — the account-level views figure couldn't be loaded from Windsor, so {fallbackViews.length > 1 ? "they only count" : "it only counts"} views of posts published in the range and will read lower than Meta Business Suite. Reload later before reporting this number.
         </div>
       )}
-      {/* Header: week nav + health badge */}
+      {/* Header: date range + health badge */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>
-          <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.1em" }} className="uppercase font-semibold mb-1">Weekly Account Health</div>
+          <div style={{ color: C.faint, fontSize: 11, letterSpacing: "0.1em" }} className="uppercase font-semibold mb-1">Account Health</div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, -7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }} aria-label="Previous week">‹</button>
-            <span style={{ color: C.faint, fontSize: 12 }}>Week ending</span>
-            <input
-              type="date"
-              value={report.weeks.current.to}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => e.target.value && setWeekEnd(e.target.value)}
+            <button onClick={() => shiftRange(-1)} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }} aria-label="Previous period">‹</button>
+            <select
+              value={preset} onChange={(e) => pickPreset(e.target.value)}
               className="rounded-lg cursor-pointer"
               style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "5px 9px", fontFamily: "Inter, system-ui, sans-serif" }}
-              aria-label="Week ending"
+              aria-label="Date range"
+            >
+              {SOCIAL_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            <span style={{ color: C.faint, fontSize: 12 }}>From</span>
+            <input
+              type="date" value={range.from} max={range.to}
+              onChange={(e) => e.target.value && setCustom({ from: e.target.value })}
+              className="rounded-lg cursor-pointer"
+              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "5px 9px", fontFamily: "Inter, system-ui, sans-serif" }}
+              aria-label="Start date"
             />
-            <button onClick={() => setWeekEnd(addDays(report.weeks.current.to, 7))} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13 }} aria-label="Next week">›</button>
-            {weekEnd && (
-              <button onClick={() => setWeekEnd(null)} style={{ color: C.accent, fontSize: 12, fontWeight: 600 }}>Latest week</button>
-            )}
+            <span style={{ color: C.faint, fontSize: 12 }}>to</span>
+            <input
+              type="date" value={range.to} min={range.from} max={yesterday}
+              onChange={(e) => e.target.value && setCustom({ to: e.target.value })}
+              className="rounded-lg cursor-pointer"
+              style={{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, fontWeight: 500, padding: "5px 9px", fontFamily: "Inter, system-ui, sans-serif" }}
+              aria-label="End date"
+            />
+            <button onClick={() => shiftRange(1)} disabled={range.to >= yesterday} className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, color: C.muted, fontSize: 13, opacity: range.to >= yesterday ? 0.4 : 1 }} aria-label="Next period">›</button>
           </div>
           <div style={{ color: C.muted, fontSize: 12.5 }} className="mt-1">
-            Current: {report.weeks.current.from} – {report.weeks.current.to} · Previous: {report.weeks.previous.from} – {report.weeks.previous.to}
+            {report.windows.days} days: {report.windows.current.from} – {report.windows.current.to} · Compared with {report.windows.previous.from} – {report.windows.previous.to} · 6-month baseline {report.windows.baseline.from} – {report.windows.baseline.to}
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-lg px-4 py-2" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
@@ -6755,14 +6908,14 @@ function SocialReportTab({ client }) {
       </div>
 
       {/* Feed Performance metric cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+      <div className="grid gap-3.5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
         {d.metrics.map((m) => (
           <SocialMetricCard key={m.key} label={m.label} value={m.value} format={m.format} delta={socialPctChange(m.value, m.prev)} />
         ))}
       </div>
 
-      {/* Normalized Performance */}
-      <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Normalized Performance</div>
+      {/* Normalized Performance (vs the previous 6 months) */}
+      <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Normalized Performance <span style={{ color: C.faint, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>· vs previous 6-month average</span></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2">
         {d.account.map((s) => <SocialStatTile key={s.label} label={s.label} value={s.value} delta={s.delta} />)}
       </div>
@@ -6771,85 +6924,128 @@ function SocialReportTab({ client }) {
       <details className="rounded-lg mb-6 px-5 py-4" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 12.5 }}>
         <summary style={{ color: C.ink, fontWeight: 600, cursor: "pointer" }}>Methodology &amp; health calculation</summary>
         <div className="mt-2.5 leading-relaxed">
-          <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business post data via Windsor.ai, current 7 days vs. the previous 7 days.<br /><br />
-          <b style={{ color: C.ink }}>Views</b> — every organic view of the account's content during the week, including posts published earlier (and stories on Instagram). Facebook matches Meta Business Suite's <i>Views › From organic</i>; Instagram is the account's <i>Views</i>. Paid/ad views are not included.<br /><br />
-          <b style={{ color: C.ink }}>Reach, interactions &amp; per-post averages</b> — counted from the posts published during the week only, so they won't equal Meta Business Suite's account-wide <i>Viewers</i> or <i>Content interactions</i> (which also include older posts and ads).<br /><br />
-          <b style={{ color: C.ink }}>Engagement rate</b> — total interactions (likes + comments + shares, plus saves on Instagram) ÷ reach.<br /><br />
-          <b style={{ color: C.ink }}>Health status</b> — Doing Well / Needs Attention / Danger, based on how many headline metrics declined vs. the previous week and how steep any engagement-rate or reach decline is.
+          <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business data via Windsor.ai for the chosen date range, compared with the equal-length range right before it. Organic content only: paid/ad delivery is excluded wherever Meta separates it{report.viewsSource?.facebookPosts === "total" ? " (Facebook per-post views are currently total impressions — the organic field wasn't available from Windsor)" : ""}.<br /><br />
+          <b style={{ color: C.ink }}>Views</b> — every organic view of the account's content in the range, including posts published earlier (and stories on Instagram). Facebook matches Meta Business Suite's <i>Views › From organic</i>; Instagram is the account's <i>Views</i>. Meta is retiring Reach, so Views replaces it everywhere.<br /><br />
+          <b style={{ color: C.ink }}>Engagement &amp; per-post figures</b> — counted from the posts published in the range only (likes + comments + shares, plus saves on Instagram), so they won't equal Meta Business Suite's account-wide interactions, which also include older posts and ads.<br /><br />
+          <b style={{ color: C.ink }}>Engagement rate</b> — total engagement ÷ views of those posts.<br /><br />
+          <b style={{ color: C.ink }}>Normalized performance</b> — views per day, average views and engagement per post, and posts per week for this range, compared with the same figures averaged over the 6 months before the range starts, so one unusual period isn't read as a trend.<br /><br />
+          <b style={{ color: C.ink }}>Health status</b> — Doing Well / Needs Attention / Danger, computed for the chosen range from how many headline metrics declined vs the previous equal-length range and how steep any engagement-rate or views decline is.
         </div>
       </details>
+
+      {/* Pillar performance */}
+      {d.pillarStats.length > 0 && (
+        <div className="rounded-lg p-5 mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Content Pillar Performance</div>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ color: C.faint, fontSize: 10.5 }}>
+                  <th style={{ textAlign: "left", padding: "0 8px 8px", borderBottom: `1px solid ${C.line}` }}>Pillar</th>
+                  <th style={{ textAlign: "right", padding: "0 8px 8px", borderBottom: `1px solid ${C.line}` }}>Posts</th>
+                  <th style={{ textAlign: "right", padding: "0 8px 8px", borderBottom: `1px solid ${C.line}` }}>Avg Views</th>
+                  <th style={{ textAlign: "right", padding: "0 8px 8px", borderBottom: `1px solid ${C.line}` }}>Avg Engagement</th>
+                  <th style={{ textAlign: "right", padding: "0 8px 8px", borderBottom: `1px solid ${C.line}` }}>Eng. Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.pillarStats.map((g) => (
+                  <tr key={g.pillar}>
+                    <td style={{ padding: "8px", borderBottom: `1px solid ${C.line}`, color: C.ink, fontWeight: 600 }}>{g.pillar}</td>
+                    <td style={{ padding: "8px", borderBottom: `1px solid ${C.line}`, textAlign: "right" }}>{g.posts}</td>
+                    <td style={{ padding: "8px", borderBottom: `1px solid ${C.line}`, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(Math.round(g.avgViews))}</td>
+                    <td style={{ padding: "8px", borderBottom: `1px solid ${C.line}`, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(Math.round(g.avgInteractions))}</td>
+                    <td style={{ padding: "8px", borderBottom: `1px solid ${C.line}`, textAlign: "right" }}>{g.eng.toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {report.pillarSource?.configured && !report.pillarSource.ok && (
+            <div style={{ color: C.watch, fontSize: 11.5 }} className="mt-2">Couldn't read the content-calendar sheet ({report.pillarSource.error}) — pillars shown are saved assignments only.</div>
+          )}
+          {!report.pillarSource?.configured && (
+            <div style={{ color: C.faint, fontSize: 11.5 }} className="mt-2">No content-calendar sheet is linked for this client yet, so pillars are assigned by hand on each post (saved per post). Add the sheet URL in <code>seo_social_pillar_sources</code> to pull them automatically.</div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-6 items-start">
         {/* Posts table */}
         <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
           <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">
-            All Posts This Week <span style={{ color: C.faint, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({d.posts.length})</span>
+            All Posts in Range <span style={{ color: C.faint, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({d.posts.length})</span>
           </div>
+          {pillarError && <div style={{ color: C.risk, fontSize: 12 }} className="mb-2">{pillarError}</div>}
           <div className="overflow-x-auto">
             <table className="w-full" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Post</th>
-                  <th style={{ textAlign: "right", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Reach</th>
-                  <th style={{ textAlign: "right", fontSize: 10.5, color: C.faint, borderBottom: `1px solid ${C.line}`, padding: "0 8px 10px" }}>Eng. Rate</th>
+                  <SocialSortHeader label="Post (date)" sortKey="date" sort={sort} setSort={setSort} align="left" />
+                  <SocialSortHeader label="Views" sortKey="views" sort={sort} setSort={setSort} />
+                  <SocialSortHeader label="Engagement" sortKey="interactions" sort={sort} setSort={setSort} />
+                  <SocialSortHeader label="Eng. Rate" sortKey="eng" sort={sort} setSort={setSort} />
                 </tr>
               </thead>
               <tbody>
-                {d.posts.map((p, i) => (
-                  <tr key={p.link || i}>
+                {sortedPosts.map((p, i) => (
+                  <tr key={p.key || i}>
                     <td style={{ padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
                       <div className="flex gap-3 items-start">
                         <a href={p.link || "#"} target="_blank" rel="noopener noreferrer" className="rounded-lg shrink-0 block overflow-hidden" style={{ width: 56, height: 56, background: C.bg, border: `1px solid ${C.line}` }}>
-                          {p.img && <img src={p.img} alt={p.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+                          {p.img && <img src={p.img} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
                         </a>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
                             <span className="rounded px-1.5 py-0.5" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.05em", background: C.bg, color: C.muted, border: `1px solid ${C.line}` }}>{p.type}</span>
                             <select
                               value={p.pillar}
-                              onChange={(e) => { pillarLocal(p.link, e.target.value); save({ field: "pillar", postLink: p.link, value: e.target.value }).catch(() => {}); }}
+                              onChange={(e) => setPostPillar(p, e.target.value)}
                               className="rounded"
+                              title={p.pillarSource === "sheet" ? "Pulled from the content-calendar sheet" : p.pillarSource === "manual" ? "Assigned by hand (saved)" : "Not assigned yet"}
                               style={{ fontSize: 9.5, fontWeight: 650, color: C.ink, background: "#fff", border: `1px solid ${C.line}`, padding: "2px 4px" }}
                             >
-                              {SOCIAL_CONTENT_PILLARS.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+                              {(report.pillars.includes(p.pillar) ? report.pillars : [...report.pillars, p.pillar]).map((pl) => <option key={pl} value={pl}>{pl}</option>)}
                             </select>
+                            {p.pillarSource === "sheet" && <span style={{ fontSize: 9, color: C.faint }}>from calendar</span>}
                           </div>
-                          <div style={{ fontSize: 13.5, fontWeight: 650, color: C.ink, lineHeight: 1.35 }}>{p.title}</div>
-                          <div style={{ fontSize: 12.5, lineHeight: 1.45, color: C.muted }} className="mt-0.5">{p.copy}</div>
+                          <div style={{ fontSize: 13, lineHeight: 1.45, color: C.ink, fontWeight: 550 }}>{p.summary || captionFallback(p)}</div>
                           <div style={{ fontSize: 11, color: C.faint }} className="mt-1">{p.date} {p.link && <>· <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>View post →</a></>}</div>
                         </div>
                       </div>
                     </td>
                     <td style={{ textAlign: "right", padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
-                      <div style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmt(p.reach)}</div>
-                      <div style={{ fontSize: 10.5, color: C.faint }}>{fmt(p.views)} views</div>
+                      <div style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmt(p.views)}</div>
+                    </td>
+                    <td style={{ textAlign: "right", padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
+                      <div style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmt(p.interactions)}</div>
+                      {p.clicks != null && <div style={{ fontSize: 10.5, color: C.faint }}>{p.clicks} clicks</div>}
                     </td>
                     <td style={{ textAlign: "right", padding: "14px 8px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top" }}>
                       <div style={{ fontWeight: 600, color: C.ink }}>{p.eng.toFixed(2)}%</div>
-                      {p.clicks != null && <div style={{ fontSize: 10.5, color: C.faint }}>{p.clicks} clicks</div>}
                     </td>
                   </tr>
                 ))}
                 {d.posts.length === 0 && (
-                  <tr><td colSpan={3} style={{ textAlign: "center", color: C.faint, fontStyle: "italic", padding: "30px 16px" }}>No posts in this window.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: "center", color: C.faint, fontStyle: "italic", padding: "30px 16px" }}>No posts in this window.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Content Highlight / AI Insights / Recommendations */}
+        {/* Content Highlights / AI Insights / Pillar Insights / Recommendations */}
         <div className="rounded-lg p-5" style={{ border: `1px solid ${C.line}`, background: "#fff", position: "sticky", top: 16 }}>
           {d.highlightPost && (
             <div className="flex gap-3 items-start mb-1">
               <a href={d.highlightPost.link || "#"} target="_blank" rel="noopener noreferrer" className="rounded-lg shrink-0 block overflow-hidden" style={{ width: 64, height: 64, background: C.bg, border: `1px solid ${C.line}` }}>
                 {d.highlightPost.img && <img src={d.highlightPost.img} alt="" className="w-full h-full object-cover" />}
               </a>
-              <div className="text-sm" style={{ color: C.muted }}>Top post this week: <b style={{ color: C.ink }}>{d.highlightPost.title}</b></div>
+              <div className="text-sm" style={{ color: C.muted }}>Top post (most views): <b style={{ color: C.ink }}>{d.highlightPost.summary || captionFallback(d.highlightPost)}</b></div>
             </div>
           )}
           <div className="flex items-center justify-between mb-4 mt-1">
-            <span style={{ color: C.faint, fontSize: 11.5 }}>Drafts all three panels below from this week's real numbers and saves them for this week — edit any panel to adjust.</span>
+            <span style={{ color: C.faint, fontSize: 11.5 }}>Drafts every panel below from this range's real numbers and saves them for this range — edit any panel to adjust it.</span>
             <button
               onClick={generateNotes}
               disabled={genLoading || d.posts.length === 0}
@@ -6860,21 +7056,25 @@ function SocialReportTab({ client }) {
             </button>
           </div>
           {genError && <div style={{ color: C.risk, fontSize: 12 }} className="mb-3">{genError}</div>}
-          <SocialEditablePanel title="Content Highlights" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} draftHtml={draft?.contentHighlight} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "highlight", value }); applySaved(platform, "highlight", value); }} />
-          <SocialEditablePanel title="AI Insights" html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} draftHtml={draft?.aiInsights} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "aiOverview", value }); applySaved(platform, "aiOverview", value); }} />
-          <SocialEditablePanel title="Recommendations" html={d.recommendationsHtml} placeholder="Add next-month recommendations…" resetToken={resetToken} draftHtml={draft?.recommendations} draftToken={draftToken || null} onSave={async (value) => { await save({ platform, field: "recommendations", value }); applySaved(platform, "recommendations", value); }} />
+          <SocialEditablePanel title="Content Highlights" subtitle="The execution behind the standout content — topic, idea, hook — not just the metrics" html={d.highlightHtml} placeholder="Add the content highlight…" resetToken={resetToken} onSave={savePanel("highlight")} />
+          <SocialEditablePanel
+            title="AI Insights"
+            subtitle={{ overall: "Overall health of the account across all channels", facebook: "Facebook health for this client", instagram: "Instagram health for this client" }[platform]}
+            html={d.aiOverviewHtml} placeholder="Add the AI insight…" resetToken={resetToken} onSave={savePanel("aiOverview")}
+          />
+          <SocialEditablePanel title="Content Pillar Insights" subtitle="What each pillar showed vs how it performed in this range" html={d.pillarInsightsHtml} placeholder="Add the content pillar insights…" resetToken={resetToken} onSave={savePanel("pillarInsights")} />
+          <h3 style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Recommendations</h3>
+          <SocialEditablePanel title="⚡ Quick Wins" subtitle="Apply now, low production impact" html={d.quickWinsHtml} placeholder="Add quick wins…" resetToken={resetToken} onSave={savePanel("quickWins")} />
+          <SocialEditablePanel title="🗓 For Next Month's Ideation" subtitle="Feed into next month's content-calendar planning" html={d.nextMonthHtml} placeholder="Add ideas for next month's planning…" resetToken={resetToken} onSave={savePanel("nextMonth")} />
         </div>
       </div>
 
-      <SocialMilestonesPanel
-        milestonesText={report.milestones.milestonesText}
-        nextStepsText={report.milestones.nextStepsText}
-        resetToken={`${client.name}|${report.weekStart}`}
-        onSave={async (milestones, nextSteps) => {
-          await save({ field: "milestones", value: milestones });
-          await save({ field: "nextSteps", value: nextSteps });
-          setReport((r) => r && ({ ...r, milestones: { milestonesText: milestones, nextStepsText: nextSteps } }));
-        }}
+      <SocialCommentsPanel
+        comments={report.comments}
+        anchor={report.range.to}
+        setupNeeded={report.commentsSetupNeeded}
+        legacy={report.legacyMilestones}
+        onAdd={addComment} onEdit={editComment} onDelete={deleteComment}
       />
     </div>
   );
@@ -7369,7 +7569,7 @@ function Detail({ client, onBack, month, importedPlan, onImportPlan, gscData, gs
 
       {service === "seo" && seoSub === "blog" && <BlogPlan client={client} imported={importedPlan} onImport={onImportPlan} keywordIdeas={keywordIdeas?.[client.name] || []} planKeywords={planKeywords?.[client.name] || {}} />}
       {service === "leads" && <NomadLeadsTab data={leadsData} />}
-      {service === "social" && <SocialReportTab client={client} />}
+      {service === "social" && <SocialReportTab key={client.name} client={client} />}
     </div>
   );
 }
