@@ -94,3 +94,26 @@ test("Pillars: saved override beats the sheet, the sheet beats Unassigned", () =
   assert.equal(byLink["https://fb/y"], "Sheet");
   assert.equal(byLink["https://fb/z"], UNASSIGNED_PILLAR);
 });
+
+test("Views breakdown: organic is the headline, paid is separate, total is their sum", () => {
+  const d = buildSocialData({
+    ...posts,
+    fbPageViews:    { current: 8637,  previous: 14369 },
+    fbPaidViews:    { current: 100,   previous: 200 },
+    igAccountViews: { current: 32097, previous: 37540 },
+    igPaidViews:    { current: 7189905, previous: 9500000 },
+  });
+  assert.equal(views(d.instagram).value, 32097);
+  assert.deepEqual(
+    { o: d.instagram.viewsBreakdown.organic, p: d.instagram.viewsBreakdown.paid, t: d.instagram.viewsBreakdown.total },
+    { o: 32097, p: 7189905, t: 7222002 },
+  );
+  assert.equal(d.overall.viewsBreakdown.organic, 8637 + 32097);
+  assert.equal(d.overall.viewsBreakdown.paid, 100 + 7189905);
+});
+
+test("Views breakdown is null when the paid side is unknown", () => {
+  const d = buildSocialData({ ...posts, fbPageViews: { current: 1, previous: 1 }, igAccountViews: { current: 1, previous: 1 } });
+  assert.equal(d.facebook.viewsBreakdown, null);
+  assert.equal(d.overall.viewsBreakdown, null);
+});

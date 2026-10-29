@@ -6824,6 +6824,11 @@ function SocialReportTab({ client }) {
   // Suite (it misses views of older posts/stories), so never show it silently.
   const fallbackViews = ["facebook", "instagram"].filter((p) => report.viewsSource?.[p] === "post_sum");
 
+  // Instagram can't split organic from paid natively (Windsor has no field),
+  // so say plainly when that figure is an estimate or couldn't be separated.
+  const igPaidSplit = report.viewsSource?.paidSplit?.instagram;
+  const igPaidWarning = platform !== "facebook" && (igPaidSplit === "no_ad_account" || igPaidSplit === "unavailable");
+
   const sortedPosts = [...d.posts].sort((a, b) => {
     const f = SOCIAL_SORTS[sort.key];
     const x = f(a), y = f(b);
@@ -6847,6 +6852,13 @@ function SocialReportTab({ client }) {
       {fallbackViews.length > 0 && (
         <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
           <b>{fallbackViews.map((p) => p[0].toUpperCase() + p.slice(1)).join(" and ")} Views {fallbackViews.length > 1 ? "are" : "is"} incomplete for this range</b> — the account-level views figure couldn't be loaded from Windsor, so {fallbackViews.length > 1 ? "they only count" : "it only counts"} views of posts published in the range and will read lower than Meta Business Suite. Reload later before reporting this number.
+        </div>
+      )}
+      {igPaidWarning && (
+        <div className="rounded-lg px-4 py-3 mb-4" style={{ border: `1px solid ${C.watch}`, background: `${C.watch}12`, color: C.watch, fontSize: 12.5, lineHeight: 1.5 }}>
+          <b>Instagram Views may include paid delivery for this client</b> — {igPaidSplit === "no_ad_account"
+            ? "no Meta ad account is matched to this client in lib/sem.js (ACCOUNT_MATCH), so ad impressions couldn't be subtracted. If this client runs Meta ads, add its ad account there; if it runs none, the figure is already organic."
+            : "the Meta Ads pull needed to separate paid views failed, so Instagram Views are shown as reported. Reload later before reporting this number."}
         </div>
       )}
       {/* Header: date range + health badge */}
@@ -6914,6 +6926,27 @@ function SocialReportTab({ client }) {
         ))}
       </div>
 
+      {/* Views breakdown: organic vs paid, like Meta Business Suite's "Views breakdown" */}
+      {d.viewsBreakdown && (
+        <div className="rounded-lg px-5 py-3.5 mb-6" style={{ border: `1px solid ${C.line}`, background: "#fff" }}>
+          <div style={{ color: C.faint, fontSize: 10.5, letterSpacing: "0.1em" }} className="uppercase font-semibold mb-2">
+            Views breakdown <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>· organic is what we judge content on; ads are shown for context only{platform !== "facebook" && igPaidSplit === "estimated" ? " · Instagram split is an estimate" : ""}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-10 gap-y-2">
+            {[["Total", d.viewsBreakdown.total, d.viewsBreakdown.prevTotal, C.muted], ["From organic", d.viewsBreakdown.organic, d.viewsBreakdown.prevOrganic, C.ink], ["From ads", d.viewsBreakdown.paid, d.viewsBreakdown.prevPaid, C.faint]].map(([label, v, prev, color]) => {
+              const delta = socialPctChange(v, prev);
+              return (
+                <div key={label}>
+                  <div style={{ color: C.muted, fontSize: 11.5 }}>{label}</div>
+                  <div style={{ color, fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(Math.round(v))}</div>
+                  <div className="mt-0.5"><Delta value={Math.round(delta * 10) / 10} suffix="%" /></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Normalized Performance (vs the previous 6 months) */}
       <div style={{ color: C.ink, fontSize: 12, letterSpacing: "0.08em" }} className="uppercase font-bold mb-3">Normalized Performance <span style={{ color: C.faint, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>· vs previous 6-month average</span></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2">
@@ -6924,7 +6957,7 @@ function SocialReportTab({ client }) {
       <details className="rounded-lg mb-6 px-5 py-4" style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.muted, fontSize: 12.5 }}>
         <summary style={{ color: C.ink, fontWeight: 600, cursor: "pointer" }}>Methodology &amp; health calculation</summary>
         <div className="mt-2.5 leading-relaxed">
-          <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business data via Windsor.ai for the chosen date range, compared with the equal-length range right before it. Organic content only: paid/ad delivery is excluded wherever Meta separates it{report.viewsSource?.facebookPosts === "total" ? " (Facebook per-post views are currently total impressions — the organic field wasn't available from Windsor)" : ""}.<br /><br />
+          <b style={{ color: C.ink }}>Scope</b> — live Facebook Page + Instagram Business data via Windsor.ai for the chosen date range, compared with the equal-length range right before it. Organic content only: paid/ad delivery is excluded from the headline Views and shown separately in the Views breakdown. Facebook uses Meta's own organic/paid fields. Instagram has no such field in Windsor, so Instagram organic Views = account Views minus the impressions this client's Meta ads delivered on Instagram (an estimate; it can differ slightly from Business Suite){report.viewsSource?.facebookPosts === "total" ? " (Facebook per-post views are currently total impressions — the organic field wasn't available from Windsor)" : ""}.<br /><br />
           <b style={{ color: C.ink }}>Views</b> — every organic view of the account's content in the range, including posts published earlier (and stories on Instagram). Facebook matches Meta Business Suite's <i>Views › From organic</i>; Instagram is the account's <i>Views</i>. Meta is retiring Reach, so Views replaces it everywhere.<br /><br />
           <b style={{ color: C.ink }}>Engagement &amp; per-post figures</b> — counted from the posts published in the range only (likes + comments + shares, plus saves on Instagram), so they won't equal Meta Business Suite's account-wide interactions, which also include older posts and ads.<br /><br />
           <b style={{ color: C.ink }}>Engagement rate</b> — total engagement ÷ views of those posts.<br /><br />
