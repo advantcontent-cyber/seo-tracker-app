@@ -370,7 +370,7 @@ const SERVICES = {
   "Dr. Miriam A": ["social"],
   "IC Manza": ["social"],
   "IC Ishigaki": ["social"],
-  "Tiger Mountain Pokhara Lodge": ["social"], // no Facebook/Instagram account in the pooled Windsor pull yet — tab stays empty until one is connected + added to ACCOUNT_MAP
+  "Tiger Mountain Pokhara Lodge": ["social"], // Facebook page connected in Windsor 2026-11-13 + mapped in lib/social.js ACCOUNT_MAP; no Instagram account yet
   "Cottar's Safaris": ["social"],
 };
 const SVC_LABEL = { seo: "SEO", sem: "Performance Marketing", leads: "Leads Analysis", social: "Social" };
