@@ -1723,6 +1723,10 @@ const KPI_HUES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#00830
    circular badge above the label, using `accent` as its fill; every other
    existing caller omits it and renders exactly as before. */
 function SemMetricCard({ label, value, delta, suffix = "%", invert = false, tint, accent, note, sourceIcon, sourceLabel, icon: Icon }) {
+  // Cost metrics (CPA, CPM, CPC, "Cost per …") are "down is good": a rise
+  // shows red, a fall green. Detected from the label so every tab inherits it.
+  const isCost = /(^|\s)(cpa|cpm|cpc)\b|cost per/i.test(String(label));
+  invert = invert || isCost;
   return (
     <div className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${C.line}`, background: tint ? `${accent}12` : "#fff", boxShadow: Icon ? "0 1px 2px rgba(11,11,11,0.04)" : undefined }}>
       <div className="px-5 py-4 flex-1">
