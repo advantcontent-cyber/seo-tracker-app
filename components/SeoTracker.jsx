@@ -340,6 +340,10 @@ const fmtDKK = (n) => `${Math.round(n ?? 0).toLocaleString("en-US")} kr`;
 const CURRENCY_FORMATTERS = { USD: fmtMoney, THB: fmtTHB, INR: fmtINR, VND: fmtVND, EUR: fmtEUR, DKK: fmtDKK };
 const currencySymbol = { USD: "$", THB: "฿", INR: "₹", VND: "₫", EUR: "€", DKK: "kr " };
 const fmtByCurrency = (n, currency) => (CURRENCY_FORMATTERS[currency] || fmtMoney)(n);
+// 2-decimal variant for per-unit cost metrics (CPA/CPM). VND stays whole (no practical subunit).
+const dec2 = (n, loc = "en-US") => (n ?? 0).toLocaleString(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const CURRENCY_FORMATTERS_2 = { USD: fmtMoney2, THB: (n) => `฿${dec2(n)}`, INR: fmtINR2, VND: fmtVND, EUR: (n) => `€${dec2(n)}`, DKK: (n) => `${dec2(n)} kr` };
+const fmtByCurrency2 = (n, currency) => (CURRENCY_FORMATTERS_2[currency] || fmtMoney2)(n);
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Which services each client subscribes to. Drives sidebar badges + which
@@ -1990,7 +1994,7 @@ function SoraSummaryTab({ client, selectedRange, compareRange, range, semData })
   const brandCards = cur ? [
     { label: "Total Impression", value: fmt(cur.impressions),  delta: dPct("impressions"), icon: Eye },
     { label: "Total Avg CTR",    value: `${ctr.toFixed(2)}%`,  delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "Total Avg CPM",    value: cpm != null ? fmtTHB(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "Total Avg CPM",    value: cpm != null ? `฿${dec2(cpm)}` : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
     { label: "Total Clicks",     value: fmt(cur.clicks),       delta: dPct("clicks"), icon: MousePointerClick },
     // Traffic — a deliberately blended, cross-platform figure (Meta Landing
     // Page Views + Google Ads clicks), per the client's Looker dashboard —
@@ -3066,7 +3070,7 @@ function SongSaaOverallTab({ client, selectedRange, compareRange, range, semData
     { label: "Cost Per Whatsapp Message", value: costPerMessage != null ? fmtMoney(costPerMessage) : "—", delta: pctDelta(costPerMessage, prevCostPerMessage), icon: Banknote },
     { label: "Impression",               value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "CTR",                      value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "CPM",                      value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "CPM",                      value: cpm != null ? fmtMoney2(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
     { label: "Clicks",                   value: fmt(cur.clicks), delta: dPct("clicks"), icon: MousePointerClick },
     // Meta Pixel add-to-cart — a generic field already fetched for every
     // Meta account (see lib/sem.js), just never surfaced on this tab before.
@@ -3322,9 +3326,9 @@ function SsfbOverallTab({ client, selectedRange, compareRange, range, semData, l
   // sub-₹1 figures for this account (e.g. ₹0.48 Cost Per Link Click) and
   // Math.round()'d fmtINR was flooring them straight to ₹0, hiding real
   // nonzero data. Confirmed against the client's own Looker Studio
-  // reference report (Aug 2026). CPM stays fmtINR — comfortably >1.
+  // reference report (Aug 2026). CPM also uses 2 decimals (fmtINR2).
   const costRows = [
-    { label: "CPM", value: cpm != null ? fmtINR(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "CPM", value: cpm != null ? fmtINR2(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtINR2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
     { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtINR2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
   ];
@@ -3556,9 +3560,9 @@ function SsshOverallTab({ client, selectedRange, compareRange, range, semData, l
   // Cost per LPV/Link Click use fmtMoney2 (2 decimals), not fmtMoney — same
   // rounds-to-0 bug confirmed live on this tab (Cost per Landing Page Views
   // / Cost per Link Clicks both showed $0), see the matching SSFB fix above.
-  // CPM stays fmtMoney — comfortably >1.
+  // CPM also uses 2 decimals (fmtMoney2).
   const costRows = [
-    { label: "CPM", value: cpm != null ? fmtMoney(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
+    { label: "CPM", value: cpm != null ? fmtMoney2(cpm) : "—", delta: pctDelta(cpm, prevCpm) },
     { label: "Cost per Landing Page Views", value: costPerLpv != null ? fmtMoney2(costPerLpv) : "—", delta: pctDelta(costPerLpv, prevCostPerLpv) },
     { label: "Cost per Link Clicks", value: costPerLinkClick != null ? fmtMoney2(costPerLinkClick) : "—", delta: pctDelta(costPerLinkClick, prevCostPerLinkClick) },
   ];
@@ -3800,6 +3804,7 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   // figures (MetaTab/GoogleTab) are unaffected and always show real numbers
   // in each platform's own currency.
   const fmtSpend = (v) => fmtByCurrency(v, cur?.currency);
+  const fmtSpend2 = (v) => fmtByCurrency2(v, cur?.currency); // CPA/CPM to 2 decimals
   const spendNote = cur?.spendPending ? "Google and Meta bill in different currencies this range — see the Meta/Google tabs for real figures." : undefined;
 
   // Each card also carries an `icon` — colorful-redesign rollout (Aug 2026,
@@ -3807,10 +3812,10 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   const kpis = cur ? [
     { label: "Amount Spent",  value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote, icon: DollarSign },
     { label: cbLabel,         value: fmt(cur.clickBook),   delta: dPct("clickBook"), icon: Target },
-    { label: "CPA",           value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
+    { label: "CPA",           value: cpa != null ? fmtSpend2(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "CPM",           value: cpm != null ? fmtSpend2(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
     { label: "Total Clicks",  value: fmt(cur.clicks),      delta: dPct("clicks"), icon: MousePointerClick },
     // Reach and Google Ads Impressions — ICKY's Aug 2026 feedback (this
     // generic template is shared with Nomad Greenland too — harmless there
@@ -3832,12 +3837,12 @@ function SummaryTab({ client, selectedRange, compareRange, range, semData, liveR
   const overallCards = cur ? [
     { label: "Amount Spent", value: cur.spendPending ? "—" : fmtSpend(cur.spend), delta: cur.spendPending ? null : dPct("spend"), note: spendNote, icon: DollarSign },
     { label: "Click Book",   value: fmt(cur.clickBook), delta: dPct("clickBook"), icon: Target },
-    { label: "CPA",          value: cpa != null ? fmtSpend(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
+    { label: "CPA",          value: cpa != null ? fmtSpend2(cpa) : "—", delta: pctDelta(cpa, prevCpa), icon: Percent },
   ] : [];
   const brandCards = cur ? [
     { label: "Impressions",   value: fmt(cur.impressions), delta: dPct("impressions"), icon: Eye },
     { label: "Total Avg CTR", value: `${ctr.toFixed(1)}%`, delta: pctDelta(ctr, prevCtr), icon: Percent },
-    { label: "CPM",           value: cpm != null ? fmtSpend(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
+    { label: "CPM",           value: cpm != null ? fmtSpend2(cpm) : "—", delta: pctDelta(cpm, prevCpm), icon: DollarSign },
     { label: "Clicks",        value: fmt(cur.clicks), delta: dPct("clicks"), icon: MousePointerClick },
     { label: "Reach",                  value: fmt(reach), delta: reachDPct, icon: Users },
     { label: "Google Ads Impressions", value: fmt(curGoogle?.impressions ?? 0), delta: googleImpressionsDPct, icon: Eye },
